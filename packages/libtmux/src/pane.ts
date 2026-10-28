@@ -386,7 +386,8 @@ export class Pane {
    * is listening, so a command that ends at once is not missed. A shell's
    * first prompt marks an end too, before any command ran, so a wait armed
    * while the shell starts can resolve with 0. A shell without the marks never
-   * resolves this: give it a `timeoutMs`. A pane whose program has exited
+   * resolves this: give it a `timeoutMs`, whose {@link WaitTimeoutError} names
+   * the marks as the likely cause. A pane whose program has exited
    * rejects with {@link LibTmuxError}. The mark carries a status alone; what
    * the command printed is on the pane, for {@link Pane.capture}.
    *

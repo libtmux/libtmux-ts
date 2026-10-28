@@ -133,7 +133,7 @@ interface PaneWait<T> {
   readonly check: () => Promise<T | undefined>;
   /** Run once the waiters are armed. */
   readonly act?: () => Promise<void>;
-  /** What a timeout says was still awaited. */
+  /** What a timeout says was still awaited, and the likely reason. */
   readonly awaited: string;
 }
 
@@ -201,7 +201,7 @@ async function waitOnPane<T>(
       if (found !== undefined) return found;
       if (isAborted(signal)) throw cancelled(signal);
       if (performance.now() >= deadline) {
-        throw new WaitTimeoutError(`${paneId}: ${wait.awaited} after ${String(timeoutMs)}ms`);
+        throw new WaitTimeoutError(`${paneId}: after ${String(timeoutMs)}ms, ${wait.awaited}`);
       }
       // eslint-disable-next-line no-await-in-loop -- sleep until an event, an abort, or the next read.
       await sleep(Math.min(BACKSTOP_MS, Math.max(1, deadline - performance.now())), wake.signal);
@@ -238,7 +238,9 @@ export async function waitForPaneCommand(
         await sendKeys(runtime, paneId, options.send, { literal: true });
       }
     },
-    awaited: "no command had finished",
+    awaited:
+      "no command had finished; only a shell that marks each command's end with OSC 133 D " +
+      "reports one",
     check: async () => {
       // A gone pane fails the read; a dead one will finish no command.
       const [dead] = await readPane(runtime, paneId, ["#{pane_dead}"]);
