@@ -229,14 +229,23 @@ testProgram(
   async () => {
     await withServer(async (fixture) => {
       await withClient(fixture, async (client) => {
-        const created = structured<{ paneId: string }>(
-          await client.callTool({ arguments: { name: "shell" }, name: "create_session" }),
-        );
-        // run_shell_command runs in a subshell, so the export is typed into the shell itself.
-        await client.callTool({
-          arguments: { keys: "export LTX_SECRET='a b'\"'\"'c'", paneId: created.paneId },
-          name: "send_keys",
-        });
+        // A shell started with the variable in its environment, which tmux's own lacks.
+        const [paneId = ""] = (
+          await fixture.executeText([
+            "new-session",
+            "-d",
+            "-P",
+            "-F",
+            "#{pane_id}",
+            "-s",
+            "shell",
+            "--",
+            "env",
+            "LTX_SECRET=a b'c",
+            "sh",
+          ])
+        ).stdout;
+        const created = { paneId };
         const exported = structured<Ran>(
           await client.callTool({
             arguments: { command: "printenv LTX_SECRET", paneId: created.paneId },
