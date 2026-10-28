@@ -109,6 +109,12 @@
       "import": "./dist/pane.js",
       "default": "./dist/pane.js"
     },
+    "./program": {
+      "types": "./dist/program.d.ts",
+      "bun": "./src/program.ts",
+      "import": "./dist/program.js",
+      "default": "./dist/program.js"
+    },
     "./client": {
       "types": "./dist/client.d.ts",
       "bun": "./src/client.ts",
