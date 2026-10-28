@@ -126,7 +126,7 @@ testProgram(
         const reads = await readAll(call, started.programId, 5000);
         const firstLine = reads.findIndex((read) => read.text.includes("line1"));
         expect(firstLine).toBeGreaterThanOrEqual(0);
-        expect(reads[firstLine]?.ended).toBe(false);
+        expect(reads[firstLine]).toMatchObject({ ended: false, outputComplete: false });
         const text = reads.map((read) => read.text).join("");
         for (const n of [1, 2, 3, 4, 5]) expect(text).toContain(`line${String(n)}`);
         const last = reads.at(-1);

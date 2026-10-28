@@ -373,8 +373,9 @@ export function registerPrograms(mcp: ToolRegistrar, context: ToolContext): Star
         outputComplete: z
           .boolean()
           .describe(
-            "False when outputCut or lostEnd is true, or when a stop or the lifetime ended " +
-              "the program before its output was read to the end.",
+            "True once ended is true and nothing is missing. False while it runs, when " +
+              "outputCut or lostEnd is true, or when a stop or the lifetime ended the program " +
+              "before its output was read to the end.",
           ),
         outputCut: z
           .boolean()
@@ -445,7 +446,7 @@ export function registerPrograms(mcp: ToolRegistrar, context: ToolContext): Star
           exitStatus: exit?.exitCode ?? null,
           lostEnd: entry.missing === "lost",
           outcome,
-          outputComplete: entry.missing === undefined,
+          outputComplete: finished && entry.missing === undefined,
           outputCut: entry.missing === "cut",
           signal: exit?.signalCode ?? null,
           text,

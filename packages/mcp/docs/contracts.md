@@ -324,8 +324,9 @@ is read whole over several calls.
 returned. tmux holds a dying pane until its pipe has drained, so what tmux read
 reaches the copy. An end tmux never read, which the library's end mark detects,
 sets `lostEnd`; the copy reaching its limit, while the program runs on, sets
-`outputCut`; either makes `outputComplete` false, as does a stop or the lifetime
-ending the program before its output was read to the end. `outcome` is decided
+`outputCut`. `outputComplete` is true only once `ended` is and nothing is
+missing: either flag makes it false, as does a stop or the lifetime ending the
+program before its output was read to the end. `outcome` is decided
 by how the program ended before its status is read: `expired` for one its
 lifetime ended and `stopped` for one `stop_program` ended, whose SIGTERM can
 also leave a status.
