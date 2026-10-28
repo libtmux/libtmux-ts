@@ -1463,16 +1463,20 @@ export class Server {
    * Like a child process, a running program keeps this process alive until it
    * ends.
    *
+   * Keys go to the terminal at once. A program that reads lines, like `cat`,
+   * reads them when it gets there; a full-screen one, like vim, can drop keys
+   * that arrive before it has set up its terminal, so wait for its first
+   * screen before typing.
+   *
    * Requires tmux 3.8 or newer, and raises {@link VersionTooLowError}
    * below it. Earlier releases have no exit event to wait on, and through
    * 3.7c a dead pane never closes the pipe `stream` reads.
    *
    * ```ts
-   * await using vim = await server.spawn(["vim", "-Nu", "NONE", "-i", "NONE", "-n", "notes.txt"]);
-   * await vim.pane.sendKeys("ihello", { enter: false });
-   * await vim.pane.sendKeys("Escape", { enter: false });
-   * await vim.pane.sendKeys(":wq");
-   * await vim.wait();
+   * await using cat = await server.spawn(["cat"]);
+   * await cat.pane.sendKeys("hello");
+   * await cat.pane.sendKeys("C-d", { enter: false });
+   * const { exitCode } = await cat.wait(); // 0
    * ```
    */
   async spawn(argv: readonly string[], options?: SpawnOptions): Promise<Program> {
