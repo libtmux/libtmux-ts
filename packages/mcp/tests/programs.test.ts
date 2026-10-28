@@ -20,6 +20,7 @@ interface Read {
   readonly lostEnd: boolean;
   readonly outcome: string;
   readonly outputComplete: boolean;
+  readonly outputCut: boolean;
   readonly ended: boolean;
   readonly exitStatus: number | null;
   readonly signal: string | null;
@@ -368,4 +369,30 @@ testProgram(
     });
   },
   70_000,
+);
+
+testProgram(
+  "read_program keeps a capped amount of text, however much a backspace re-emits",
+  async () => {
+    await withServer(async (fixture) => {
+      await withClient(fixture, async (client) => {
+        const call: Call = (request) => client.callTool(request);
+        // Each late backspace re-emits the line's last 256 KiB: twenty of them pass 4 MiB kept.
+        const argv = [
+          "sh",
+          "-c",
+          "printf '%262144s' '' | tr ' ' x; n=0; while [ $n -lt 20 ]; do sleep 0.1; printf '\\b'; n=$((n + 1)); done",
+        ];
+        const started = structured<Started>(
+          await call({ arguments: { argv, lifetimeMs: 30_000 }, name: "start_program" }),
+        );
+        const reads = await readAll(call, started.programId, 5000);
+        const kept = reads.reduce((total, read) => total + Buffer.byteLength(read.text), 0);
+        expect(kept).toBeLessThanOrEqual(4 * 1024 * 1024);
+        expect(reads.at(-1)).toMatchObject({ ended: true, outputComplete: false, outputCut: true });
+        await call({ arguments: { programId: started.programId }, name: "stop_program" });
+      });
+    });
+  },
+  60_000,
 );

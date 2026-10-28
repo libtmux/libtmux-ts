@@ -90,15 +90,32 @@ function slice(chunks: readonly Buffer[], start: number, end: number): Buffer {
   return Buffer.concat(parts);
 }
 
+/** Where to cut `text` to at most `room` bytes without splitting a character. */
+function characterCut(text: Buffer, room: number): number {
+  let end = Math.min(room, text.length);
+  while (end > 0 && end < text.length && ((text[end] ?? 0) & 0xc0) === 0x80) end -= 1;
+  return end;
+}
+
 /** Copy the program's output in as it is written, then record how it ended. */
 async function pump(entry: Entry): Promise<void> {
   const filter = new TextFilter();
   try {
     for await (const chunk of entry.program.stream()) {
-      const text = Buffer.from(filter.push(chunk), "utf8");
-      entry.chunks.push(text);
-      entry.size += text.length;
+      let text = Buffer.from(filter.push(chunk), "utf8");
+      // The filter can yield more than it read, as a late backspace re-emits the line it edits,
+      // so what is kept has a cap of its own beside the copy's.
+      if (entry.size + text.length > MAX_COPY_BYTES) {
+        text = text.subarray(0, characterCut(text, MAX_COPY_BYTES - entry.size));
+        entry.missing = "cut";
+      }
+      if (text.length > 0) {
+        entry.chunks.push(text);
+        entry.size += text.length;
+      }
       wake(entry);
+      // Leaving the loop ends the copy; the program runs on, and its end is still waited for.
+      if (entry.missing === "cut") break;
     }
   } catch (error) {
     // A program that never ran ends its copy with the reason, after the shell's complaint.
