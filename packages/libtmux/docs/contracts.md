@@ -180,8 +180,8 @@ that leaves copy mode is followed by an Enter the pane itself receives.
 `Server.run` and `Server.spawn` start `argv` in a pane of its own, with nothing
 typed, so the output holds no command line or echo.
 
-- One tmux command list starts the program and waits for its exit, so no exit
-  is missed.
+- One tmux command list starts the program and waits for its exit, so tmux
+  cannot see the exit before the waiter exists.
 - A small `sh` runs it and lingers 50 ms before exiting; in none of the 15000
   `seq 1 3000` runs measured below on each tmux did tmux then miss the last
   output.
@@ -254,9 +254,10 @@ What a run does not do:
   before its mark too, which leaves the end unproven, so it counts as missing.
 - [`scripts/measure-program-end.ts`](../scripts/measure-program-end.ts) measures
   both with the shipped wrapper, three probes in parallel, over rounds. Run as
-  `bun scripts/measure-program-end.ts 1000 5` on 3.8, on 3.8a (the untagged
-  [`release_3.8a`](https://github.com/tmux/tmux/commit/089ad94e13c560db99fd4989b2774a5c6ad37a17)
-  branch) and on master at
+  `bun scripts/measure-program-end.ts 1000 5` on Linux 6.18 under WSL2, with
+  3.8, with 3.8a (the `release_3.8a` branch at
+  [089ad94](https://github.com/tmux/tmux/commit/089ad94e13c560db99fd4989b2774a5c6ad37a17))
+  and with master at
   [523ac69](https://github.com/tmux/tmux/commit/523ac69601e1ea51a8ba718d32df6a00e4d0f6d4),
   15000 runs a cell, each cell giving its runs that lost the end per round of
   3000 and in all:
@@ -287,8 +288,8 @@ What a run does not do:
 
 ### Waiting for the exit
 
-- No exit is missed: the waiter exists before tmux can see the program exit,
-  because tmux handles no other event inside one command list.
+- The waiter exists before tmux can see the program exit, because tmux handles
+  no other event inside one command list.
 - That list holds the respawn, the optional `pipe-pane`, a `wait-for -S` on a
   channel of the run's own, and a
   `wait-for -E -F '#{==:#{pane},%N}' pane-died` waiter.

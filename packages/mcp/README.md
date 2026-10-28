@@ -541,7 +541,7 @@ try {
   `height` as `run_program` does, but not `input`, `keep`, `inheritShell` or
   `separateStderr`;
   `PAGER` and `GIT_PAGER` are `cat`. This server reads each running program's
-  copy as the library's `stream()` does, by polling a file.
+  output from a file it polls.
 - Each `read_program` waits up to its `timeoutMs` for new output or the exit
   and returns a `cursor`. A read that times out returns no text; the next one
   with the same cursor carries on, past any wait ceiling.
