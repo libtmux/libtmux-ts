@@ -360,8 +360,9 @@ with the usual pane-input checks.
 and `pane-died`, the two exclusive exit events, before it reads the pane, so an
 exit is never missed and a pane already dead answers at once. A pane that
 closes takes its status with it, and the event's payload carries that status.
-`kill-pane` fires no event; the pane is read every second and a removed one
-answers `gone`. It needs tmux 3.8 or newer.
+`kill-pane` fires no event; the pane is read every second, and a removed one
+answers `gone` within about two seconds: one to notice, and one for the event a
+closing pane fires to arrive. It needs tmux 3.8 or newer.
 
 ### How each tool reports an end
 

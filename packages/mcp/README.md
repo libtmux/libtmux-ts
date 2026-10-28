@@ -630,7 +630,8 @@ wait_for_exit  paneId=%3  timeoutMs=20000
 - Use it for a pane you did not start, such as a person's build. For a program
   you run, `run_program` already reports the exit.
 - A pane that closes on exit still reports its status: tmux carries it in the
-  event. A pane killed from outside has none and answers `gone`.
+  event. A pane killed from outside has none and answers `gone` within about
+  two seconds.
 - `timed_out` means the program still runs; call again to keep waiting.
 - Needs tmux 3.8 or newer.
 
