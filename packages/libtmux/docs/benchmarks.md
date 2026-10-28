@@ -1,6 +1,6 @@
 # Benchmarks
 
-Measured, not estimated. Every number here came from one of the three benchmark
+Measured, not estimated. Every number here came from one of the four benchmark
 scripts below, run from the repository root against a real tmux, and each script
 prints the machine and tmux it ran on so a rerun can be compared with this one
 rather than guessed against it.
@@ -145,3 +145,25 @@ dropped** says a consumer that stops reading costs a bounded 64 slots rather
 than unbounded memory — the two halves of the backpressure claim. The last two
 rows are the recovery path: a connection that survives its client detaching, and
 handles that refuse rather than address a daemon that has been replaced.
+
+## Running a program
+
+```console
+$ bun packages/libtmux/scripts/bench-program.ts 30 16
+```
+
+Run: Linux 6.18 under WSL2, 12 cores, on an idle machine, three runs on each
+tmux. `Server.run(["true"])` on a server that already holds a session, so no
+run starts or stops the server.
+
+| tmux     | one after another, a run | sixteen side by side, in all |
+| -------- | ------------------------ | ---------------------------- |
+| 3.8      | 71 ms                    | 491–506 ms                   |
+| 3.8a     | 71 ms                    | 501–521 ms                   |
+| next-3.9 | 71–74 ms                 | 492–641 ms                   |
+
+The wrapper's 50 ms linger, which keeps tmux from removing the pane before it
+has read the program's last output, is most of a run; the rest is a few tmux
+round trips. Sixteen side by side take under half what they take in turn,
+since the lingers overlap. A server with no session of its own exits when a run
+removes its last one, and the next run then pays for starting it again.

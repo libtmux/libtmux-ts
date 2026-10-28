@@ -230,9 +230,10 @@ What a run does not do:
 - `argv` and `environment` go to tmux in one command, which tmux caps at about
   16 KiB, and a longer one is refused before the program starts; data that size
   belongs in `input`.
-- A run costs a few tmux round trips and the linger: `true` took about 135 ms
-  a run, ten one after another, on the WSL2 host measured, and sixteen side by
-  side took about 1.8 s in all, so side by side saves little.
+- A run costs a few tmux round trips and the 50 ms linger: `true` took about
+  71 ms a run one after another, and sixteen side by side about 0.5 s in all,
+  under half what they take in turn. [Benchmarks](benchmarks.md#running-a-program)
+  has the run.
 
 ### Starting the program
 
