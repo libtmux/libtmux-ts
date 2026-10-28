@@ -59,7 +59,8 @@ async function renew(target: LeaseTarget, lease: Lease): Promise<void> {
       leaseTimer(paneId, owned, keep, files, lease.token, lease.ms / 1000),
     );
   } catch (error) {
-    // A pane removed from outside has nothing left to lease; anything else is retried.
+    // A pane removed from outside has nothing left to lease. Anything else is retried, and
+    // should every retry fail, the lease runs out and tmux ends the program, as for a dead caller.
     const gone =
       error instanceof TmuxCommandError &&
       (await readPane(runtime, paneId, []).then(
