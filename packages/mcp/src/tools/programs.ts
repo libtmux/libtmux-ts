@@ -15,7 +15,7 @@ import {
 import { z } from "zod";
 
 import type { ToolContext } from "../context.js";
-import { effectiveWaitMs, MAX_RESULT_BYTES } from "../policy.js";
+import { DEFAULT_BLOCKING_WAIT_MS, effectiveWaitMs, MAX_RESULT_BYTES } from "../policy.js";
 import { type ToolRegistrar } from "../register.js";
 import { fail, ok } from "../results.js";
 import { inlineRequestText, paneIdSchema } from "../schemas.js";
@@ -114,6 +114,7 @@ async function pump(entry: Entry): Promise<void> {
     entry.endedBy ??= "gone";
   }
   entry.endedAt ||= performance.now();
+  clearTimeout(entry.timer);
   wake(entry);
   // Its text is held here, so the pane, its lease and its copy can go now.
   await entry.program.kill().catch(() => undefined);
@@ -212,8 +213,8 @@ export function registerPrograms(mcp: ToolRegistrar, context: ToolContext): Star
           .optional()
           .describe(
             "How long the program may run: it is ended and its pane removed this long after the " +
-              `start. ${String(DEFAULT_LIFETIME_MS / 60_000)} minutes by default, at most ` +
-              `${String(MAX_LIFETIME_MS / 60_000)}.`,
+              `start. ${String(DEFAULT_LIFETIME_MS / 60_000)} minutes by default; longer than ` +
+              `${String(MAX_LIFETIME_MS / 60_000)} is cut to that.`,
           ),
         width: z
           .number()
@@ -331,19 +332,22 @@ export function registerPrograms(mcp: ToolRegistrar, context: ToolContext): Star
           .int()
           .nonnegative()
           .optional()
-          .describe("How long to wait for something new. Clamped by the server ceiling."),
+          .describe(
+            "How long to wait for something new: 0 returns at once, and omitted is " +
+              `${String(DEFAULT_BLOCKING_WAIT_MS / 1000)} seconds. Clamped by the server ceiling.`,
+          ),
       },
       outputSchema: {
         cursor: z.number().int().describe("Pass to the next read_program."),
         effectiveTimeoutMs: z.number().int().describe("The wait allowed."),
+        ended: z
+          .boolean()
+          .describe("Whether it has ended and every byte it wrote has been returned."),
         exitStatus: z
           .number()
           .int()
           .nullable()
           .describe("The exit status once it completed on its own; otherwise null."),
-        ended: z
-          .boolean()
-          .describe("Whether it has ended and every byte it wrote has been returned."),
         lostEnd: z
           .boolean()
           .describe("True when tmux closed the pane before reading the end of the output."),

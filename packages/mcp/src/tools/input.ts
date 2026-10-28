@@ -698,7 +698,7 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
           .optional()
           .describe(
             "Leave the pane, dead and showing the output, for a person to read and close. " +
-              "Set it only when a person asked to see the run; the pane is then theirs.",
+              "Set it only when a person asked to see the run.",
           ),
         height: z
           .number()

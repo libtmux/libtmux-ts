@@ -20,7 +20,12 @@ import { readServerAuthority } from "../caller.js";
 import { requireLiveCursor, type ToolContext } from "../context.js";
 import { captureGridBounded } from "../grid_capture.js";
 import { liveEcho, withoutEchoes, type PaneServerIdentity } from "../pane_echo.js";
-import { effectiveResultLines, effectiveWaitMs, MAX_RESULT_BYTES } from "../policy.js";
+import {
+  DEFAULT_BLOCKING_WAIT_MS,
+  effectiveResultLines,
+  effectiveWaitMs,
+  MAX_RESULT_BYTES,
+} from "../policy.js";
 import { type ToolRegistrar } from "../register.js";
 import { boundText, fail, ok, renderBoundedText } from "../results.js";
 import { paneCursorSchema, paneIdSchema, requestTextArray } from "../schemas.js";
@@ -630,7 +635,11 @@ export function registerWait(mcp: ToolRegistrar, context: ToolContext): void {
           .int()
           .positive()
           .optional()
-          .describe("Clamped by the server ceiling; the result reports what was used."),
+          .describe(
+            `How long to wait for the exit: ${String(DEFAULT_BLOCKING_WAIT_MS / 1000)} seconds ` +
+              "when omitted, clamped by the server ceiling; the result reports what was used, " +
+              "and timed_out leaves the program running.",
+          ),
       },
       outputSchema: {
         effectiveTimeoutMs: z.number().int().describe("The timeout enforced."),
