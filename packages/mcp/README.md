@@ -563,10 +563,10 @@ try {
   program and removes its pane, even if no later call arrives; should this
   server die or restart, tmux does within 30 seconds, through a lease only a
   live server renews.
-- The number of programs running at once is capped, and a start past it is
-  refused. Ended programs stay readable, the most recently ended kept, until
-  `stop_program` forgets one. With each copy capped too, the output this
-  server holds for programs is bounded.
+- Sixteen programs run at once at most, and a start past that is refused.
+  The sixteen most recently ended stay readable until `stop_program` forgets
+  one. Each copy stops at 4 MiB, so this server holds at most 128 MiB of
+  program output.
 - The program's process group is what ends; a process that daemonizes out of
   it is not followed.
 
