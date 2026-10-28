@@ -55,15 +55,17 @@ import { markSequence } from "./program_stream.js";
  * with its status. Only a pane whose path is the mark was read to the end.
  */
 export const RUN: string =
-  'trap : INT QUIT TERM; exec 3>&2 2>/dev/null; (exec "$0" "$@" 2>&3 3>&-); s=$?; ' +
-  "printf '\\033\\\\\\033]7;%s\\007' \"$m\"; " +
-  'sleep 0.05 2>/dev/null || sleep 1; exit "$s"';
+  "trap : INT QUIT TERM; exec 3>&2 2>/dev/null; " +
+  '([ -z "$ltx_e" ] || exit "$ltx_e"; exec "$0" "$@" 2>&3 3>&-); ltx_s=$?; ' +
+  "printf '\\033\\\\\\033]7;%s\\007' \"$ltx_m\"; " +
+  'sleep 0.05 2>/dev/null || sleep 1; exit "$ltx_s"';
 /**
  * Steps before `RUN`, each shifting its argument off `$1`. tmux's `-c` falls
  * back to `$HOME` for a directory it cannot enter, where this exits 126.
  */
-export const MARK = "m=$1; shift; ";
-const ENTER = 'cd -- "$1" || exit 126; shift; ';
+export const MARK = "ltx_m=$1; ltx_e=; shift; ";
+// A directory it cannot enter still ends through the mark and the linger.
+const ENTER = 'cd -- "$1" || ltx_e=126; shift; ';
 const READ = 'exec <"$1"; shift; ';
 const ERR = 'exec 2>"$1"; shift; ';
 /** How long setup waits for tmux to start the program. */

@@ -528,6 +528,13 @@ describe("program runs", () => {
         });
         expect(unentered.exitCode).toBe(126);
         expect(unentered.stderr).toContain("nonexistent-ltx-directory");
+        // It still ends through the mark, so its end is proven.
+        expect(unentered.lostEnd).toBe(false);
+        // The wrapper's own variables leave the program's alone.
+        const own = await server.run(["sh", "-c", "echo $m $s $e"], {
+          environment: { e: "three", m: "one", s: "two" },
+        });
+        expect(own.output).toBe("one two three");
       });
     },
     40_000,
