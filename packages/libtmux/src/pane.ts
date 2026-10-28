@@ -354,6 +354,9 @@ export class Pane {
    *
    * At once for a pane already dead under `remain-on-exit`; otherwise when
    * tmux reports the exit, with the status a closing pane takes with it.
+   * tmux reads the pane's own process, so a signal shows as `signalCode` with
+   * `exitCode` null, where {@link Server.run}'s wrapper reports 128 plus its
+   * number as `$?` does.
    * Giving up leaves the program running: a timeout throws
    * {@link WaitTimeoutError} and an abort throws {@link TmuxTransportError} of
    * kind `cancelled`; with neither it waits as long as the program runs. A
