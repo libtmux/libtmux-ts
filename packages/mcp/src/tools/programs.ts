@@ -250,6 +250,8 @@ export function registerPrograms(mcp: ToolRegistrar, context: ToolContext): Star
       try {
         const from = await besidePane(context, { fromPaneId, height, placement, width });
         if (isFailure(from)) return from;
+        // A close that began while the pane was looked up starts nothing more.
+        if (closing) return fail({ reason: "This server is closing; no program was started." });
         const spawning = context.tmux.spawn(argv, {
           // A pager waits for keys nobody will press.
           environment: { GIT_PAGER: "cat", PAGER: "cat" },
