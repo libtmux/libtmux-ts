@@ -368,7 +368,11 @@ checks the same `FIONREAD` on all three
   renewed timer does nothing.
 - The run's files go a second later, from a background shell: the pane's end
   also ends a stream's writer, whose last step would otherwise recreate a file
-  inside the directory being removed.
+  inside the directory being removed. The shell is not tmux's job, so it still
+  runs when removing the pane's session stops the server. Files outlive a
+  caller only when nothing is left to remove them: the tmux server died with
+  it, or the run took no lease. They sit in a 0700 `ltx-program-` directory
+  under this process's temporary directory.
 - The timer reads the pane's state when it fires (`##` defers the format), so a
   pane already dead, whose pid may name another process by then, is never
   signalled. The files' path is a pane option quoted with `#{q:}`, since a

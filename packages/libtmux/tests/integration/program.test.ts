@@ -976,6 +976,59 @@ setInterval(() => undefined, 1000);`,
   );
 
   testProgram(
+    "a killed caller's files go even when its session was the server's last",
+    async () => {
+      await withServer(async (_server, directory, fixture) => {
+        const options = {
+          configFile: "/dev/null",
+          environment: fixture.controllerEnvironment,
+          socketPath: join(directory, "lone"),
+          tmuxBin: fixture.tmuxExecutable,
+        };
+        const lone = new Server(options);
+        const caller = await startCaller(
+          `import { Server } from ${JSON.stringify(SERVER_MODULE)};
+const server = new Server(JSON.parse(process.env.LTX_PROGRAM_SERVER));
+const program = await server.spawn(["sh", "-c", "while :; do echo x; sleep 0.05; done"], { input: "x", orphanAfterMs: 1000, stream: true });
+console.log(JSON.stringify({ pane: program.pane.id }));
+setInterval(() => undefined, 1000);`,
+          { LTX_PROGRAM_SERVER: JSON.stringify(options) },
+        );
+        try {
+          const { pane } = caller.first as { pane: string };
+          const [files = ""] = await lone.cmd("show-options", [
+            "-p",
+            "-v",
+            "-t",
+            pane,
+            "@libtmux-files",
+          ]);
+          expect(files).not.toBe("");
+          await caller.kill();
+          // The lease removes the only session, and tmux exits with it.
+          expect(
+            await eventually(
+              () => lone.isAlive(),
+              (alive) => !alive,
+              5000,
+            ),
+          ).toBe(false);
+          expect(
+            await eventually(
+              () => gone(files),
+              (removed) => removed,
+              5000,
+            ),
+          ).toBe(true);
+        } finally {
+          if (await lone.isAlive()) await lone.kill();
+        }
+      });
+    },
+    40_000,
+  );
+
+  testProgram(
     "a pane killed from outside hangs up its program, as a shell's would",
     async () => {
       await withServer(async (server) => {
