@@ -177,8 +177,8 @@ that leaves copy mode is followed by an Enter the pane itself receives.
 
 ## Program runs
 
-`Server.run` and `Server.spawn` start `argv` in a pane of its own, with nothing
-typed, so the output holds no command line or echo.
+`Server.run` and `Server.spawn` start `argv` in a pane of its own and type
+nothing into it.
 
 - One tmux command list starts the program and waits for its exit, so tmux
   cannot see the exit before the exit watch exists.
@@ -215,6 +215,7 @@ What each outcome looks like to a caller:
 | The stream copy reached `maxStreamBytes`                           | `stream()` ends with `StreamLimitError`; the program runs on                                                           |
 | `run`'s `timeoutMs` passed                                         | `timedOut`, with the output so far                                                                                     |
 | `signal` fired                                                     | `TmuxTransportError` of kind `cancelled`, whose `delivery` says whether it had started                                 |
+| tmux had not started the program after ten seconds                 | `LibTmuxError`; the pane is removed unless `keep` is set                                                               |
 | The pane was killed from outside, its server with it or not        | `ObjectNotFoundError` from `wait()`, `output()` and `run`; the program is hung up, and one that ignores SIGHUP runs on |
 | The caller died                                                    | tmux ends the program within `orphanAfterMs`                                                                           |
 | `input`, `stream` or `separateStderr` with a tmux server elsewhere | `ServerNotLocalError`, before the program starts                                                                       |
