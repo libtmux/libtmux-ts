@@ -175,6 +175,143 @@ the Enter travel as two commands in one tmux invocation, so nothing interleaves
 between them and tmux resolves each against the pane as it finds it — a key
 that leaves copy mode is followed by an Enter the pane itself receives.
 
+## Program runs
+
+`Server.run` and `Server.spawn` start `argv` in a pane of its own, with nothing
+typed, so the output holds no command line or echo. In short:
+
+- One tmux command list starts the program and waits for its exit, so no exit
+  is missed.
+- A small `sh` runs it and lingers 50 ms, so tmux reads the last output first.
+- `kill()` sends SIGTERM, then SIGKILL, to the process group, and returns once
+  tmux has reaped it or two seconds after the SIGKILL.
+- Should the caller die, tmux removes the run and ends an overdue program.
+
+Each step below is the one that held when measured; the version table says
+where.
+
+| tmux          | Program runs         | Why                                                                |
+| ------------- | -------------------- | ------------------------------------------------------------------ |
+| 3.8 and newer | Supported            | `wait-for -E` reports the exit; the pipe closes when the pane dies |
+| 3.7 to 3.7c   | `VersionTooLowError` | No `wait-for -E`; a remain-on-exit pane never closes its pipe      |
+| 3.3a to 3.6b  | `VersionTooLowError` | Also: `history-limit` does not reach an existing pane              |
+
+### Starting the program
+
+- The session's one pane starts with a placeholder that exits at once and stays
+  as a dead pane, so its id exists before the program does.
+- `remain-on-exit` is set in the list that creates the session: set by a second
+  invocation, it arrives after an instant program's pane is already gone.
+- The pane is respawned with `sh` and `argv` as its positional parameters, so
+  `sh` does not parse them and `argv[0]` is always a program name, never shell
+  text or an assignment the way `env` would read `A=b`.
+- That `sh` runs the program in a subshell and lingers 50 ms after it, then
+  exits or dies the way it did. tmux removes a pane on its child's exit once
+  `FIONREAD` reads 0, which on Linux misses output still in the pty's flip
+  buffer, so a program that exits right after writing could lose the end of
+  its output under load. `pane_pid` is that `sh`, and
+  `pane_current_command` names it.
+- Its own signals are caught, not ignored, so the program keeps the default
+  dispositions, and a status above 128 is re-raised as that signal, as a shell
+  reports one.
+- A start directory is entered by that `sh`, not by tmux's `-c`, which falls
+  back to `$HOME` for one it cannot enter: a missing one ends the run with exit
+  code 126 and the shell's message, and its `#` is never expanded.
+
+### Waiting for the exit
+
+- No exit is missed: the waiter exists before tmux can see the program exit,
+  because tmux handles no other event inside one command list.
+- That list holds the respawn, the optional `pipe-pane`, a `wait-for -S` on a
+  channel of the run's own, and a
+  `wait-for -E -F '#{==:#{pane},%N}' pane-died` waiter.
+- Setup waits on that channel rather than polling: a channel signalled before
+  its waiter arrives stays woken.
+- A death counts only once tmux has the exit status: `pane_dead` turns 1 when the
+  pty closes, which can come first.
+- The wait still reads the pane every second, because tmux fires no event for a
+  pane killed from outside.
+- The list ends in that wait, so it holds no slot of `maxInFlight` for the
+  program's life; each live program costs one waiting tmux client instead,
+  a process far larger than what the tmux server adds.
+
+### Ending it
+
+- `kill()`, and the end of a run's timeout, send the program's process group
+  SIGTERM and, two seconds later, SIGKILL, then return once tmux has reaped it, or two seconds after the SIGKILL.
+  Removing the session only closes the pty, which a program ignoring SIGHUP
+  outlives.
+- The signal goes through `run-shell` on the tmux server's own machine, where
+  the pane's pid names that process. `kill -s NAME -- -PID` is the form every
+  `/bin/sh` accepts: dash refuses `kill -NAME -- -PID`.
+- A spawn whose setup fails after the program started ends it the same way.
+
+### When the caller dies
+
+- A run sets a `pane-died` hook on its pane that removes the session a minute
+  after the program exits. tmux runs a hook itself; a queued command would not
+  survive, because tmux drops a departed client's queue (`server_client_free`).
+- A run with `timeoutMs` also queues `run-shell -b -d`, a timer the tmux server
+  keeps after its client is gone. A minute past the deadline it SIGKILLs the
+  process group if the pane is still alive; the death fires the hook.
+- The timer reads the pane's state when it fires (`##` defers the format), so a
+  pane already dead, whose pid may name another process by then, is never
+  signalled. It kills rather than removes, since a pane destroyed before its
+  death is seen fires no `pane-died` and leaves the run's own waiting client
+  blocked.
+- A run without `timeoutMs` keeps a program that never exits, and a spawn leaves
+  cleanup to its caller, including a `stream: true` copy in the temporary
+  directory.
+- The hook and the timer arrive with the program. A caller killed in the moment
+  between creating the session and starting the program leaves the dead
+  placeholder's session, which nothing removes.
+- Each run leaves its timers in the tmux server until they fire: the hook's a
+  minute after the exit, and the deadline's a minute past `timeoutMs`. Once the
+  session is gone, each does nothing.
+
+### From another pane
+
+- With `from`, the placeholder is a new window of that pane's session, created
+  `-d` so no client's view moves, by a unique name that the same list sets
+  remain-on-exit on, which keeps even an instant placeholder.
+- It starts in `#{pane_current_path}` and gets the session's tmux environment.
+- The program owns only that window: `kill()` and the after-exit hook remove the
+  window, never the session. Size and `historyLimit` belong to the session, so
+  `from` refuses them.
+
+### Output and streams
+
+- `output()` and `run`'s `output` are `capture-pane` of the program's pane,
+  scrollback included and wrapped lines joined. Tabs and trailing spaces are
+  kept, colors dropped, and blank lines after the last printed one left out,
+  since the pane's unused rows read as blank too. What a program draws on the
+  alternate screen, as `less` and `vim` do, is gone once it leaves that screen;
+  `stream()` has every byte.
+- The pane's history, up to its limit, is the run's memory in the tmux server,
+  and tmux keeps that memory from the system after the session is removed.
+- `truncated` reads `#{history_collected}`, the lines tmux dropped past
+  `historyLimit`; `history_size` stays below the limit after tmux drops a chunk,
+  so it cannot say.
+- `stream()` reads a file that `pipe-pane -O` writes in the program's own 0700
+  temporary directory. tmux keeps a dying pane until its pipe has drained
+  (`window_pane_destroy_ready`), so the last write arrives.
+- A control client cannot promise that: `control_write_pending` discards output
+  still queued once the pane's fd closes, and a raw `tmux -C` client often
+  missed the last write, on every release measured from 3.3a to tmux master, when the
+  program exited right after writing it.
+- The copy grows with the output until the program is killed or disposed.
+- The file is written on the tmux server's machine, so `stream: true` refuses a
+  server that cannot write to this process's temporary directory. Its path has
+  its `#` and `%` doubled, since `pipe-pane` expands its command as a format and
+  with strftime.
+- A kill ends a stream in progress with `LibTmuxError`, and a pane removed from
+  outside ends it with the wait's `ObjectNotFoundError`, after what arrived.
+- The reader polls the copy every 25 ms, which behaves the same on every
+  platform and filesystem.
+
+A `Program` is made from its prototype rather than by `new`, so its constructor
+is not public API.
+
 ## Watching
 
 Each `watch()` or `connect()` owns a real attached tmux client until it closes.
@@ -292,6 +429,12 @@ order, and arriving out of order in two or three of every three runs. Fanning
 out buys no work — `pipeline` does the same twelve in thirteen. Both totals
 count the query that reads the result back, which is why neither is a multiple
 of twelve.
+
+An invocation whose last command blocks (`wait-for`, a popup, a prompt or a
+menu) takes no slot, whatever runs before that command: it holds a client for as
+long as the wait, and what releases it may need a slot. An invocation with a
+command after the wait counts. A program's run is one of the first kind, so it
+holds no slot for its life.
 
 Waiting for a slot spends the request's own deadline rather than extending it.
 A request that never gets one raises `TmuxTransportError` with

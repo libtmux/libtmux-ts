@@ -37,6 +37,8 @@ const BINDINGS: readonly string[] = Object.freeze([
   "otherPane",
   "command",
   "marker",
+  "file",
+  "line",
 ]);
 
 /**
@@ -105,6 +107,8 @@ declare const otherPane: PaneHandle;
 // cannot invent literals where the example named an argument.
 declare const command: string;
 declare const marker: string;
+declare const file: string;
+declare const line: string;
 `;
 
 /**

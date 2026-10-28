@@ -55,6 +55,7 @@ and CI coverage for it is highly limited.
 [Find sessions, windows, and panes](#find-sessions-windows-and-panes) ·
 [Change sessions, windows, and panes](#change-sessions-windows-and-panes) ·
 [Run several commands at once](#run-several-commands-at-once) ·
+[Run a program and read its output](#run-a-program-and-read-its-output) ·
 [Type into a pane and wait](#type-into-a-pane-and-wait) ·
 [Watch tmux change](#watch-tmux-change) ·
 [Choosing how work is arranged](#choosing-how-work-is-arranged) ·
@@ -168,6 +169,9 @@ server.
   - [`Server.batch`: plan, then run](#serverbatch-plan-then-run)
   - [`Server.pipeline`: raw arguments, one result each](#serverpipeline-raw-arguments-one-result-each)
   - [`Server.newSession`: build a workspace](#servernewsession-build-a-workspace)
+- [Run a program and read its output](#run-a-program-and-read-its-output)
+  - [`Server.run`: one call, nothing typed](#serverrun-one-call-nothing-typed)
+  - [`Server.spawn`: drive it, then wait](#serverspawn-drive-it-then-wait)
 - [Type into a pane and wait](#type-into-a-pane-and-wait)
   - [`Pane.sendKeys`: type, then read what it said](#panesendkeys-type-then-read-what-it-said)
   - [`Server.watch`: wait for a pane to print something](#serverwatch-wait-for-a-pane-to-print-something)
@@ -926,6 +930,55 @@ await logs.selectLayout("even-horizontal");
 shell.name; // "shell"
 ```
 
+## Run a program and read its output
+
+Use `run` when the result is all you need, and `spawn` when the program needs
+keys, a live stream of its output, or a lifetime of your choosing.
+
+### [`Server.run`][ref-server-run]: one call, nothing typed
+
+```ts
+const result = await server.run(["git", "--version"]);
+
+result.success; // true
+result.output.startsWith("git version"); // true
+```
+
+- The program runs in a detached session of its own, removed before the call
+  returns. Nothing is typed, so `output` holds no command line or echo, and
+  `argv` reaches the program unexpanded: `["echo", "$HOME"]` prints `$HOME`.
+- `output` is the terminal's rendering, scrollback included. `truncated` says
+  when the start scrolled past `historyLimit`.
+- `timeoutMs` ends the program and reports `timedOut` with what it printed so
+  far; `signal` ends it and rejects.
+- `{ from: pane }` runs it in a background window of that pane's session, in
+  the pane's directory and with the session's tmux environment. What the pane's
+  shell exported stays in that shell: [`Pane.sendKeys`][ref-pane-sendkeys] is
+  the way into it.
+- Needs tmux 3.8 or newer. [Details](docs/contracts.md#program-runs).
+
+### [`Server.spawn`][ref-server-spawn]: drive it, then wait
+
+This recipe is a literal excerpt of [`examples/program/program.ts`](../../examples/program/program.ts),
+which the integration suite runs against a real tmux server:
+
+<!-- runs: examples/program/program.ts -->
+
+```ts
+await using vim = await server.spawn(["vim", "-Nu", "NONE", "-i", "NONE", "-n", file]);
+await vim.pane.sendKeys(`ggO${line}`, { enter: false });
+await vim.pane.sendKeys("Escape", { enter: false });
+await vim.pane.sendKeys(":wq");
+const { exitCode } = await vim.wait({ timeoutMs: 10_000 });
+```
+
+- `spawn` returns a [`Program`][ref-program] once the program has started, so
+  keys sent at once reach it. Its pane is a real terminal.
+- `await using` ends the program and removes its session however the scope
+  leaves. A `wait` that gives up leaves the program running.
+- With `{ stream: true }`, [`program.stream()`][ref-program-stream] yields what
+  the program writes, as UTF-8 text, until it exits, the last write included.
+
 ## Type into a pane and wait
 
 ### [`Pane.sendKeys`][ref-pane-sendkeys]: type, then read what it said
@@ -1179,6 +1232,8 @@ bounded.tmuxBin;
   gets one raises [`TmuxTransportError`][ref-tmuxtransporterror] with `delivery`
   of `"not_started"`, the one status a mutation may retry blindly.
 - `signal` cancels the wait as it cancels the command.
+- An invocation that ends in a wait, such as `wait-for` or a running program's
+  start, takes no slot: it holds a client for as long as the wait.
   [More](docs/contracts.md#concurrency-and-engines).
 
 ### [`TmuxEngine`][ref-tmuxengine]: put tmux behind SSH, a container, or a daemon
@@ -1710,6 +1765,7 @@ sends anything, and the rest of the package keeps working there.
 
 | Feature                                                                          | Needs           | Below that                             |
 | -------------------------------------------------------------------------------- | --------------- | -------------------------------------- |
+| [`run`][ref-server-run], [`spawn`][ref-server-spawn]; MCP `run_program`          | 3.8             | refused before any session is made     |
 | `watch`, `connect`, `withConnection`; the MCP server's live streams              | 3.7             | refused before any client attaches     |
 | `deleteBuffer`, a buffer rename, MCP `paste_text`                                | 3.4             | refused, no buffer touched             |
 | [`runShell`][ref-server-runshell] returning the command's output                 | 3.5             | refused; `cmd("run-shell", …)` runs it |
@@ -1980,6 +2036,10 @@ MIT
 [ref-server-panes]: https://libtmux.org/en/ts/latest/reference/server-server-panes/
 [ref-server-pipeline]: https://libtmux.org/en/ts/latest/reference/server-server-pipeline/
 [ref-server-raiseifdead]: https://libtmux.org/en/ts/latest/reference/server-server-raiseifdead/
+[ref-server-run]: https://libtmux.org/en/ts/latest/reference/server-server-run/
+[ref-server-spawn]: https://libtmux.org/en/ts/latest/reference/server-server-spawn/
+[ref-program]: https://libtmux.org/en/ts/latest/reference/program-program/
+[ref-program-stream]: https://libtmux.org/en/ts/latest/reference/program-program-stream/
 [ref-server-runshell]: https://libtmux.org/en/ts/latest/reference/server-server-runshell/
 [ref-server-savebuffer]: https://libtmux.org/en/ts/latest/reference/server-server-savebuffer/
 [ref-server-sessions]: https://libtmux.org/en/ts/latest/reference/server-server-sessions/
