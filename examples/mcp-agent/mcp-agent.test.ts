@@ -86,7 +86,7 @@ describe("mcp-agent", () => {
             ]);
             expect(await waitForExit(client, paneId)).toMatchObject({
               exitStatus: 6,
-              outcome: "exited",
+              outcome: "completed",
             });
           },
           () => client.close(),

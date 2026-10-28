@@ -625,7 +625,7 @@ export function registerWait(mcp: ToolRegistrar, context: ToolContext): void {
         "It listens for tmux's own exit events, and reads the pane once a second only to " +
         "notice a kill, which fires none. A pane that closes on exit still reports its " +
         "status; a pane killed from outside during the wait has none and answers " +
-        "pane_gone, and a pane id that is already gone is not found. A pane at a " +
+        "gone, and a pane id that is already gone is not found. A pane at a " +
         "shell prompt exits only when the shell does: for a command typed into it, use " +
         "run_shell_command or wait_for_text. Requires tmux 3.8 or newer.",
       inputSchema: {
@@ -649,10 +649,10 @@ export function registerWait(mcp: ToolRegistrar, context: ToolContext): void {
           .nullable()
           .describe("The exit status; null when a signal ended it or it has not exited."),
         outcome: z
-          .enum(["exited", "timed_out", "pane_gone", "cancelled"])
+          .enum(["completed", "timed_out", "gone", "cancelled"])
           .describe(
-            "exited: the program ended, as exitStatus or signal says. timed_out: it still " +
-              "runs; call again to keep waiting. pane_gone: the pane was removed without an " +
+            "completed: the program ended, as exitStatus or signal says. timed_out: it still " +
+              "runs; call again to keep waiting. gone: the pane was removed without an " +
               "exit status. cancelled: the request was cancelled.",
           ),
         signal: z
@@ -667,7 +667,7 @@ export function registerWait(mcp: ToolRegistrar, context: ToolContext): void {
       if (isFailure(pane)) return pane;
       const effectiveTimeoutMs = effectiveWaitMs(context.policy, timeoutMs);
       const answer = (
-        outcome: "cancelled" | "exited" | "pane_gone" | "timed_out",
+        outcome: "cancelled" | "completed" | "gone" | "timed_out",
         exitStatus: number | null,
         signal: string | null,
         headline: string,
@@ -678,7 +678,7 @@ export function registerWait(mcp: ToolRegistrar, context: ToolContext): void {
           timeoutMs: effectiveTimeoutMs,
         });
         return answer(
-          "exited",
+          "completed",
           exit.exitCode,
           exit.signalCode,
           exit.signalCode === null
@@ -695,7 +695,7 @@ export function registerWait(mcp: ToolRegistrar, context: ToolContext): void {
           );
         }
         if (error instanceof ObjectNotFoundError) {
-          return answer("pane_gone", null, null, `${paneId} was removed without an exit status`);
+          return answer("gone", null, null, `${paneId} was removed without an exit status`);
         }
         if (error instanceof TmuxTransportError && error.kind === "cancelled") {
           return answer("cancelled", null, null, "request cancelled; the program still runs");

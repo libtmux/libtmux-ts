@@ -659,8 +659,9 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
     {
       description:
         "Run a program in a pane of its own and wait for it; returns its output and exit " +
-        "status. No shell parses argv and nothing is typed, so the output holds no command " +
-        "line or echo. The pane is removed before this returns unless keep is set. A program " +
+        "status. No shell parses argv and nothing is typed into its pane, so the output " +
+        "holds no command line or echo. The pane is removed before this returns unless keep " +
+        "is set. A program " +
         "still running at the timeout, capped by the server's wait ceiling, is ended: run " +
         "longer ones with start_program. Commands come from the tmux server's PATH; exit 127 " +
         "means not found. stdin is input when given, else the terminal. PAGER and GIT_PAGER " +

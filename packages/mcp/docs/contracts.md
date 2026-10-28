@@ -326,8 +326,9 @@ reaches the copy. An end tmux never read, which the library's end mark detects,
 sets `lostEnd`; the copy reaching its limit, while the program runs on, sets
 `outputCut`; either makes `outputComplete` false, as does a stop or the lifetime
 ending the program before its output was read to the end. `outcome` is decided
-by how the program ended before its status is read: `stopped` for a program
-`stop_program` or its lifetime ended, whose SIGTERM can also leave a status.
+by how the program ended before its status is read: `expired` for one its
+lifetime ended and `stopped` for one `stop_program` ended, whose SIGTERM can
+also leave a status.
 
 No later call owns cleanup:
 
@@ -358,7 +359,7 @@ and `pane-died`, the two exclusive exit events, before it reads the pane, so an
 exit is never missed and a pane already dead answers at once. A pane that
 closes takes its status with it, and the event's payload carries that status.
 `kill-pane` fires no event; the pane is read every second and a removed one
-answers `pane_gone`. It needs tmux 3.8 or newer.
+answers `gone`. It needs tmux 3.8 or newer.
 
 ## [`run_shell_command`][tool-run_shell_command] framing and checks
 

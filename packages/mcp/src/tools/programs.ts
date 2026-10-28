@@ -180,7 +180,8 @@ export function registerPrograms(mcp: ToolRegistrar, context: ToolContext): Star
         "reads its output as it is written and reports its exit; send_keys reaches its " +
         "paneId; stop_program ends it. This server ends it and removes its pane when " +
         "lifetimeMs runs out, even if no later call arrives, and tmux does if this server dies. " +
-        "No shell parses argv, and PAGER and GIT_PAGER are cat. Requires tmux 3.8 or newer.",
+        "No shell parses argv, and PAGER and GIT_PAGER are cat. It takes no input, keep, " +
+        "inheritShell or separateStderr: for those, use run_program. Requires tmux 3.8 or newer.",
       inputSchema: {
         argv: programArgv,
         fromPaneId: paneIdSchema
@@ -360,10 +361,11 @@ export function registerPrograms(mcp: ToolRegistrar, context: ToolContext): Star
           .boolean()
           .describe("True when tmux closed the pane before reading the end of the output."),
         outcome: z
-          .enum(["running", "completed", "stopped", "gone"])
+          .enum(["running", "completed", "expired", "stopped", "gone"])
           .describe(
             "running: call again with cursor. completed: it ended on its own, as exitStatus " +
-              "or signal says. stopped: stop_program or its lifetime ended it. gone: its " +
+              "or signal says. expired: its lifetime ended it; start it again with a longer " +
+              "lifetimeMs. stopped: stop_program ended it while this read waited. gone: its " +
               "pane was removed from outside, with no status.",
           ),
         outputComplete: z
@@ -414,10 +416,10 @@ export function registerPrograms(mcp: ToolRegistrar, context: ToolContext): Star
       // How it ended decides first: a stop's SIGTERM can also leave an exit status behind.
       const stopped = entry.endedBy === "stopped" || entry.endedBy === "lifetime";
       const exit = finished && !stopped ? entry.exit : undefined;
-      let outcome: "completed" | "gone" | "running" | "stopped" = "running";
+      let outcome: "completed" | "expired" | "gone" | "running" | "stopped" = "running";
       let headline = `running; cursor ${String(end)}`;
       if (finished && stopped) {
-        outcome = "stopped";
+        outcome = entry.endedBy === "lifetime" ? "expired" : "stopped";
         headline = entry.endedBy === "lifetime" ? "ended at its lifetime" : "stopped";
       } else if (exit !== undefined) {
         outcome = "completed";

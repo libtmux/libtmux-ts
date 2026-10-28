@@ -548,7 +548,8 @@ try {
 - The text is the byte stream with escape sequences removed, as
   `capture_since` gives it. `ended` turns true once the program ended and
   every byte was read, and `outcome` says how: `completed` with `exitStatus`
-  or `signal`, `stopped`, or `gone`. As in `run_program`, a status above 128
+  or `signal`, `expired` at its lifetime, `stopped` by `stop_program`, or
+  `gone`. As in `run_program`, a status above 128
   may be a signal's, and `signal` is set only when the signal ended the
   program's `sh` too.
 - `outputCut` turns true once the copy reaches its limit, while the program
@@ -627,7 +628,7 @@ wait_for_exit  paneId=%3  timeoutMs=20000
 - Use it for a pane you did not start, such as a person's build. For a program
   you run, `run_program` already reports the exit.
 - A pane that closes on exit still reports its status: tmux carries it in the
-  event. A pane killed from outside has none and answers `pane_gone`.
+  event. A pane killed from outside has none and answers `gone`.
 - `timed_out` means the program still runs; call again to keep waiting.
 - Needs tmux 3.8 or newer.
 

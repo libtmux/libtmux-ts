@@ -275,7 +275,7 @@ testProgram(
         expect(ended).toMatchObject({
           ended: true,
           lostEnd: false,
-          outcome: "stopped",
+          outcome: "expired",
           outputComplete: false,
         });
       });

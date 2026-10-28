@@ -325,7 +325,7 @@ testProgram(
         const exited = structured<{ exitStatus: number | null; outcome: string }>(
           await client.callTool({ arguments: { paneId: created.paneId }, name: "wait_for_exit" }),
         );
-        expect(exited).toMatchObject({ exitStatus: 5, outcome: "exited" });
+        expect(exited).toMatchObject({ exitStatus: 5, outcome: "completed" });
         const slow = { paneId: await started("slow", "sleep 30") };
         const timedOut = structured<{ outcome: string }>(
           await client.callTool({
@@ -340,7 +340,7 @@ testProgram(
         });
         await new Promise((resolve) => setTimeout(resolve, 300));
         await fixture.executeText(["kill-pane", "-t", slow.paneId]);
-        expect(structured<{ outcome: string }>(await waiting).outcome).toBe("pane_gone");
+        expect(structured<{ outcome: string }>(await waiting).outcome).toBe("gone");
       });
     });
   },
