@@ -553,7 +553,7 @@ signal_channel  channel=build-done
 ### [`select_layout`][tool-select_layout]: arrange the panes of a window
 
 `select_layout` accepts tmux's named layouts, unique abbreviations for the
-running daemon, and checksummed saved layouts.
+running daemon, and checksummed saved layouts. JSON layouts need tmux 3.8.
 
 ```text
 select_layout  windowId=@1  layout=tiled

@@ -62,7 +62,7 @@ describe("support.capabilities", () => {
     expect(hasCapability("buffer-rename", version("3.3a"))).toBe(false);
     expect(hasCapability("buffer-rename", version("3.4"))).toBe(true);
     expect(hasCapability("layout-json", version("3.7c"))).toBe(false);
-    expect(hasCapability("layout-json", version("3.8-rc2"))).toBe(true);
+    expect(hasCapability("layout-json", version("3.8"))).toBe(true);
     expect(workaroundApplies("break-pane-misnames-windows", version("3.7"))).toBe(true);
     expect(workaroundApplies("break-pane-misnames-windows", version("3.7a"))).toBe(false);
     expect(workaroundApplies("split-window-percent-size", version("3.4"))).toBe(true);
@@ -73,7 +73,7 @@ describe("support.capabilities", () => {
     for (const raw of ["3.3a", "3.4", "next-3.5"]) {
       expect(workaroundApplies("run-shell-output-in-copy-mode", version(raw))).toBe(true);
     }
-    for (const raw of ["3.5", "3.7", "3.8-rc2"]) {
+    for (const raw of ["3.5", "3.7", "3.8"]) {
       expect(workaroundApplies("run-shell-output-in-copy-mode", version(raw))).toBe(false);
     }
   });

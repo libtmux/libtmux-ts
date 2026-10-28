@@ -27,7 +27,8 @@ import type {
   CommandTransport,
   RawCommandResult,
 } from "../../src/_internal/transport/types.js";
-import { answerVersionProbe } from "./version_probe.js";
+import { flattenInvocation } from "../../src/_internal/transport/invocation.js";
+import { answerVersionProbe, probeMarker } from "./version_probe.js";
 import { singleCommandTransport } from "./transport_double.js";
 import type { ListCommand } from "../../src/_internal/codec/format_types.js";
 import { Pane } from "../../src/pane.js";
@@ -68,16 +69,23 @@ export interface SessionProvenanceHarness {
   readonly values: readonly Session[];
 }
 
-function resultFor(request: CommandRequest): RawCommandResult {
-  return answerVersionProbe(request, "3.7b");
+function resultFor(request: CommandRequest, version: string): RawCommandResult {
+  if (probeMarker(request) !== undefined) return answerVersionProbe(request, version);
+  return {
+    cmd: [request.executable, ...flattenInvocation(request)],
+    exitCode: 0,
+    signal: null,
+    stderr: new Uint8Array(),
+    stdout: new Uint8Array(),
+  };
 }
 
-function recordingTransport(): RecordingTransport {
+function recordingTransport(version: string): RecordingTransport {
   const requests: CommandRequest[] = [];
   return Object.assign(
     singleCommandTransport(async (request) => {
       requests.push(request);
-      return resultFor(request);
+      return resultFor(request, version);
     }),
     {
       requests,
@@ -85,12 +93,12 @@ function recordingTransport(): RecordingTransport {
   );
 }
 
-function fixtureRuntime(): {
+function fixtureRuntime(version = "3.7b"): {
   readonly runtime: RuntimeContext;
   readonly transport: RecordingTransport;
 } {
   runtimeOrdinal += 1;
-  const transport = recordingTransport();
+  const transport = recordingTransport(version);
   const runtime = createRuntimeContext({
     connection: new TmuxConnection({ executable: "tmux", socketName: "selection-fixture" }),
     connectionAlias: `selection-fixture-${String(runtimeOrdinal)}` as ConnectionAlias,
@@ -420,8 +428,10 @@ export async function createRichProjectedHarness(): Promise<RichProjectedHarness
   };
 }
 
-export async function createWindowAssociationHarness(): Promise<ProjectedHarness<Window>> {
-  const { runtime, transport } = fixtureRuntime();
+export async function createWindowAssociationHarness(
+  version = "3.7b",
+): Promise<ProjectedHarness<Window>> {
+  const { runtime, transport } = fixtureRuntime(version);
   const graph = await graphFor(runtime, [
     source("sessions-association", "list-sessions", [
       completeFormatRow({ session_id: "$1", session_name: "one" }),
