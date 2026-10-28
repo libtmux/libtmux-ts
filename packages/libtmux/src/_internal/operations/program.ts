@@ -25,7 +25,7 @@ export const PLACEHOLDER: readonly ["true", "libtmux-program-placeholder"] = [
 ];
 export const PLACEHOLDER_COMMAND: string = PLACEHOLDER.join(" ");
 /** A killed pane fires no event, so a wait also reads the pane this often. */
-const BACKSTOP_MS = 1000;
+export const BACKSTOP_MS = 1000;
 /**
  * How often a wait reads the pane after the watcher has settled without an exit:
  * during a kill's grace period, or after the waiter's tmux client ended.
@@ -34,9 +34,18 @@ const SETTLED_POLL_MS = 50;
 /** How long a killed program gets between SIGTERM and SIGKILL. */
 const KILL_GRACE_MS = 2000;
 /** How long a stream waits, after the exit, for the copy to finish. */
-const DRAIN_MS = 5000;
+const COPY_DRAIN_MS = 5000;
+/** How long a cancelled waiter's channel is given to deliver the wake its list may still send. */
+const CHANNEL_DRAIN_MS = 1000;
 const STREAM_POLL_MS = 25;
 export const MAX_TIMER_MS: number = 2 ** 31 - 1;
+
+/** Consume the wake a list may still leave on `channel` after its waiter gave up. */
+export function drainChannel(runtime: RuntimeContext, channel: string): void {
+  void runCommand(runtime, ["wait-for", channel], { timeoutMs: CHANNEL_DRAIN_MS }).catch(
+    () => undefined,
+  );
+}
 
 /** The run's private directory, holding its input and its stream copy. */
 export interface RunFiles {
@@ -460,7 +469,7 @@ async function* readStream(
     let drainUntil = Infinity;
     for (;;) {
       // The copy is complete once the pane is dead and the `cat` writing it has
-      // exited; a copy that never finishes is given up on after DRAIN_MS.
+      // exited; a copy that never finishes is given up on after COPY_DRAIN_MS.
       // eslint-disable-next-line no-await-in-loop -- decided before the read that may be the last.
       const complete = ended && ((await exists(files.done)) || performance.now() >= drainUntil);
       let read: number;
@@ -491,8 +500,8 @@ async function* readStream(
         throw new LibTmuxError("the program was killed while its output streamed");
       }
       if (complete) break;
-      if (ended && drainUntil === Infinity) drainUntil = performance.now() + DRAIN_MS;
-      // A plain timer: a race with the long-lived wait adds a reaction to it every poll.
+      if (ended && drainUntil === Infinity) drainUntil = performance.now() + COPY_DRAIN_MS;
+      // Not raced with the exit wait, which would gain a reaction every poll.
       // eslint-disable-next-line no-await-in-loop -- wait for more output or the exit.
       await delay(ended ? 5 : STREAM_POLL_MS);
     }
