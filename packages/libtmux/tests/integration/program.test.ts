@@ -422,6 +422,27 @@ describe("program runs", () => {
             reason: "not-executable",
           });
         }
+        // On PATH, an unexecutable file is 126 as exec says, and a script whose interpreter
+        // is missing gets past the check to exec's own 127.
+        const bin = join(directory, "bin");
+        await mkdir(bin);
+        await writeFile(join(bin, "ltx-unexecutable"), "echo never\n", { mode: 0o644 });
+        await writeFile(join(bin, "ltx-no-interpreter"), "#!/ltx-no-such-interpreter\n", {
+          mode: 0o755,
+        });
+        const path = { PATH: `${bin}:${process.env.PATH ?? "/usr/bin:/bin"}` };
+        // tmux gives a pane its client's PATH over one passed with -e; the wrapper sets this one.
+        expect((await server.run(["sh", "-c", 'echo "$PATH"'], { environment: path })).output).toBe(
+          path.PATH,
+        );
+        expect(
+          await server
+            .run(["ltx-unexecutable"], { environment: path })
+            .catch((error: unknown) => error),
+        ).toMatchObject({ exitCode: 126, reason: "not-executable" });
+        expect((await server.run(["ltx-no-interpreter"], { environment: path })).exitCode).toBe(
+          127,
+        );
         // A program's own 127 is its status, and a builtin with a binary runs the binary.
         expect((await server.run(["sh", "-c", "exit 127"])).exitCode).toBe(127);
         expect((await server.run(["true"])).success).toBe(true);

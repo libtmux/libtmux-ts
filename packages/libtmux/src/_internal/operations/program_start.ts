@@ -53,15 +53,19 @@ import { markSequences } from "./program_stream.js";
 
 /**
  * Finds `$0` as `exec` would, and names why it cannot run. `exec` searches
- * `PATH` past builtins, which `command -v` reports instead, so this walks it.
+ * `PATH` past builtins, which `command -v` reports instead, so this walks it,
+ * and a file it finds but cannot execute is 126 unless a later one can run.
+ * What `exec` meets after that, such as a script's missing interpreter, it
+ * reports itself as a status.
  */
 const FIND =
   '[ -n "$ltx_e" ] || case $0 in ' +
   '*/*) if [ ! -e "$0" ]; then ltx_e=127 ltx_r=not-found; ' +
   'elif [ -d "$0" ] || [ ! -x "$0" ]; then ltx_e=126 ltx_r=not-executable; fi ;; ' +
   "*) ltx_e=127 ltx_r=not-found; ltx_i=$IFS; IFS=:; set -f; " +
-  'for ltx_d in $PATH; do if [ -f "${ltx_d:-.}/$0" ] && [ -x "${ltx_d:-.}/$0" ]; ' +
-  "then ltx_e= ltx_r=; break; fi; done; set +f; IFS=$ltx_i ;; esac; " +
+  'for ltx_d in $PATH; do if [ -f "${ltx_d:-.}/$0" ]; then if [ -x "${ltx_d:-.}/$0" ]; ' +
+  "then ltx_e= ltx_r=; break; fi; ltx_e=126 ltx_r=not-executable; fi; done; " +
+  "set +f; IFS=$ltx_i ;; esac; " +
   "case $ltx_r in not-found) printf '%s: not found\\n' \"$0\" >&3 ;; " +
   "not-executable) printf '%s: not executable\\n' \"$0\" >&3 ;; esac; ";
 
@@ -84,6 +88,8 @@ export const MARK = "ltx_m=$1; ltx_e=; ltx_r=; shift; ";
 // A directory it cannot enter still ends through the mark and the linger.
 const ENTER = 'cd -- "$1" || { ltx_e=126 ltx_r=start-directory; }; shift; ';
 const READ = 'exec <"$1"; shift; ';
+// tmux gives a pane its client's PATH over the one `-e` passed, so a PATH asked for is set here.
+const SETPATH = "PATH=$1; export PATH; shift; ";
 const ERR = 'exec 2>"$1"; shift; ';
 /** How long setup waits for tmux to start the program. */
 const SETUP_MS = 10_000;
@@ -305,7 +311,9 @@ function wrapped(
 ): string[] {
   const [program = "", ...rest] = argv;
   const steps: [string, string][] = [[MARK, mark]];
-  // First, so a start directory the sh cannot enter says so there too.
+  const path = spawn.environment?.PATH;
+  if (path !== undefined) steps.push([SETPATH, path]);
+  // Before the directory, so a start directory the sh cannot enter says so there too.
   if (stderr !== undefined) steps.push([ERR, stderr]);
   if (spawn.startDirectory !== undefined) steps.push([ENTER, spawn.startDirectory]);
   if (input !== undefined) steps.push([READ, input]);

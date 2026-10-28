@@ -973,7 +973,8 @@ result.output.startsWith("git version"); // true
   executable, or `startDirectory` could not be entered, rejects with
   [`ProgramStartError`][ref-programstarterror]. Its `reason` says which, and
   its `exitCode` is the 127 or 126 a shell would report; a program's own exit
-  127 is still its `exitCode`.
+  127 is still its `exitCode`, and so is a script's whose `#!` interpreter is
+  missing, since `exec` meets that past the check.
 - `timeoutMs` ends the program and reports `timedOut` with what it printed so
   far; `signal` ends it and rejects.
 - `{ from: pane }` runs it in a background window of that pane's session, in

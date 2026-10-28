@@ -273,12 +273,21 @@ What a run does not do:
   only when a signal ended the `sh` itself.
 - A start directory is entered by that `sh`, not by tmux's `-c`, which falls
   back to `$HOME` for one it cannot enter, and its `#` is never expanded.
+- The program's `PATH` is this process's: tmux gives a pane the `PATH` of the
+  unattached client that asked for it, over the session's and over one `-e`
+  passed ([`spawn_pane`](https://github.com/tmux/tmux/blob/3.8/spawn.c#L413-L424)).
+  A `PATH` in `environment` is set by the wrapper instead, before it finds
+  `argv[0]`.
 - Before `exec`, the `sh` finds `argv[0]` as `exec` would: a path is tested as
   an executable file, and a name is looked for in each `PATH` directory, past
   builtins, which `command -v` would report. When that fails, or the start
   directory cannot be entered, it prints a complaint, skips the program, and
   writes the mark with `:` and the reason after it, through the linger. A wait
-  then rejects with `ProgramStartError`, and a stream ends with it.
+  then rejects with `ProgramStartError`, and a stream ends with it. A file
+  found on `PATH` that cannot be executed is 126, as `exec` reports it, unless a
+  later directory holds one that can. What `exec` meets past the file itself,
+  such as a script whose `#!` interpreter is missing, comes back as its exit
+  status, 127 for that one.
 
 ### The end race
 

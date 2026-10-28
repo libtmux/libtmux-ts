@@ -505,8 +505,9 @@ export type ProgramPlacement = "session" | "split" | "window";
  * Where a program started by {@link Server.spawn} runs, and what it gets.
  *
  * The program gets a pane of its own and a real terminal. It runs on the
- * machine the tmux server is on, with the tmux server's environment and `PATH`
- * rather than the caller's. stderr shares the screen with stdout, and without
+ * machine the tmux server is on, with the tmux server's environment, except
+ * `PATH`: tmux gives a pane the `PATH` of the client that asked for it, which
+ * is this process's, or {@link ServerOptions.environment}'s when that is set. stderr shares the screen with stdout, and without
  * `input` the terminal is its stdin, so a program that pages or prompts
  * (`git log`, `sudo`) waits for keys as it would in a terminal.
  */
@@ -555,7 +556,8 @@ export interface SpawnOptions {
   /**
    * Variables added to the program's environment. They reach tmux as command
    * arguments, which `ps` on this machine shows while the command runs; pass a
-   * secret through `input` instead.
+   * secret through `input` instead. tmux replaces a `PATH` passed that way with
+   * its client's, so the wrapper sets this one itself before finding `argv[0]`.
    */
   readonly environment?: Readonly<Record<string, string>>;
   /** Terminal width in columns, for `"session"`. Defaults to tmux's `default-size`. */
