@@ -274,9 +274,11 @@ What a run does not do:
   ([3.8](https://github.com/tmux/tmux/blob/3.8/window.c#L501),
   [master](https://github.com/tmux/tmux/blob/523ac69601e1ea51a8ba718d32df6a00e4d0f6d4/window.c#L504)).
 
-- Its own signals are caught, not ignored, so the program keeps the default
-  dispositions. The run exits with the status the `sh` saw, as `$?` reports
-  it: POSIX `sh` cannot tell a program's `exit 130` from a SIGINT death, so the
+- The `sh` catches INT, QUIT and TERM, not ignoring them, so the program keeps
+  the default dispositions and the `sh` outlives it to report. It leaves HUP
+  alone: a pane closed from outside hangs up the `sh`, and the kernel then hangs
+  up the program, as it would a shell's. The run exits with the status the `sh`
+  saw, as `$?` reports it: POSIX `sh` cannot tell a program's `exit 130` from a SIGINT death, so the
   library does not guess. `signalCode` is set only when a signal ended the
   `sh` itself.
 - A start directory is entered by that `sh`, not by tmux's `-c`, which falls

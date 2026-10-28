@@ -848,6 +848,32 @@ setInterval(() => undefined, 1000);`,
   );
 
   testProgram(
+    "a pane killed from outside hangs up its program, as a shell's would",
+    async () => {
+      await withServer(async (server) => {
+        const program = await server.spawn(["sleep", "300"], { orphanAfterMs: null });
+        const sh = await panePid(server, program.pane.id);
+        const child = await eventually(
+          async () =>
+            Number(spawnSync("ps", ["-o", "pid=", "--ppid", String(sh)]).stdout.toString()),
+          (pid) => pid > 0,
+          5000,
+        );
+        await server.cmd("kill-session", ["-t", `=${program.sessionName}`]);
+        expect(
+          await eventually(
+            async () => running(child),
+            (alive) => !alive,
+            5000,
+          ),
+        ).toBe(false);
+        expect(running(sh)).toBe(false);
+      });
+    },
+    40_000,
+  );
+
+  testProgram(
     "a pane killed from outside lets its caller exit, by a wait or a renewal",
     async () => {
       await withServer(async (_server, _directory, fixture) => {

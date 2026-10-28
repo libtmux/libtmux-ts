@@ -55,7 +55,7 @@ import { markSequence } from "./program_stream.js";
  * with its status. Only a pane whose path is the mark was read to the end.
  */
 export const RUN: string =
-  'trap : HUP INT QUIT TERM; exec 3>&2 2>/dev/null; (exec "$0" "$@" 2>&3 3>&-); s=$?; ' +
+  'trap : INT QUIT TERM; exec 3>&2 2>/dev/null; (exec "$0" "$@" 2>&3 3>&-); s=$?; ' +
   "printf '\\033\\\\\\033]7;%s\\007' \"$m\"; " +
   'sleep 0.05 2>/dev/null || sleep 1; exit "$s"';
 /**
