@@ -67,7 +67,22 @@ if (blocks.length === 0) throw new Error("no ```ts blocks found");
  * library's README cannot import something only a sibling depends on, because
  * from `packages/libtmux` it does not resolve.
  */
-function programFor(found: readonly Block[]): string {
+/**
+ * Names a README's excerpts may use besides the shared ones, for the README
+ * whose examples take them as parameters. Kept per README because a client
+ * type resolves only where its package is a dependency.
+ */
+const PARAMETERS: Readonly<Record<string, readonly string[]>> = {
+  "packages/mcp/README.md": [
+    'import type { Client as ClientHandle } from "@modelcontextprotocol/sdk/client/index.js";',
+    "declare const client: ClientHandle;",
+    "declare const argv: readonly string[];",
+    // The example's own helper: a tool result's structured half.
+    "declare function callTool<T>(client: ClientHandle, name: string, args: Record<string, unknown>): Promise<T>;",
+  ],
+};
+
+function programFor(found: readonly Block[], file: string): string {
   // Imports hoist: a block is wrapped in a function, and an import cannot be.
   // Merged by module rather than deduplicated by line, because two blocks may
   // legitimately name the same symbol alongside different neighbours, and
@@ -120,6 +135,7 @@ function programFor(found: readonly Block[]): string {
     // example receives its server as a parameter, and a README block that had to
     // construct one could not be drawn from that file line for line.
     "declare const server: ServerHandle;",
+    ...(PARAMETERS[file] ?? []),
     "export {};",
     "",
     ...bodies,
@@ -176,7 +192,7 @@ for (const { blocks: found, file } of perReadme) {
     const checkPath = join(directory, "check.ts");
     const configPath = join(directory, "tsconfig.json");
     // eslint-disable-next-line no-await-in-loop -- as above.
-    await writeFile(checkPath, programFor(found));
+    await writeFile(checkPath, programFor(found, file));
     // eslint-disable-next-line no-await-in-loop -- as above.
     await writeFile(
       configPath,

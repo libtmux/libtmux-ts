@@ -137,3 +137,57 @@ export async function buildWorkspace(
   }
   return paneIds;
 }
+
+export interface ProgramRun {
+  readonly exitStatus: number | null;
+  readonly text: string;
+}
+
+/**
+ * Follow a program that outlives one call, then stop it.
+ *
+ * `start_program` returns at once. Each `read_program` waits for what is new,
+ * hands back a cursor to carry on from, and reports the exit once every byte
+ * has been read. A build longer than the server's wait ceiling is read whole
+ * this way. The server ends the program when its lifetime runs out even if
+ * nothing stops it.
+ */
+export async function followProgram(client: Client, argv: readonly string[]): Promise<ProgramRun> {
+  interface Read {
+    readonly cursor: number;
+    readonly exitStatus: number | null;
+    readonly exited: boolean;
+    readonly text: string;
+  }
+  const { programId } = await callTool<{ programId: string }>(client, "start_program", { argv });
+  let read = await callTool<Read>(client, "read_program", { programId });
+  let text = read.text;
+  while (!read.exited) {
+    // eslint-disable-next-line no-await-in-loop -- each read carries on from the last cursor.
+    read = await callTool<Read>(client, "read_program", { cursor: read.cursor, programId });
+    text += read.text;
+  }
+  await callTool(client, "stop_program", { programId });
+  return { exitStatus: read.exitStatus, text };
+}
+
+/**
+ * Run a program with a stdin, and get only what it printed.
+ *
+ * Nothing is typed, so there is no echo to strip, and `input` passes through no
+ * shell quoting.
+ */
+export async function runWithInput(
+  client: Client,
+  argv: readonly string[],
+  input: string,
+): Promise<CommandResult> {
+  return callTool<CommandResult>(client, "run_program", { argv, input });
+}
+
+/**
+ * Wait for a program somebody else started to exit, and learn how.
+ */
+export async function waitForExit(client: Client, paneId: string): Promise<CommandResult> {
+  return callTool<CommandResult>(client, "wait_for_exit", { paneId });
+}
