@@ -771,9 +771,24 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
             "The bounded tail of what the program printed, as its terminal shows it; stderr " +
               "and stdout share it.",
           ),
+        lostEnd: z
+          .boolean()
+          .describe(
+            "True when the end may be missing: tmux closed the pane before reading it. " +
+              "Rerunning reads it again.",
+          ),
+        lostStart: z
+          .boolean()
+          .describe(
+            "True when the start scrolled past the scrollback limit; pipe a long output " +
+              "into a file, or read it with start_program.",
+          ),
         outputComplete: z
           .boolean()
-          .describe("False when scrollback or result limits omitted any of the output."),
+          .describe(
+            "False when lostStart or lostEnd is true, or maxLines or the result limit cut " +
+              "the output.",
+          ),
         returnedBytes: z.number().int().describe("UTF-8 output bytes returned."),
         signal: z
           .string()
@@ -889,6 +904,8 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
           omittedBytes: bounded.omittedBytes,
           outcome: result.timedOut ? "timed_out" : "completed",
           output: bounded.text,
+          lostEnd: result.lostEnd,
+          lostStart: result.lostStart,
           outputComplete,
           returnedBytes: bounded.returnedBytes,
           signal: result.signalCode,

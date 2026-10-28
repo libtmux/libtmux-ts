@@ -30,7 +30,7 @@ const MAX_LIFETIME_MS = 3_600_000;
 const MAX_LIVE_PROGRAMS = 16;
 /** Ended programs whose text stays readable; the oldest is forgotten first. */
 const MAX_ENDED_PROGRAMS = 16;
-/** How soon tmux ends a program after this server stops renewing its lease: a renewal every 10 s. */
+/** How soon tmux ends a program after this server stops renewing its lease. */
 const ORPHAN_AFTER_MS = 30_000;
 /** Each program's copy and readable text stop here; the program runs on. */
 const MAX_COPY_BYTES = 4 * 1024 * 1024;
@@ -171,7 +171,7 @@ export function registerPrograms(mcp: ToolRegistrar, context: ToolContext): Star
         "that needs keys between reads; run_program is the one-call form. read_program " +
         "reads its output as it is written and reports its exit; send_keys reaches its " +
         "paneId; stop_program ends it. This server ends it and removes its pane when " +
-        "timeoutMs runs out whatever else is called, and tmux does if this server dies. " +
+        "timeoutMs runs out, regardless of other calls, and tmux does if this server dies. " +
         "No shell parses argv and nothing is typed. Requires tmux 3.8 or newer.",
       inputSchema: {
         argv: programArgv,
@@ -256,6 +256,11 @@ export function registerPrograms(mcp: ToolRegistrar, context: ToolContext): Star
         } finally {
           inFlight.delete(spawning);
         }
+        // A close that began while this start resolved its pane has already swept.
+        if (closing) {
+          await program.kill().catch(() => undefined);
+          return fail({ reason: "This server is closing; the program was ended." });
+        }
       } catch (error) {
         if (error instanceof ServerNotLocalError) {
           return fail({
@@ -299,11 +304,11 @@ export function registerPrograms(mcp: ToolRegistrar, context: ToolContext): Star
     {
       description:
         "Read what a started program printed after cursor, waiting up to timeoutMs for new " +
-        "output or its exit, and report whether it has exited and how. Omit cursor on the " +
+        "output or its end, and report whether it has ended and how. Omit cursor on the " +
         "first read and pass back the one returned; a read that times out returns no text, " +
         "and the next read with the same cursor carries on. The text is the byte stream " +
         "with escape sequences removed, in write order; capture_pane on its paneId shows " +
-        "the screen. Output stays readable after the exit until stop_program or the lifetime.",
+        "the screen while it runs. Output stays readable after the end until stop_program.",
       inputSchema: {
         cursor: z
           .number()
@@ -326,23 +331,24 @@ export function registerPrograms(mcp: ToolRegistrar, context: ToolContext): Star
           .number()
           .int()
           .nullable()
-          .describe("The exit status once it exited on its own; otherwise null."),
-        exited: z
+          .describe("The exit status once it completed on its own; otherwise null."),
+        ended: z
           .boolean()
           .describe("Whether it has ended and every byte it wrote has been returned."),
-        outcome: z
-          .enum(["running", "exited", "stopped", "gone"])
-          .describe(
-            "running: call again with cursor. exited: it ended, as exitStatus or signal " +
-              "says. stopped: stop_program or its lifetime ended it. gone: its pane was " +
-              "removed from outside, with no status.",
-          ),
-        outputComplete: z
+        lostEnd: z
           .boolean()
+          .describe("True when tmux closed the pane before reading the end of the output."),
+        outcome: z
+          .enum(["running", "completed", "stopped", "gone"])
           .describe(
-            "False when text lacks part of the output: the copy stopped at its limit, or " +
-              "tmux closed the pane before reading the end. The headline says which.",
+            "running: call again with cursor. completed: it ended on its own, as exitStatus " +
+              "or signal says. stopped: stop_program or its lifetime ended it. gone: its " +
+              "pane was removed from outside, with no status.",
           ),
+        outputComplete: z.boolean().describe("False when outputCut or lostEnd is true."),
+        outputCut: z
+          .boolean()
+          .describe("True once the copy stopped at its limit; later output is not kept."),
         signal: z
           .string()
           .nullable()
@@ -355,7 +361,7 @@ export function registerPrograms(mcp: ToolRegistrar, context: ToolContext): Star
       const entry = entries.get(programId);
       if (entry === undefined) {
         return fail({
-          hint: "start_program starts one; a stop or the end of its lifetime forgets the id.",
+          hint: "start_program starts one; stop_program forgets its id, as does trimming old ones.",
           reason: `No started program ${programId}.`,
         });
       }
@@ -372,18 +378,20 @@ export function registerPrograms(mcp: ToolRegistrar, context: ToolContext): Star
       const { end, text } = readable(entry.chunks, entry.size, Math.min(after, entry.size));
       // Ended only once every byte has been handed over.
       const finished = entry.endedBy !== undefined && end === entry.size;
-      const exit = finished ? entry.exit : undefined;
-      let outcome: "exited" | "gone" | "running" | "stopped" = "running";
+      // How it ended decides first: a stop's SIGTERM can also leave an exit status behind.
+      const stopped = entry.endedBy === "stopped" || entry.endedBy === "lifetime";
+      const exit = finished && !stopped ? entry.exit : undefined;
+      let outcome: "completed" | "gone" | "running" | "stopped" = "running";
       let headline = `running; cursor ${String(end)}`;
-      if (exit !== undefined) {
-        outcome = "exited";
+      if (finished && stopped) {
+        outcome = "stopped";
+        headline = entry.endedBy === "lifetime" ? "ended at its lifetime" : "stopped";
+      } else if (exit !== undefined) {
+        outcome = "completed";
         headline =
           exit.signalCode === null
             ? `exit ${String(exit.exitCode)}`
             : `ended by ${exit.signalCode}`;
-      } else if (finished && (entry.endedBy === "stopped" || entry.endedBy === "lifetime")) {
-        outcome = "stopped";
-        headline = entry.endedBy === "lifetime" ? "ended at its lifetime" : "stopped";
       } else if (finished) {
         outcome = "gone";
         headline = "its pane is gone, with no exit status";
@@ -395,10 +403,12 @@ export function registerPrograms(mcp: ToolRegistrar, context: ToolContext): Star
         {
           cursor: end,
           effectiveTimeoutMs,
+          ended: finished,
           exitStatus: exit?.exitCode ?? null,
-          exited: finished,
+          lostEnd: entry.missing === "lost",
           outcome,
           outputComplete: entry.missing === undefined,
+          outputCut: entry.missing === "cut",
           signal: exit?.signalCode ?? null,
           text,
         },
@@ -425,7 +435,7 @@ export function registerPrograms(mcp: ToolRegistrar, context: ToolContext): Star
       const entry = entries.get(programId);
       if (entry === undefined) {
         return fail({
-          hint: "Its lifetime may have ended, which removed it already.",
+          hint: "A stop forgets the id; read_program reads one its lifetime ended.",
           reason: `No started program ${programId}.`,
         });
       }

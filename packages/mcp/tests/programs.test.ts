@@ -19,7 +19,7 @@ interface Read {
   readonly cursor: number;
   readonly outcome: string;
   readonly outputComplete: boolean;
-  readonly exited: boolean;
+  readonly ended: boolean;
   readonly exitStatus: number | null;
   readonly signal: string | null;
   readonly text: string;
@@ -61,7 +61,7 @@ async function readAll(
     );
     reads.push(read);
     cursor = read.cursor;
-    if (read.exited) return reads;
+    if (read.ended) return reads;
   }
   throw new Error("program never reported its exit");
 }
@@ -97,14 +97,14 @@ testProgram(
         const reads = await readAll(call, started.programId, 5000);
         const firstLine = reads.findIndex((read) => read.text.includes("line1"));
         expect(firstLine).toBeGreaterThanOrEqual(0);
-        expect(reads[firstLine]?.exited).toBe(false);
+        expect(reads[firstLine]?.ended).toBe(false);
         const text = reads.map((read) => read.text).join("");
         for (const n of [1, 2, 3, 4, 5]) expect(text).toContain(`line${String(n)}`);
         const last = reads.at(-1);
         expect(last).toMatchObject({
           exitStatus: 0,
-          exited: true,
-          outcome: "exited",
+          ended: true,
+          outcome: "completed",
           signal: null,
         });
         // Output stays readable after the exit.
@@ -141,7 +141,7 @@ testProgram(
         });
         await new Promise((resolve) => setTimeout(resolve, 300));
         await call({ arguments: { programId: sleeper.programId }, name: "stop_program" });
-        expect(structured<Read>(await reading)).toMatchObject({ exited: true, outcome: "stopped" });
+        expect(structured<Read>(await reading)).toMatchObject({ ended: true, outcome: "stopped" });
 
         // Past the 4 MiB copy limit, the text is cut and the exit still arrives.
         const flood = structured<Started>(
@@ -149,7 +149,7 @@ testProgram(
         );
         // 4 MiB arrives a megabyte per read at most, and a read may come before it all has.
         const reads = await readAll(call, flood.programId, 10_000, 1000);
-        expect(reads.at(-1)).toMatchObject({ exitStatus: 0, exited: true, outputComplete: false });
+        expect(reads.at(-1)).toMatchObject({ exitStatus: 0, ended: true, outputComplete: false });
         await call({ arguments: { programId: flood.programId }, name: "stop_program" });
       });
     });
@@ -169,7 +169,7 @@ testProgram(
           await call({ arguments: { argv }, name: "start_program" }),
         );
         const reads = await readAll(call, started.programId, 10_000);
-        expect(reads.at(-1)).toMatchObject({ exited: true, outputComplete: false });
+        expect(reads.at(-1)).toMatchObject({ ended: true, outputComplete: false });
         await call({ arguments: { programId: started.programId }, name: "stop_program" });
         const ran = await call({ arguments: { argv }, name: "run_program" });
         expect(structured<{ outputComplete: boolean }>(ran).outputComplete).toBe(false);
@@ -237,7 +237,7 @@ testProgram(
         const ended = structured<Read>(
           await call({ arguments: { programId: short.programId }, name: "read_program" }),
         );
-        expect(ended).toMatchObject({ exited: true, outcome: "stopped" });
+        expect(ended).toMatchObject({ ended: true, outcome: "stopped" });
       });
     });
   },
@@ -268,7 +268,7 @@ testProgram(
           // The ceiling forced more than one wait for the silent 5 s.
           expect(reads.length).toBeGreaterThanOrEqual(3);
           expect(reads.map((read) => read.text).join("")).toContain("end");
-          expect(reads.at(-1)).toMatchObject({ exitStatus: 4, exited: true });
+          expect(reads.at(-1)).toMatchObject({ exitStatus: 4, ended: true });
           await call({ arguments: { programId: started.programId }, name: "stop_program" });
           expect(await programSessions(call)).toEqual([]);
         },
