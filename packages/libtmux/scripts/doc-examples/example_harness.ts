@@ -41,6 +41,7 @@ const BINDINGS: readonly string[] = Object.freeze([
   "line",
   "input",
   "argv",
+  "signal",
 ]);
 
 /**
@@ -113,6 +114,7 @@ declare const file: string;
 declare const line: string;
 declare const input: string;
 declare const argv: readonly string[];
+declare const signal: AbortSignal;
 `;
 
 /**

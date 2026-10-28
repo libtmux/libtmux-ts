@@ -12,6 +12,7 @@ import {
   listFiles,
   prependLine,
   runBeside,
+  runUnlessCancelled,
   sortLines,
   startService,
 } from "./program.js";
@@ -115,6 +116,27 @@ describe("program", () => {
       const beside = (await server.panes()).toArray().find((each) => each.id !== pane.id);
       expect((await beside?.capture())?.filter((line) => line !== "")).toEqual(["built"]);
       expect((await server.cmd("display-message", ["-p", "#{pane_id}"]))[0]).toBe(pane.id);
+    });
+  }, 60_000);
+
+  test("cancels a run and says how far it got", async () => {
+    await withServer(async (fixture) => {
+      const server = new Server({
+        environment: fixture.controllerEnvironment,
+        socketPath: fixture.socketPath,
+        tmuxBin: fixture.tmuxExecutable,
+      });
+      if (!(await supported(server))) return;
+      expect(await runUnlessCancelled(server, ["sleep", "30"], AbortSignal.abort())).toEqual({
+        cancelled: "not_started",
+      });
+      const sessionsBefore = (await server.sessions()).length;
+      expect(await runUnlessCancelled(server, ["sleep", "30"], AbortSignal.timeout(2000))).toEqual({
+        cancelled: "written",
+      });
+      expect((await server.sessions()).length).toBe(sessionsBefore);
+      const finished = await runUnlessCancelled(server, ["true"], new AbortController().signal);
+      expect(finished).toMatchObject({ success: true });
     });
   }, 60_000);
 

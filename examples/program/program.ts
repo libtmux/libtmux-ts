@@ -1,10 +1,10 @@
-import type { Pane, Program, Server } from "libtmux";
+import { TmuxTransportError } from "libtmux";
+import type { DeliveryStatus, Pane, Program, ProgramResult, Server } from "libtmux";
 
 /**
  * Run a program and keep only what it printed.
  *
- * Nothing is typed into a shell, so there is no command line or echo to strip
- * from the output, and `argv` reaches the program unexpanded. `timedOut` is a
+ * `argv` reaches the program unexpanded. `timedOut` is a
  * result rather than an error: the program is ended and what it printed so far
  * still comes back.
  */
@@ -62,6 +62,25 @@ export async function sortLines(server: Server, input: string): Promise<readonly
   const result = await server.run(["sort"], { input });
   if (!result.success) throw new Error(`sort exited ${String(result.exitCode)}: ${result.output}`);
   return result.output === "" ? [] : result.output.split("\n");
+}
+
+/**
+ * Run a program unless `signal` fires first, and say how far a cancelled one got.
+ *
+ * The abort ends the program and removes its pane. `delivery` is `not_started`
+ * when nothing ran and `written` when the program had started, so its work may
+ * be half done.
+ */
+export async function runUnlessCancelled(
+  server: Server,
+  argv: readonly string[],
+  signal: AbortSignal,
+): Promise<ProgramResult | { readonly cancelled: DeliveryStatus }> {
+  const outcome = await server.run(argv, { signal }).catch((error: unknown) => {
+    if (!(error instanceof TmuxTransportError) || error.kind !== "cancelled") throw error;
+    return { cancelled: error.delivery };
+  });
+  return outcome;
 }
 
 /**

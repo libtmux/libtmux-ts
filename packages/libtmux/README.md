@@ -173,6 +173,7 @@ server.
   - [`Server.run`: one call, nothing typed](#serverrun-one-call-nothing-typed)
   - [`Server.spawn`: drive it, then wait](#serverspawn-drive-it-then-wait)
   - [`input`: give it a stdin](#input-give-it-a-stdin)
+  - [`signal`: cancel a run](#signal-cancel-a-run)
   - [`placement` and `keep`: run it where a person sees it](#placement-and-keep-run-it-where-a-person-sees-it)
   - [`orphanAfterMs`: end it with this process](#orphanafterms-end-it-with-this-process)
 - [Type into a pane and wait](#type-into-a-pane-and-wait)
@@ -1007,6 +1008,28 @@ const result = await server.run(["sort"], { input });
 - The terminal stays the program's output, so `output` reads as before.
 - It needs the tmux server on this machine; one elsewhere is refused with
   `ServerNotLocalError` before anything starts.
+
+### [`signal`][ref-runoptions]: cancel a run
+
+This recipe is a literal excerpt of [`examples/program/program.ts`](../../examples/program/program.ts),
+which the integration suite runs against a real tmux server:
+
+<!-- runs: examples/program/program.ts -->
+
+```ts
+const outcome = await server.run(argv, { signal }).catch((error: unknown) => {
+  if (!(error instanceof TmuxTransportError) || error.kind !== "cancelled") throw error;
+  return { cancelled: error.delivery };
+});
+```
+
+- An abort ends the program and removes its pane, and the call rejects with
+  [`TmuxTransportError`][ref-tmuxtransporterror] of kind `cancelled`.
+- `delivery` says how far it got: `not_started` when nothing ran,
+  `indeterminate` when setup was cut short and the program may have begun, and
+  `written` once it had started.
+- `spawn` takes `signal` too, for setup alone; once it returns, the program is
+  yours to end.
 
 ### [`placement` and `keep`][ref-spawnoptions]: run it where a person sees it
 
@@ -2135,6 +2158,7 @@ MIT
 [ref-server-spawn]: https://libtmux.org/en/ts/latest/reference/server-server-spawn/
 [ref-program]: https://libtmux.org/en/ts/latest/reference/program-program/
 [ref-program-stream]: https://libtmux.org/en/ts/latest/reference/program-program-stream/
+[ref-runoptions]: https://libtmux.org/en/ts/latest/reference/types-runoptions/
 [ref-spawnoptions]: https://libtmux.org/en/ts/latest/reference/types-spawnoptions/
 [ref-server-runshell]: https://libtmux.org/en/ts/latest/reference/server-server-runshell/
 [ref-server-savebuffer]: https://libtmux.org/en/ts/latest/reference/server-server-savebuffer/

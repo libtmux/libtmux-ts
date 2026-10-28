@@ -3,8 +3,8 @@
 Run a program in tmux and read only what it printed.
 
 Reach for this when you want a program's output and exit status and it does not
-need an existing shell: nothing is typed, so there is no command line or echo
-to strip, and the program still gets a real terminal.
+need an existing shell. The output holds no command line or echo, and the
+program still gets a real terminal.
 
 Part of [libtmux for Bun and TypeScript](../../README.md#is-this-for-you).
 
