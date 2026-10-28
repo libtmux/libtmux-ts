@@ -1162,7 +1162,7 @@ const event = await printed;
 ### [`Pane.waitForCommand`][ref-pane-waitforcommand]: a command's status from the shell's marks
 
 A shell whose prompt writes an OSC 133 `D` mark with the last status tells tmux
-when a command ends and how. No marker is printed or read back.
+when a command ends and how, with no marker printed for the wait to read back.
 
 <!-- runs: examples/agent/agent.ts -->
 

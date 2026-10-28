@@ -49,7 +49,8 @@ export class Program implements AsyncDisposable {
   }
 
   /**
-   * Resolve with how the program ended, once it has.
+   * Resolve with how the program ended, once it has. The pane stays, for
+   * {@link Program.output}, until {@link Program.kill} or `await using`.
    *
    * Giving up leaves the program running: a timeout throws
    * {@link WaitTimeoutError} and an abort throws {@link TmuxTransportError}

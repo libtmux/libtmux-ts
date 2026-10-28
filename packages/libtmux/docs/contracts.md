@@ -201,17 +201,17 @@ typed, so the output holds no command line or echo.
 
 What each outcome looks like to a caller:
 
-| What happened                                                      | What the caller sees                                                                   |
-| ------------------------------------------------------------------ | -------------------------------------------------------------------------------------- |
-| The program ended                                                  | `exitCode` as `$?` reports it, or `signalCode` when a signal ended its `sh` too        |
-| Its output's start scrolled past `historyLimit`                    | `lostStart`                                                                            |
-| tmux removed the pane before reading the end                       | `lostEnd`; `stream()` ends with `OutputLostError`                                      |
-| The stream copy reached `maxStreamBytes`                           | `stream()` ends with `StreamLimitError`; the program runs on                           |
-| `run`'s `timeoutMs` passed                                         | `timedOut`, with the output so far                                                     |
-| `signal` fired                                                     | `TmuxTransportError` of kind `cancelled`, whose `delivery` says whether it had started |
-| The pane was killed from outside, its server with it or not        | `ObjectNotFoundError` from `wait()`, `output()` and `run`                              |
-| The caller died                                                    | tmux ends the program within `orphanAfterMs`                                           |
-| `input`, `stream` or `separateStderr` with a tmux server elsewhere | `ServerNotLocalError`, before the program starts                                       |
+| What happened                                                      | What the caller sees                                                                                                   |
+| ------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
+| The program ended                                                  | `exitCode` as `$?` reports it, or `signalCode` when a signal ended its `sh` too                                        |
+| Its output's start scrolled past `historyLimit`                    | `lostStart`                                                                                                            |
+| tmux removed the pane before reading the end                       | `lostEnd`; `stream()` ends with `OutputLostError`                                                                      |
+| The stream copy reached `maxStreamBytes`                           | `stream()` ends with `StreamLimitError`; the program runs on                                                           |
+| `run`'s `timeoutMs` passed                                         | `timedOut`, with the output so far                                                                                     |
+| `signal` fired                                                     | `TmuxTransportError` of kind `cancelled`, whose `delivery` says whether it had started                                 |
+| The pane was killed from outside, its server with it or not        | `ObjectNotFoundError` from `wait()`, `output()` and `run`; the program is hung up, and one that ignores SIGHUP runs on |
+| The caller died                                                    | tmux ends the program within `orphanAfterMs`                                                                           |
+| `input`, `stream` or `separateStderr` with a tmux server elsewhere | `ServerNotLocalError`, before the program starts                                                                       |
 
 What a run does not do:
 
@@ -225,6 +225,8 @@ What a run does not do:
   file through `sh -c`.
 - A status above 128 is a signal's 128 plus its number or the program's own
   exit, which `$?` cannot tell apart.
+- A program's alternate screen is gone once it leaves it, as in a terminal, so
+  `output` holds only what the main screen kept.
 
 ### Starting the program
 
@@ -236,15 +238,7 @@ What a run does not do:
   `sh` does not parse them and runs `argv[0]` as a program name, `A=b`
   included, which `env` would read as an assignment.
 - That `sh` runs the program in a subshell and lingers 50 ms after it, then
-  exits with the status it saw. tmux removes a pane on its child's exit
-  ([`server_child_exited`](https://github.com/tmux/tmux/blob/3.8/server.c#L491-L511)) once `FIONREAD` reads 0
-  ([`window_pane_destroy_ready`](https://github.com/tmux/tmux/blob/3.8/window.c#L495-L517)). On Linux `FIONREAD`
-  counts only what the line discipline holds
-  ([`n_tty_ioctl`](https://github.com/microsoft/WSL2-Linux-Kernel/blob/d504d40ab83839cb61942a812a99d183c42227b9/drivers/tty/n_tty.c#L2500-L2507)),
-  not bytes still queued for
-  [`flush_to_ldisc`](https://github.com/microsoft/WSL2-Linux-Kernel/blob/d504d40ab83839cb61942a812a99d183c42227b9/drivers/tty/tty_buffer.c#L462),
-  so a program that exits right after writing can lose the end of its output:
-  8 to 16 of 15000 runs did without the wrapper, as measured below.
+  exits with the status it saw; [the end race](#the-end-race) says why.
   `pane_pid` is that `sh`, and `pane_current_command` names it.
 - Before the linger, the `sh` writes ST and then an OSC 7 path naming the run,
   which tmux applies to `#{pane_path}` with no option gating it and renders as
@@ -252,39 +246,55 @@ What a run does not do:
   mark was read to the end. `lostEnd` and `stream()` report a missing mark, as
   `OutputLostError` for a stream. A SIGKILL to the process group ends the `sh`
   before its mark too, which leaves the end unproven, so it counts as missing.
-- [`scripts/measure-program-end.ts`](../scripts/measure-program-end.ts) measures
-  both with the shipped wrapper, three probes in parallel, over rounds. Run as
-  `bun scripts/measure-program-end.ts 1000 5` on Linux 6.18 under WSL2, with
-  3.8, with 3.8a (the `release_3.8a` branch at
-  [089ad94](https://github.com/tmux/tmux/commit/089ad94e13c560db99fd4989b2774a5c6ad37a17))
-  and with master at
-  [523ac69](https://github.com/tmux/tmux/commit/523ac69601e1ea51a8ba718d32df6a00e4d0f6d4),
-  15000 runs a cell, each cell giving its runs that lost the end per round of
-  3000 and in all:
-
-  | Lost: range a round, total | No wrapper | Mark only | Linger and mark |
-  | -------------------------- | ---------- | --------- | --------------- |
-  | 3.8                        | 0-4, 8     | 0-7, 10   | 0-0, 0          |
-  | 3.8a                       | 1-5, 16    | 0-8, 10   | 0-0, 0          |
-  | master                     | 0-4, 9     | 0-0, 0    | 0-0, 0          |
-
-  None of the 20 runs the mark-only shape lost showed the mark. A whole run that
-  lost only its mark would read as a lost end, and tmux reads a pane's bytes in
-  order, so a shown mark cannot follow a lost end. `window_pane_destroy_ready`
-  checks the same `FIONREAD` on all three
-  ([3.8](https://github.com/tmux/tmux/blob/3.8/window.c#L501),
-  [master](https://github.com/tmux/tmux/blob/523ac69601e1ea51a8ba718d32df6a00e4d0f6d4/window.c#L504)).
-
 - The `sh` catches INT, QUIT and TERM, not ignoring them, so the program keeps
   the default dispositions and the `sh` outlives it to report. It leaves HUP
-  alone: a pane closed from outside hangs up the `sh`, and the kernel then hangs
-  up the program, as it would a shell's. The run exits with the status the `sh`
-  saw, as `$?` reports it: POSIX `sh` cannot tell a program's `exit 130` from a SIGINT death, so the
-  library does not guess. `signalCode` is set only when a signal ended the
-  `sh` itself.
+  alone: a pane closed from outside hangs up the `sh`, and the kernel then
+  hangs up the program, as it would a shell's. The run exits with the status
+  the `sh` saw, as `$?` reports it: POSIX `sh` cannot tell a program's
+  `exit 130` from a SIGINT death, so the library does not guess. `signalCode` is set
+  only when a signal ended the `sh` itself.
 - A start directory is entered by that `sh`, not by tmux's `-c`, which falls
   back to `$HOME` for one it cannot enter: a missing one ends the run with exit
-  code 126 and the shell's message, and its `#` is never expanded.
+  code 126 and the shell's message, through the mark and the linger, and its
+  `#` is never expanded.
+
+### The end race
+
+tmux removes a pane on its child's exit
+([`server_child_exited`](https://github.com/tmux/tmux/blob/3.8/server.c#L491-L511))
+once `FIONREAD` reads 0
+([`window_pane_destroy_ready`](https://github.com/tmux/tmux/blob/3.8/window.c#L495-L517)).
+On Linux, as read in the 6.18 kernel WSL2 ships, `FIONREAD` counts only what
+the line discipline holds
+([`n_tty_ioctl`](https://github.com/microsoft/WSL2-Linux-Kernel/blob/d504d40ab83839cb61942a812a99d183c42227b9/drivers/tty/n_tty.c#L2500-L2507)),
+not bytes still queued for
+[`flush_to_ldisc`](https://github.com/microsoft/WSL2-Linux-Kernel/blob/d504d40ab83839cb61942a812a99d183c42227b9/drivers/tty/tty_buffer.c#L462),
+so a program that exits right after writing can lose the end of its output: 8 to
+16 of 15000 runs did without the wrapper, as measured below.
+
+[`scripts/measure-program-end.ts`](../scripts/measure-program-end.ts) measures
+the loss and the mark with the shipped wrapper, three probes in parallel, over
+rounds. Run as
+`bun scripts/measure-program-end.ts 1000 5` on Linux 6.18 under WSL2, with
+3.8, with 3.8a (the `release_3.8a` branch at
+[089ad94](https://github.com/tmux/tmux/commit/089ad94e13c560db99fd4989b2774a5c6ad37a17))
+and with master at
+[523ac69](https://github.com/tmux/tmux/commit/523ac69601e1ea51a8ba718d32df6a00e4d0f6d4),
+15000 runs a cell, each cell giving its runs that lost the end per round of
+3000 and in all:
+
+| Lost: range a round, total | No wrapper | Mark only | Linger and mark |
+| -------------------------- | ---------- | --------- | --------------- |
+| 3.8                        | 0-4, 8     | 0-7, 10   | 0-0, 0          |
+| 3.8a                       | 1-5, 16    | 0-8, 10   | 0-0, 0          |
+| master                     | 0-4, 9     | 0-0, 0    | 0-0, 0          |
+
+None of the 20 runs the mark-only shape lost showed the mark. A whole run that
+lost only its mark would read as a lost end, and tmux reads a pane's bytes in
+order, so a shown mark cannot follow a lost end. `window_pane_destroy_ready`
+checks the same `FIONREAD` on all three
+([3.8](https://github.com/tmux/tmux/blob/3.8/window.c#L501),
+[master](https://github.com/tmux/tmux/blob/523ac69601e1ea51a8ba718d32df6a00e4d0f6d4/window.c#L504)).
 
 ### Waiting for the exit
 

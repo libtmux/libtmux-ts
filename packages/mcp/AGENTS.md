@@ -100,6 +100,7 @@ of entering or cancelling it.
 Paired cleanup, unclear ownership, or dependence on a key table, mouse,
 clipboard, attachment, or timing are signals to exclude a route from MCP. Core
 library APIs remain available to explicit programmatic clients.
+
 `run_program` qualifies because its pairing never leaves the call: the pane it
 creates is removed before it returns, and after a crash of this server tmux
 ends the program and removes the pane once the lease this server renews runs

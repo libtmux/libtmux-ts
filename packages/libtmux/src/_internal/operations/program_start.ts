@@ -604,8 +604,7 @@ export async function runProgram(
   options: RunOptions = {},
 ): Promise<ProgramResult> {
   requireCount("timeoutMs", options.timeoutMs, MAX_TIMER_MS);
-  // Bun 1.3.14 stops an AbortSignal.timeout once its last listener goes, as setup's does;
-  // 1.4 does not. The cancel example's test, which CI runs on 1.3.14, fails without this.
+  // Bun 1.3 stops an AbortSignal.timeout once its last listener goes, as setup's does.
   const hold = (): void => undefined;
   options.signal?.addEventListener("abort", hold);
   try {

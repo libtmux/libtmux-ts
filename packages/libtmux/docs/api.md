@@ -3155,7 +3155,8 @@ program.sessionName.startsWith("libtmux-program-"); // true
 wait(options?: ProgramWaitOptions): Promise<ProgramExit>
 ```
 
-Resolve with how the program ended, once it has.
+Resolve with how the program ended, once it has. The pane stays, for
+[`Program.output`](#programoutput), until [`Program.kill`](#programkill) or `await using`.
 
 Giving up leaves the program running: a timeout throws
 `WaitTimeoutError` and an abort throws `TmuxTransportError`
