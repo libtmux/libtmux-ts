@@ -2,6 +2,12 @@ import { expect, test } from "bun:test";
 import { readFile } from "node:fs/promises";
 import { layoutIsValid } from "../../src/_internal/operations/layout.js";
 import { parseTmuxVersion } from "../../src/_internal/runtime/tmux_version.js";
+import { flattenInvocation } from "../../src/engine.js";
+import type { TmuxCommandResult, TmuxInvocationRequest } from "../../src/engine.js";
+import { VersionTooLowError } from "../../src/errors.js";
+import { Server } from "../../src/server.js";
+import { createWindowAssociationHarness } from "../support/selection_fixtures.js";
+import { checkedEngine } from "../support/version_probe.js";
 
 type LayoutCase = {
   id: string;
@@ -63,9 +69,7 @@ test("JSON layout preflight checks the version, pane count and native structure"
   const encoded = JSON.stringify(layout);
   for (const raw of ["3.2a", "3.7c", "next-3.8"])
     expect(layoutIsValid(encoded, 2, parseTmuxVersion(raw)), raw).toBe(false);
-  // 3.8-rc2 is the earliest release measured to dump and accept JSON.
-  expect(layoutIsValid(encoded, 2, parseTmuxVersion("3.8-rc"))).toBe(false);
-  for (const raw of ["3.8-rc2", "3.8-rc3", "3.8"])
+  for (const raw of ["3.8", "next-3.9"])
     expect(layoutIsValid(encoded, 2, parseTmuxVersion(raw)), raw).toBe(true);
   const version = parseTmuxVersion("3.8");
   expect(layoutIsValid(encoded, 2, version)).toBe(true);
@@ -126,4 +130,58 @@ test("JSON layout preflight checks the version, pane count and native structure"
     { V: 2, L: { ...pane, a: "true" } },
   ])
     expect(layoutIsValid(JSON.stringify(invalid), 1, version), JSON.stringify(invalid)).toBe(false);
+});
+
+const JSON_LAYOUT = '{"V":2,"L":{"t":"p","w":80,"h":24,"x":0,"y":0,"i":0}}';
+
+function sentCommands(requests: readonly { readonly commands: readonly (readonly string[])[] }[]) {
+  return requests.flatMap((request) => request.commands.map((command) => command[0]));
+}
+
+function layoutEngine(version: string, sent: TmuxInvocationRequest[]) {
+  return checkedEngine(
+    (request) => {
+      sent.push(request);
+      return Promise.resolve<TmuxCommandResult>({
+        cmd: [request.executable, ...flattenInvocation(request)],
+        exitCode: 0,
+        signal: null,
+        stderr: new Uint8Array(),
+        stdout: new Uint8Array(),
+      });
+    },
+    { version },
+  );
+}
+
+test("Server.validateLayouts rejects a JSON layout on 3.7c and accepts it on 3.8", async () => {
+  const sent: TmuxInvocationRequest[] = [];
+  const layouts = [{ layout: JSON_LAYOUT, panes: 1 }];
+  const failure: unknown = await new Server({ engine: layoutEngine("3.7c", sent) })
+    .validateLayouts(layouts)
+    .catch((error: unknown) => error);
+  expect(failure).toBeInstanceOf(TypeError);
+  expect((failure as TypeError).message).toContain("invalid tmux layout for 3.7c");
+  // The version probe is answered by the engine; no command reaches tmux either way.
+  expect(sent).toEqual([]);
+  await expect(
+    new Server({ engine: layoutEngine("3.8", sent) }).validateLayouts(layouts),
+  ).resolves.toBeUndefined();
+  expect(sent).toEqual([]);
+});
+
+test("Window.selectLayout refuses a JSON layout on 3.7c before sending select-layout", async () => {
+  const harness = await createWindowAssociationHarness("3.7c");
+  const failure: unknown = await harness.values[0]!.selectLayout(JSON_LAYOUT).catch(
+    (error: unknown) => error,
+  );
+  expect(failure).toBeInstanceOf(VersionTooLowError);
+  expect(failure).toMatchObject({ serverVersion: "3.7c", since: "3.8" });
+  expect(sentCommands(harness.transport.requests)).not.toContain("select-layout");
+});
+
+test("Window.selectLayout sends a JSON layout to tmux 3.8", async () => {
+  const harness = await createWindowAssociationHarness("3.8");
+  await harness.values[0]!.selectLayout(JSON_LAYOUT);
+  expect(sentCommands(harness.transport.requests)).toContain("select-layout");
 });

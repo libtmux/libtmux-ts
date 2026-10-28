@@ -976,7 +976,7 @@ Names accept unique abbreviations. Only version-sensitive layouts query the
 daemon; a cold endpoint uses the selected client. Checksums, bounded tree
 structure and pane counts are checked locally; tmux owns geometry and pruning.
 Custom layouts are limited to 8192 characters and 256 classic groups.
-JSON layouts require tmux 3.8-rc2 and permit at most 200 nested objects.
+JSON layouts require tmux 3.8 and permit at most 200 nested objects.
 
 @throws TypeError when a layout, pane count or version reply is invalid.
 @throws TmuxCommandError when the daemon or client version cannot be read.
@@ -2274,14 +2274,13 @@ Applying any layout while a pane is zoomed unzooms the window first —
 tmux's own behavior, not this method's.
 
 A `window_layout` saved earlier and passed back here is not guaranteed
-to put every pane back where it was. Before tmux 3.8-rc2, the classic
-layout string restores the arrangement's shape but can rotate which
-pane lands in which position; a JSON layout (3.8-rc2+, and only for a
-reader that actually receives JSON — see [`Server.connect`](#serverconnect)) restores
-exactly.
+to put every pane back where it was. The classic layout string restores
+the arrangement's shape but can rotate which pane lands in which
+position. A JSON layout needs tmux 3.8 and restores exactly, provided the
+reader receives JSON (see [`Server.connect`](#serverconnect)).
 
 Only a preset name, a layout string that parses here, or JSON on tmux
-3.8-rc2+ is accepted: anything else is refused rather than sent, because two
+3.8+ is accepted: anything else is refused rather than sent, because two
 ranges of tmux exit on a layout they cannot read and take every session
 on the socket with them. tmux 3.3 and 3.3a die on a value with no
 readable checksum, and 3.7 through 3.7d on one whose checksum is correct

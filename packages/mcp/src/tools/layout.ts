@@ -204,8 +204,8 @@ export function registerLayout(mcp: ToolRegistrar, context: ToolContext): void {
       description:
         "Rearrange a window's panes using a named layout, a unique abbreviation for the " +
         "running daemon, or a checksummed saved layout from a window whose metadataComplete " +
-        "is true. tmux may adapt dimensions or prune extra cells; the returned window.layout " +
-        "reports the observed result.",
+        "is true. JSON layouts need tmux 3.8. tmux may adapt dimensions or prune extra cells; " +
+        "the returned window.layout reports the observed result.",
       inputSchema: {
         layout: inlineRequestText("layout").describe(
           "A tmux named layout, unique abbreviation for the running version, or checksummed " +

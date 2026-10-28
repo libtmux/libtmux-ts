@@ -144,7 +144,7 @@ export const CAPABILITIES: readonly CapabilityRecord[] = [
     id: "layout-json",
     name: "JSON layout strings",
     summary: "Apply a layout saved in the JSON form tmux reports.",
-    since: "3.8-rc2",
+    since: "3.8",
     handling: "refuse",
     error: "errors.VersionTooLowError",
     apis: ["window.Window.selectLayout", "server.Server.validateLayouts"],

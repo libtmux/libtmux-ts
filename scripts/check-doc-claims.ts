@@ -415,8 +415,8 @@ for (const file of files) {
   for (const match of markdown.matchAll(/img\.shields\.io\/badge\/tmux-((?:--|[^-])+)-(?!-)/gu)) {
     badges += 1;
     // shields.io escapes a literal hyphen in a field as `--`, so a version
-    // like `3.8-rc` cannot be read without undoing that first — the badge
-    // said 3.8 and the matrix said 3.8-rc, and only the escape differed.
+    // that contains one cannot be compared with the matrix until that escape
+    // is undone.
     const claimed = decodeURIComponent(match[1] ?? "")
       .replaceAll("--", "-")
       .trim();

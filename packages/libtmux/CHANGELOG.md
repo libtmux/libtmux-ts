@@ -37,6 +37,14 @@ release is always `latest`, so `npm i libtmux` fetches it. Releases before
 
 ## Unreleased
 
+### `libtmux`
+
+- JSON layouts require tmux 3.8, the first release that accepts one. On an
+  older tmux, `Window.selectLayout` throws `VersionTooLowError` naming 3.8 as
+  the minimum and `Server.validateLayouts` rejects with `TypeError`; both
+  refuse before anything is sent. Upgrade to tmux 3.8 to apply a JSON layout.
+  (#111)
+
 ## 0.1.0 (2026-10-25)
 
 ### Documentation

@@ -319,7 +319,8 @@ attached client.
 ## Layout, identity, and detached sizes
 
 [`select_layout`][tool-select_layout] accepts tmux's named layouts, unique
-abbreviations for the running daemon, and checksummed saved layouts.
+abbreviations for the running daemon, and checksummed saved layouts. JSON
+layouts need tmux 3.8.
 
 The native core validates the input before dispatch; tmux owns geometry and may
 resize or prune saved cells. The result's `window.layout` comes from a fresh

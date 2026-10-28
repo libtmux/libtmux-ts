@@ -472,7 +472,7 @@ describe("format registry", () => {
     );
     expect(ordinaryScopes).toEqual(new Set(["pane", "session", "universal", "window"]));
 
-    for (const masterVersion of ["next-3.9", "3.8-rc2"]) {
+    for (const masterVersion of ["next-3.9", "next-3.8"]) {
       expect(
         formatFieldsForListCommand("list-panes", masterVersion).some(
           ({ token }) => token === "pane_x",
