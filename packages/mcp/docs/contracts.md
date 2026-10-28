@@ -272,8 +272,8 @@ its checks, then turns the dump into a file of `export NAME='value'` lines that
 the program's own `sh` sources and deletes before it starts; the dump is
 deleted once read. Values never pass through a tmux command or `argv`. A list
 of names carries only those variables. Names a POSIX shell cannot export are
-skipped, and so is `TMUX_PANE`, which names the shell's pane rather than the
-program's. The typed command starts with a space, so a shell that ignores such
+skipped, and so are the shell's own `OLDPWD`, `PWD`, `SHLVL` and `_`, and
+`TMUX_PANE`, which names the shell's pane, where the program has its own. The typed command starts with a space, so a shell that ignores such
 lines keeps it out of its history. A pane whose
 shell runs on another host than this server, under `ssh` or in a container,
 writes the dump where this server cannot read it, and the call refuses before
@@ -289,8 +289,8 @@ fails the call with the reason before the program starts; `read_program`
 reports the same as `not_started`, with the shell's 127 or 126. The tool has no environment parameter:
 variables go in `argv` through `env`, where whatever inspects `argv` sees them,
 `ps` and the pane's start command included, so a secret does not belong there.
-It sets `PAGER` and `GIT_PAGER` to `cat` itself, because a pager waits for keys
-nobody presses.
+It sets `PAGER` and `GIT_PAGER` to `cat` itself, so `git log` and `man` print
+instead of waiting in a pager.
 
 The respawn and a `wait-for -E pane-died` waiter go to tmux as one command list,
 which tmux runs without handling any other event in between, so the waiter is

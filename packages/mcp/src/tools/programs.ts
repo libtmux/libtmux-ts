@@ -259,7 +259,7 @@ export function registerPrograms(mcp: ToolRegistrar, context: ToolContext): Star
         // A close that began while the pane was looked up starts nothing more.
         if (closing) return fail({ reason: "This server is closing; no program was started." });
         const spawning = context.tmux.spawn(argv, {
-          // A pager waits for keys nobody will press.
+          // Pagers print instead of waiting for keys, as in run_program.
           environment: { GIT_PAGER: "cat", PAGER: "cat" },
           ...(from === undefined ? {} : { from }),
           ...(height === undefined ? {} : { height }),
