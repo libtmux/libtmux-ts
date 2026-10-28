@@ -39,6 +39,13 @@ export interface CommandResult {
   readonly output: string;
 }
 
+/** What wait_for_exit reports: no output, since the pane's text is the caller's to read. */
+export interface ExitResult {
+  readonly exitStatus: number | null;
+  readonly outcome: string;
+  readonly signal: string | null;
+}
+
 /**
  * Run a command and learn whether it worked.
  *
@@ -180,8 +187,7 @@ export async function followProgram(client: Client, argv: readonly string[]): Pr
 /**
  * Run a program with a stdin, and get only what it printed.
  *
- * Nothing is typed, so there is no echo to strip, and `input` passes through no
- * shell quoting.
+ * `input` passes through no shell quoting.
  */
 export async function runWithInput(
   client: Client,
@@ -194,6 +200,6 @@ export async function runWithInput(
 /**
  * Wait for a program somebody else started to exit, and learn how.
  */
-export async function waitForExit(client: Client, paneId: string): Promise<CommandResult> {
-  return callTool<CommandResult>(client, "wait_for_exit", { paneId });
+export async function waitForExit(client: Client, paneId: string): Promise<ExitResult> {
+  return callTool<ExitResult>(client, "wait_for_exit", { paneId });
 }
