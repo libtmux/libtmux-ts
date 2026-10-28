@@ -133,6 +133,8 @@ export interface LeaseTarget {
   readonly owned: Owned;
   readonly paneId: string;
   readonly runtime: RuntimeContext;
+  /** Stops the exit watch, which a pane removed from outside never ends. */
+  readonly watcher: AbortController;
 }
 
 /** Move the lease on; a renewal still in flight is not overtaken, so tokens arrive in order. */
@@ -154,7 +156,10 @@ async function renew(target: LeaseTarget, lease: Lease): Promise<void> {
         () => false,
         (failure: unknown) => failure instanceof TmuxObjectNotFoundError,
       ));
-    if (gone) clearInterval(lease.timer);
+    if (gone) {
+      clearInterval(lease.timer);
+      target.watcher.abort();
+    }
   } finally {
     lease.renewing = false;
   }
@@ -313,7 +318,11 @@ export async function waitProgram(
   try {
     for (;;) {
       // eslint-disable-next-line no-await-in-loop -- each read follows the last wake.
-      const exit = await readExit(state.runtime, state.paneId, read);
+      const exit = await readExit(state.runtime, state.paneId, read).catch((error: unknown) => {
+        // tmux fires no event for a pane removed from outside, so its exit watch would wait on.
+        if (error instanceof TmuxObjectNotFoundError) state.watcher.abort();
+        throw error;
+      });
       if (exit !== undefined) {
         state.exit = exit;
         return exit;

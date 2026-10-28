@@ -480,7 +480,7 @@ export async function spawnProgram(
     }
     // Renewed from the moment the pane exists, however long the rest of setup takes.
     if (lease !== undefined)
-      startRenewal({ files: files !== undefined, keep, owned, paneId, runtime }, lease);
+      startRenewal({ files: files !== undefined, keep, owned, paneId, runtime, watcher }, lease);
     let failure: unknown;
     const mark = `libtmux-ran-${randomUUID()}`;
     const started = `libtmux-program-started-${randomUUID()}`;

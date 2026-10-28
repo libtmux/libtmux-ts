@@ -767,6 +767,47 @@ setInterval(() => undefined, 1000);`,
   );
 
   testProgram(
+    "a pane killed from outside lets its caller exit, by a wait or a renewal",
+    async () => {
+      await withServer(async (_server, _directory, fixture) => {
+        const environment = {
+          LTX_PROGRAM_SERVER: JSON.stringify({
+            environment: fixture.controllerEnvironment,
+            socketPath: fixture.socketPath,
+            tmuxBin: fixture.tmuxExecutable,
+          }),
+        };
+        // tmux fires no event for the kill, so only the wait's read or the lease's renewal sees it.
+        for (const [options, after] of [
+          ["{ orphanAfterMs: null }", "await program.wait().catch(() => undefined);"],
+          ["{ orphanAfterMs: 1500 }", ""],
+        ]) {
+          const caller = spawn(
+            "bun",
+            [
+              "-e",
+              `import { Server } from ${JSON.stringify(SERVER_MODULE)};
+const server = new Server(JSON.parse(process.env.LTX_PROGRAM_SERVER));
+const program = await server.spawn(["sleep", "300"], ${options});
+await server.cmd("kill-pane", ["-t", program.pane.id]);
+${after}`,
+            ],
+            { env: { ...process.env, ...environment }, stdio: ["ignore", "ignore", "inherit"] },
+          );
+          // eslint-disable-next-line no-await-in-loop -- one caller at a time.
+          const ended = await Promise.race([
+            new Promise<number | null>((resolve) => caller.once("exit", resolve)),
+            new Promise<"running">((resolve) => setTimeout(() => resolve("running"), 10_000)),
+          ]);
+          if (ended === "running") caller.kill("SIGKILL");
+          expect(ended).toBe(0);
+        }
+      });
+    },
+    40_000,
+  );
+
+  testProgram(
     "a window beside a killed caller's pane goes, and the pane's session stays",
     async () => {
       await withServer(async (server, _directory, fixture) => {
