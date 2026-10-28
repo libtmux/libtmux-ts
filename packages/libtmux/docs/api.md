@@ -3216,9 +3216,9 @@ text; // "1\r\n2\r\n3\r\n"
 kill(): Promise<void>
 ```
 
-End the program and remove its pane, unless kept; every call waits for the same end.
+End the program and remove its pane, unless kept.
 
-A running program gets SIGTERM and, two seconds later, SIGKILL, sent to
+Every call waits for the same end. A running program gets SIGTERM and, two seconds later, SIGKILL, sent to
 its process group on the tmux server's machine, so one that ignores
 SIGHUP still ends.
 

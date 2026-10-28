@@ -989,7 +989,9 @@ const { exitCode } = await vim.wait({ timeoutMs: 10_000 });
 
 - `spawn` returns a [`Program`][ref-program] once the program has started. A
   full-screen program may still be setting up its terminal then, and can
-  discard what was typed before, so the keys wait for vim's first screen.
+  discard what was typed before, so the keys wait for vim's first screen. No
+  tmux event says a program has drawn, so the example reads the screen.
+- Each running program holds one tmux client, its exit watch, until it ends.
 - `await using` ends the program and removes its pane however the scope
   leaves. A `wait` that gives up throws `WaitTimeoutError` and leaves the
   program running, where `run` ends it and reports `timedOut`.
@@ -998,7 +1000,7 @@ const { exitCode } = await vim.wait({ timeoutMs: 10_000 });
   `OutputLostError` if tmux closed the pane before reading the end.
   `maxStreamBytes` caps the copy; the stream then throws
   [`StreamLimitError`][ref-streamlimiterror] after what it kept, and the
-  program runs on.
+  program runs on. The copy is read every 25 ms.
 
 ### [`input`][ref-spawnoptions]: give it a stdin
 
@@ -1018,6 +1020,9 @@ const result = await server.run(["sort"], { input });
   `ServerNotLocalError` before the program starts.
 
 ### [`separateStderr`][ref-runoptions]: keep stderr apart
+
+This recipe is a literal excerpt of [`examples/program/program.ts`](../../examples/program/program.ts),
+which the integration suite runs against a real tmux server:
 
 <!-- runs: examples/program/program.ts -->
 
@@ -1055,6 +1060,9 @@ const outcome = await server.run(argv, { signal }).catch((error: unknown) => {
 
 ### [`placement` and `keep`][ref-spawnoptions]: run it where a person sees it
 
+This recipe is a literal excerpt of [`examples/program/program.ts`](../../examples/program/program.ts),
+which the integration suite runs against a real tmux server:
+
 <!-- runs: examples/program/program.ts -->
 
 ```ts
@@ -1070,6 +1078,9 @@ const result = await server.run(argv, { from: pane, keep: true, placement: "spli
   environment; the pane's own shell is not involved.
 
 ### [`orphanAfterMs`][ref-spawnoptions]: end it with this process
+
+This recipe is a literal excerpt of [`examples/program/program.ts`](../../examples/program/program.ts),
+which the integration suite runs against a real tmux server:
 
 <!-- runs: examples/program/program.ts -->
 
@@ -1168,6 +1179,9 @@ const event = await printed;
 A shell whose prompt writes an OSC 133 `D` mark with the last status tells tmux
 when a command ends and how, with no marker printed for the wait to read back.
 
+This recipe is a literal excerpt of [`examples/agent/agent.ts`](../../examples/agent/agent.ts),
+which the integration suite runs against a real tmux server:
+
 <!-- runs: examples/agent/agent.ts -->
 
 ```ts
@@ -1185,6 +1199,9 @@ const status = await pane.waitForCommand({ send: command, timeoutMs: 30_000 });
 - Requires tmux 3.8 or newer. [Details](docs/contracts.md#pane-waits).
 
 ### [`Pane.waitForExit`][ref-pane-waitforexit]: wait for a pane you did not start
+
+This recipe is a literal excerpt of [`examples/agent/agent.ts`](../../examples/agent/agent.ts),
+which the integration suite runs against a real tmux server:
 
 <!-- runs: examples/agent/agent.ts -->
 

@@ -181,7 +181,7 @@ that leaves copy mode is followed by an Enter the pane itself receives.
 typed, so the output holds no command line or echo.
 
 - One tmux command list starts the program and waits for its exit, so tmux
-  cannot see the exit before the waiter exists.
+  cannot see the exit before the exit watch exists.
 - A small `sh` runs it and lingers 50 ms before exiting; in none of the 15000
   `seq 1 3000` runs measured below on each tmux did tmux then miss the last
   output.
@@ -227,6 +227,12 @@ What a run does not do:
   exit, which `$?` cannot tell apart.
 - A program's alternate screen is gone once it leaves it, as in a terminal, so
   `output` holds only what the main screen kept.
+- `argv` and `environment` go to tmux in one command, which tmux caps at about
+  16 KiB, and a longer one is refused before the program starts; data that size
+  belongs in `input`.
+- A run costs a few tmux round trips and the linger: `true` took about 135 ms
+  a run, ten one after another, on the WSL2 host measured, and sixteen side by
+  side took about 1.8 s in all, so side by side saves little.
 
 ### Starting the program
 
@@ -238,7 +244,9 @@ What a run does not do:
   `sh` does not parse them and runs `argv[0]` as a program name, `A=b`
   included, which `env` would read as an assignment.
 - That `sh` runs the program in a subshell and lingers 50 ms after it, then
-  exits with the status it saw; [the end race](#the-end-race) says why.
+  exits with the status it saw; [the end race](#the-end-race) says why. Where
+  `sleep` takes no fraction, it lingers a second instead. 50 ms is the one
+  linger measured; shorter ones were not tried.
   `pane_pid` is that `sh`, and `pane_current_command` names it.
 - Before the linger, the `sh` writes ST and then an OSC 7 path naming the run,
   which tmux applies to `#{pane_path}` with no option gating it and renders as
@@ -298,11 +306,11 @@ checks the same `FIONREAD` on all three
 
 ### Waiting for the exit
 
-- The waiter exists before tmux can see the program exit, because tmux handles
-  no other event inside one command list.
+- The exit watch, a `wait-for -E` client, exists before tmux can see the
+  program exit, because tmux handles no other event inside one command list.
 - That list holds the respawn, the optional `pipe-pane`, a `wait-for -S` on a
-  channel of the run's own, and a
-  `wait-for -E -F '#{==:#{pane},%N}' pane-died` waiter.
+  channel of the run's own, and the exit watch,
+  `wait-for -E -F '#{==:#{pane},%N}' pane-died`.
 - Setup waits on that channel rather than polling: a channel signalled before
   its waiter arrives stays woken.
 - A death counts only once tmux has the exit status: `pane_dead` turns 1 when
@@ -310,7 +318,7 @@ checks the same `FIONREAD` on all three
 - The wait still reads the pane every second, because tmux fires no event for a
   pane killed from outside.
 - The list ends in that wait, so it holds no slot of `maxInFlight` for the
-  program's life; each live program costs one waiting tmux client instead. With
+  program's life; each live program costs one tmux client, its exit watch. With
   50 programs on 3.8a, each client held about 4 MiB, while the tmux server grew
   by about 3 MiB for all of them
   ([#117](https://github.com/libtmux/libtmux-ts/issues/117) has the run).
@@ -358,7 +366,7 @@ checks the same `FIONREAD` on all three
   the lease misses two renewals, and tmux ends the program as though the process
   had died; an `orphanAfterMs` above the longest stall expected keeps it.
 - `orphanAfterMs: null` takes no lease: the program outlives its caller, and
-  keeps its pane, its files and its waiting tmux client until something
+  keeps its pane, its files and its exit watch until something
   removes them.
 - A caller killed between creating a split and starting the program leaves its
   dead placeholder, which closes at the next key pressed in it.
