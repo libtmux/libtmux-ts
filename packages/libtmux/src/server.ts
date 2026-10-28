@@ -1449,7 +1449,7 @@ export class Server {
   }
 
   /**
-   * Start a program in a detached session of its own and return it running.
+   * Start a program in a pane of its own and return it running.
    *
    * No shell parses `argv`: `["echo", "$HOME"]` prints `$HOME`, and `cd` or
    * a pipe needs `["sh", "-c", …]`. Nothing is typed into a terminal, so the
@@ -1457,8 +1457,10 @@ export class Server {
    * which is what a full-screen program needs to be driven by keys; see
    * {@link SpawnOptions} for what that implies for pagers and prompts.
    *
-   * The {@link Program} owns its session: `await using` or
-   * {@link Program.kill} ends the program and removes the session.
+   * The {@link Program} owns its pane, which is a detached session of its own
+   * unless `from` places it beside another pane: `await using` or
+   * {@link Program.kill} ends the program and removes it. Without
+   * `orphanAfterMs`, a program left running outlives this process.
    *
    * Requires tmux 3.8 or newer, and raises {@link VersionTooLowError}
    * below it. Earlier releases have no exit event to wait on, and through
@@ -1477,17 +1479,17 @@ export class Server {
   }
 
   /**
-   * Run a program to completion in a detached session and return what it printed.
+   * Run a program to completion in a pane of its own and return what it printed.
    *
    * The output is the terminal's, scrollback included, with nothing typed
-   * before it. The session, or with `from` the window, is removed before this
-   * returns, whatever happened. The program has a terminal but no input; pipe
-   * any through `["sh", "-c", "printf ... | program"]`.
+   * before it. The pane, its session without `from`, is removed before this
+   * returns, whatever happened, unless `keep` leaves it for a person to read.
+   * `input` gives the program a stdin; otherwise it has only the terminal.
    * A program still running at `timeoutMs` is ended, SIGTERM and then
    * SIGKILL, and reported with `timedOut`; one aborted through `signal` is
    * ended and the call rejects. Should this process die first, tmux itself
-   * removes the session a minute after the program exits, and kills a
-   * program still running a minute past `timeoutMs`.
+   * ends the program and removes its pane within `orphanAfterMs`, a minute
+   * by default.
    *
    * Requires tmux 3.8 or newer, like {@link Server.spawn}.
    *

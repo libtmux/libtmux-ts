@@ -40,6 +40,7 @@ export type {
   NewWindowOptions,
   PopupOptions,
   ProgramExit,
+  ProgramPlacement,
   ProgramResult,
   ProgramWaitOptions,
   RespawnOptions,

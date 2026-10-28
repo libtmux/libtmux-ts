@@ -1,10 +1,11 @@
-import { mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { access, chmod, mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { describe, expect, test } from "bun:test";
 import { tmuxReaches } from "../support/tmux_release.js";
 
-import { deadlineReap } from "../../src/_internal/operations/program_start.js";
+import { leaseTimer } from "../../src/_internal/operations/program.js";
 
 import {
   prepareRunRoot,
@@ -69,6 +70,31 @@ function running(pid: number): boolean {
 
 async function panePid(server: Server, paneId: string): Promise<number> {
   return Number((await server.cmd("display-message", ["-p", "-t", paneId, "#{pane_pid}"]))[0]);
+}
+
+const SERVER_MODULE = fileURLToPath(new URL("../../src/server.ts", import.meta.url));
+
+async function gone(path: string): Promise<boolean> {
+  return access(path).then(
+    () => false,
+    () => true,
+  );
+}
+
+/** Read again until `check` holds or `ms` pass; the last reading is returned. */
+async function eventually<T>(
+  read: () => Promise<T>,
+  check: (value: T) => boolean,
+  ms: number,
+): Promise<T> {
+  const deadline = performance.now() + ms;
+  for (;;) {
+    // eslint-disable-next-line no-await-in-loop -- each read follows the last.
+    const value = await read();
+    if (check(value) || performance.now() >= deadline) return value;
+    // eslint-disable-next-line no-await-in-loop -- not yet.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
 }
 
 async function programSessions(server: Server): Promise<number> {
@@ -485,25 +511,23 @@ describe("program runs", () => {
   );
 
   testProgram(
-    "a run sets the pane hook that has tmux remove its session after the exit",
+    "a run leases its program from tmux while it waits",
     async () => {
       await withServer(async (server) => {
-        const running = server.run(["sleep", "5"]);
-        let hooks: readonly string[] = [];
-        for (let attempt = 0; attempt < 100 && hooks.length === 0; attempt += 1) {
-          // eslint-disable-next-line no-await-in-loop -- poll for the run's own session.
-          const session = (await server.sessions())
-            .toArray()
-            .find((candidate) => candidate.name?.startsWith("libtmux-program-") === true);
-          const paneId = session?.activePane?.id;
-          if (paneId !== undefined) {
-            // eslint-disable-next-line no-await-in-loop -- read the hook the run set.
-            hooks = await server.cmd("show-hooks", ["-p", "-t", paneId, "pane-died"]);
-          }
-          // eslint-disable-next-line no-await-in-loop -- not started yet.
-          if (hooks.length === 0) await new Promise((resolve) => setTimeout(resolve, 20));
-        }
-        expect(hooks.join("\n")).toContain("kill-session");
+        const running = server.run(["sleep", "2"]);
+        const lease = await eventually(
+          async () => {
+            const session = (await server.sessions())
+              .toArray()
+              .find((candidate) => candidate.name?.startsWith("libtmux-program-") === true);
+            const paneId = session?.activePane?.id;
+            if (paneId === undefined) return [];
+            return server.cmd("show-options", ["-p", "-v", "-t", paneId, "@libtmux-lease"]);
+          },
+          (values) => values.length > 0,
+          10_000,
+        );
+        expect(lease).toEqual(["0"]);
         expect((await running).success).toBe(true);
       });
     },
@@ -511,29 +535,70 @@ describe("program runs", () => {
   );
 
   testProgram(
-    "the deadline reap kills a live program, and its death reaches the waiter",
+    "an expired lease kills a live program and removes its session",
     async () => {
       await withServer(async (server) => {
-        await using program = await server.spawn([
-          "sh",
-          "-c",
-          "trap '' HUP TERM; echo ready; sleep 30",
-        ]);
+        const program = await server.spawn(["sh", "-c", "trap '' HUP TERM; sleep 30"]);
         const pid = await panePid(server, program.pane.id);
-        const [command = "", ...args] = deadlineReap(program.pane.id, 0);
-        await server.cmd(command, args);
-        expect(await program.wait({ timeoutMs: 10_000 })).toEqual({
-          exitCode: null,
-          signalCode: "SIGKILL",
-        });
-        expect(running(pid)).toBe(false);
+        const owned = { kind: "session", target: `=${program.sessionName}` } as const;
+        for (const [command = "", ...args] of leaseTimer(
+          program.pane.id,
+          owned,
+          false,
+          false,
+          7,
+          0,
+        )) {
+          // eslint-disable-next-line no-await-in-loop -- the timer reads the lease the first sets.
+          await server.cmd(command, args);
+        }
+        expect(
+          await eventually(
+            async () => running(pid),
+            (alive) => !alive,
+            5000,
+          ),
+        ).toBe(false);
+        expect(
+          await eventually(
+            () => server.hasSession(program.sessionName),
+            (has) => !has,
+            5000,
+          ),
+        ).toBe(false);
+        await program.kill();
       });
     },
     40_000,
   );
 
   testProgram(
-    "the deadline reap reads the pane when it fires and spares a dead one's group",
+    "a renewed lease leaves the program running",
+    async () => {
+      await withServer(async (server) => {
+        await using program = await server.spawn(["sleep", "30"]);
+        const owned = { kind: "session", target: `=${program.sessionName}` } as const;
+        for (const [command = "", ...args] of leaseTimer(
+          program.pane.id,
+          owned,
+          false,
+          false,
+          1,
+          0.3,
+        )) {
+          // eslint-disable-next-line no-await-in-loop -- in order.
+          await server.cmd(command, args);
+        }
+        await server.cmd("set-option", ["-p", "-t", program.pane.id, "@libtmux-lease", "2"]);
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        expect(running(await panePid(server, program.pane.id))).toBe(true);
+      });
+    },
+    40_000,
+  );
+
+  testProgram(
+    "an expired lease reads the pane when it fires and spares a dead one's group",
     async () => {
       await withServer(async (server, directory) => {
         // The program waits for a file, so it still runs when the timer is queued,
@@ -542,10 +607,20 @@ describe("program runs", () => {
         const gate = join(directory, "gate");
         const script =
           'trap "" HUP; sleep 30 </dev/null >/dev/null 2>&1 & echo $!; i=0; while [ ! -e "$0" ] && [ $i -lt 200 ]; do sleep 0.05; i=$((i+1)); done';
-        await using program = await server.spawn(["sh", "-c", script, gate]);
+        await using program = await server.spawn(["sh", "-c", script, gate], { keep: true });
+        const owned = { kind: "session", target: `=${program.sessionName}` } as const;
         const queued = Date.now();
-        const [command = "", ...args] = deadlineReap(program.pane.id, 4);
-        await server.cmd(command, args);
+        for (const [command = "", ...args] of leaseTimer(
+          program.pane.id,
+          owned,
+          true,
+          false,
+          3,
+          4,
+        )) {
+          // eslint-disable-next-line no-await-in-loop -- in order.
+          await server.cmd(command, args);
+        }
         await writeFile(gate, "");
         await program.wait({ timeoutMs: 10_000 });
         const child = Number(await program.output());
@@ -557,11 +632,233 @@ describe("program runs", () => {
           expect(running(child)).toBe(true);
         } finally {
           if (running(child)) process.kill(child, "SIGKILL");
+          await server.cmd("kill-session", ["-t", `=${program.sessionName}`]);
         }
       });
     },
     40_000,
   );
+
+  testProgram(
+    "tmux ends a spawned program, its session and its copy once its caller is killed",
+    async () => {
+      await withServer(async (server, _directory, fixture) => {
+        const caller = Bun.spawn(
+          [
+            process.execPath,
+            "-e",
+            `import { Server } from ${JSON.stringify(SERVER_MODULE)};
+const server = new Server(JSON.parse(process.env.LTX_PROGRAM_SERVER));
+const program = await server.spawn(["sh", "-c", "trap '' HUP TERM; sleep 300"], { orphanAfterMs: 1000, stream: true });
+console.log(JSON.stringify({ pane: program.pane.id, session: program.sessionName }));
+setInterval(() => undefined, 1000);`,
+          ],
+          {
+            env: {
+              ...process.env,
+              LTX_PROGRAM_SERVER: JSON.stringify({
+                environment: fixture.controllerEnvironment,
+                socketPath: fixture.socketPath,
+                tmuxBin: fixture.tmuxExecutable,
+              }),
+            },
+            stderr: "inherit",
+            stdout: "pipe",
+          },
+        );
+        const reader = caller.stdout.getReader();
+        let line = "";
+        while (!line.includes("\n")) {
+          // eslint-disable-next-line no-await-in-loop -- until the caller has started it.
+          const { done, value } = await reader.read();
+          if (done) break;
+          line += new TextDecoder().decode(value);
+        }
+        const { pane, session } = JSON.parse(line) as { pane: string; session: string };
+        const pid = await panePid(server, pane);
+        const [files = ""] = await server.cmd("show-options", [
+          "-p",
+          "-v",
+          "-t",
+          pane,
+          "@libtmux-files",
+        ]);
+        // Past two renewals, so a live caller is seen to keep the lease.
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+        expect(await server.hasSession(session)).toBe(true);
+        caller.kill("SIGKILL");
+        await caller.exited;
+        expect(
+          await eventually(
+            () => server.hasSession(session),
+            (has) => !has,
+            5000,
+          ),
+        ).toBe(false);
+        expect(running(pid)).toBe(false);
+        expect(
+          await eventually(
+            () => gone(files),
+            (removed) => removed,
+            5000,
+          ),
+        ).toBe(true);
+      });
+    },
+    40_000,
+  );
+
+  testProgram(
+    "a split beside a pane leaves its window, its options and its focus as they were",
+    async () => {
+      await withServer(async (server) => {
+        const session = await server.newSession({ name: "work" });
+        const pane = session.activePane;
+        if (pane === undefined) throw new Error("a new session has a pane");
+        const result = await server.run(["echo", "beside"], { from: pane, placement: "split" });
+        expect(result.output).toBe("beside");
+        expect(await server.cmd("list-panes", ["-t", "=work:", "-F", "#{pane_id}"])).toEqual([
+          pane.id,
+        ]);
+        expect(
+          await server.cmd("show-options", ["-w", "-v", "-t", pane.id, "remain-on-exit"]),
+        ).toEqual([]);
+        expect(await server.cmd("display-message", ["-p", "-t", "=work:", "#{pane_id}"])).toEqual([
+          pane.id,
+        ]);
+      });
+    },
+    40_000,
+  );
+
+  testProgram(
+    "a kept pane stays, dead and showing the output, for a person to close",
+    async () => {
+      await withServer(async (server) => {
+        const session = await server.newSession({ name: "work" });
+        const pane = session.activePane;
+        if (pane === undefined) throw new Error("a new session has a pane");
+        const result = await server.run(["sh", "-c", "echo kept; exit 2"], {
+          from: pane,
+          keep: true,
+          placement: "split",
+        });
+        expect(result.exitCode).toBe(2);
+        const ids = await server.cmd("list-panes", ["-t", "=work:", "-F", "#{pane_id}"]);
+        const kept = (await server.panes())
+          .toArray()
+          .find((each) => ids.includes(each.id) && each.id !== pane.id);
+        if (kept === undefined) throw new Error("the kept pane is gone");
+        expect(await server.cmd("display-message", ["-p", "-t", kept.id, "#{pane_dead}"])).toEqual([
+          "1",
+        ]);
+        expect((await kept.capture()).filter((text) => text !== "")).toEqual(["kept"]);
+
+        let name = "";
+        {
+          await using program = await server.spawn(["sleep", "30"], { keep: true });
+          name = program.sessionName;
+        }
+        // Disposal ended the program and left its session.
+        expect(
+          await server.cmd("display-message", ["-p", "-t", `=${name}:`, "#{pane_dead}"]),
+        ).toEqual(["1"]);
+      });
+    },
+    40_000,
+  );
+
+  testProgram(
+    "input reaches the program's stdin, byte for byte",
+    async () => {
+      await withServer(async (server) => {
+        expect((await server.run(["sort"], { input: "pear\napple\n" })).output).toBe("apple\npear");
+        const bytes = new Uint8Array([0, 1, 2, 255, 10]);
+        expect((await server.run(["wc", "-c"], { input: bytes })).output.trim()).toBe("5");
+        // The terminal is still the program's output, and its tty.
+        expect(
+          (await server.run(["sh", "-c", "cat; [ -t 1 ] && echo tty"], { input: "in\n" })).output,
+        ).toBe("in\ntty");
+      });
+    },
+    40_000,
+  );
+
+  testProgram(
+    "maxStreamBytes stops the copy and says so after what it kept",
+    async () => {
+      await withServer(async (server) => {
+        await using program = await server.spawn(["seq", "1", "100000"], {
+          maxStreamBytes: 100,
+          stream: true,
+        });
+        let text = "";
+        const reading = (async () => {
+          for await (const chunk of program.stream()) text += chunk;
+        })();
+        await expect(reading).rejects.toBeInstanceOf(LibTmuxError);
+        expect(new TextEncoder().encode(text)).toHaveLength(100);
+        expect(await program.wait({ timeoutMs: 10_000 })).toEqual({
+          exitCode: 0,
+          signalCode: null,
+        });
+
+        await using fits = await server.spawn(["printf", "12345"], {
+          maxStreamBytes: 5,
+          stream: true,
+        });
+        let whole = "";
+        for await (const chunk of fits.stream()) whole += chunk;
+        expect(whole).toBe("12345");
+      });
+    },
+    40_000,
+  );
+
+  testProgram(
+    "refuses input and stream before anything starts when tmux cannot see this machine's files",
+    async () => {
+      await withServer(async (_server, directory, fixture) => {
+        // A tmux whose shell writes nowhere this process can see, as a remote one would.
+        const elsewhere = join(directory, "tmux-elsewhere");
+        await writeFile(
+          elsewhere,
+          `#!/bin/sh\nfor arg do shift; case $arg in ": > "*) arg=: ;; esac; set -- "$@" "$arg"; done\nexec ${fixture.tmuxExecutable} "$@"\n`,
+        );
+        await chmod(elsewhere, 0o755);
+        const remote = new Server({
+          environment: fixture.controllerEnvironment,
+          socketPath: fixture.socketPath,
+          tmuxBin: elsewhere,
+        });
+        await expect(remote.run(["cat"], { input: "x" })).rejects.toThrow(/on this machine/u);
+        await expect(remote.spawn(["true"], { stream: true })).rejects.toThrow(/on this machine/u);
+        expect(await programSessions(remote)).toBe(0);
+      });
+    },
+    40_000,
+  );
+
+  test("refuses placements and limits its options do not fit", async () => {
+    await withServer(async (server) => {
+      const pane = (await server.panes()).toArray()[0];
+      if (pane === undefined) throw new Error("the fixture has a pane");
+      await expect(server.run(["true"], { placement: "split" })).rejects.toBeInstanceOf(TypeError);
+      await expect(
+        server.run(["true"], { from: pane, placement: "session" }),
+      ).rejects.toBeInstanceOf(TypeError);
+      await expect(
+        server.run(["true"], { from: pane, placement: "split", height: 5 }),
+      ).rejects.toBeInstanceOf(TypeError);
+      await expect(server.spawn(["true"], { maxStreamBytes: 10 })).rejects.toBeInstanceOf(
+        TypeError,
+      );
+      await expect(server.spawn(["true"], { orphanAfterMs: 999 })).rejects.toBeInstanceOf(
+        TypeError,
+      );
+      expect(await programSessions(server)).toBe(0);
+    });
+  }, 40_000);
 
   testProgram(
     "refuses a from pane of another tmux server before creating anything",

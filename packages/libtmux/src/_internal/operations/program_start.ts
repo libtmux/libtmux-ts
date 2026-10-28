@@ -1,9 +1,8 @@
 // Program runs: validating a request, making the pane, and starting the program in it.
 import { randomUUID } from "node:crypto";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { setTimeout as delay } from "node:timers/promises";
 
 import {
   LibTmuxError,
@@ -18,6 +17,7 @@ import type { Server } from "../../server.js";
 import type {
   AbortLike,
   ProgramExit,
+  ProgramPlacement,
   ProgramResult,
   RunOptions,
   SpawnOptions,
@@ -31,6 +31,7 @@ import {
   exists,
   isAborted,
   killProgram,
+  leaseTimer,
   MAX_TIMER_MS,
   PLACEHOLDER,
   programOutput,
@@ -40,8 +41,9 @@ import {
   requireCount,
   stopPane,
   waitProgram,
+  type Lease,
   type Owned,
-  type StreamFiles,
+  type RunFiles,
 } from "./program.js";
 
 /**
@@ -52,16 +54,18 @@ const RUN =
   'trap : HUP INT QUIT TERM; exec 3>&2 2>/dev/null; (exec "$0" "$@" 2>&3 3>&-); s=$?; ' +
   'sleep 0.05 2>/dev/null || sleep 1; if [ "$s" -gt 128 ] && n=$(kill -l "$s") && [ -n "$n" ]; then ' +
   'trap - "$n"; kill -s "$n" "$$"; fi; exit "$s"';
-const EXEC = ["sh", "-c", RUN] as const;
 /**
- * The same, after entering the directory given as `$1`: tmux's own `-c` falls
- * back to `$HOME` for one it cannot enter, where this ends the run with 126.
+ * Steps before `RUN`, each taking its argument from `$1` and shifting it off:
+ * tmux's own `-c` falls back to `$HOME` for a directory it cannot enter, where
+ * this ends the run with 126.
  */
-const EXEC_IN = ["sh", "-c", `cd -- "$1" || exit 126; shift; ${RUN}`] as const;
-/** How long setup waits for tmux to start the program, and for the stream copy to appear. */
+const ENTER = 'cd -- "$1" || exit 126; shift; ';
+const READ = 'exec <"$1"; shift; ';
+/** How long setup waits for tmux to start the program. */
 const SETUP_MS = 10_000;
-/** How long tmux keeps a finished run's session if the caller never removed it. */
-const ORPHAN_SECONDS = 60;
+/** How long `run` lets tmux wait, after this process is gone, before ending the program. */
+const RUN_ORPHAN_MS = 60_000;
+const MIN_ORPHAN_MS = 1000;
 const DEFAULT_HISTORY_LIMIT = 100_000;
 /** tmux's own ceiling on a window's width and height. */
 const MAX_SIZE = 10_000;
@@ -82,7 +86,8 @@ function shellQuote(value: string): string {
   return `'${value.replaceAll("'", "'\\''")}'`;
 }
 
-function requireSpawn(argv: readonly string[], spawn: SpawnOptions): void {
+/** Where the program runs, refusing a placement its options do not fit. */
+function requireSpawn(argv: readonly string[], spawn: SpawnOptions): ProgramPlacement {
   const [program = ""] = argv;
   if (program === "") throw new TypeError("argv must name a program");
   // bash, which is /bin/sh on some systems, reads `exec -l` as an option to exec itself.
@@ -92,15 +97,40 @@ function requireSpawn(argv: readonly string[], spawn: SpawnOptions): void {
       throw new TypeError(`environment variable name ${JSON.stringify(name)} is not valid`);
     }
   }
-  if (spawn.from !== undefined) {
-    // The window joins that pane's session, whose size and scrollback are its owner's.
+  const placement = spawn.placement ?? (spawn.from === undefined ? "session" : "window");
+  if (!["session", "split", "window"].includes(placement)) {
+    throw new TypeError(`placement must be "session", "window" or "split"`);
+  }
+  if ((placement === "session") !== (spawn.from === undefined)) {
+    throw new TypeError(
+      `placement "${placement}" ${spawn.from === undefined ? "needs" : "takes no"} from`,
+    );
+  }
+  if (placement !== "session") {
+    // The pane joins that pane's session, whose size and scrollback are its owner's.
     for (const name of ["width", "height", "historyLimit"] as const) {
       if (spawn[name] !== undefined) throw new TypeError(`${name} cannot be set with from`);
     }
   }
+  if (
+    spawn.input !== undefined &&
+    typeof spawn.input !== "string" &&
+    !(spawn.input instanceof Uint8Array)
+  ) {
+    throw new TypeError("input must be a string or a Uint8Array");
+  }
+  if (spawn.maxStreamBytes !== undefined && spawn.stream !== true) {
+    throw new TypeError("maxStreamBytes needs stream: true");
+  }
   requireCount("width", spawn.width, MAX_SIZE);
   requireCount("height", spawn.height, MAX_SIZE);
   requireCount("historyLimit", spawn.historyLimit, MAX_HISTORY_LIMIT);
+  requireCount("maxStreamBytes", spawn.maxStreamBytes, Number.MAX_SAFE_INTEGER - 1);
+  requireCount("orphanAfterMs", spawn.orphanAfterMs, MAX_TIMER_MS);
+  if (spawn.orphanAfterMs !== undefined && spawn.orphanAfterMs < MIN_ORPHAN_MS) {
+    throw new TypeError(`orphanAfterMs must be at least ${String(MIN_ORPHAN_MS)}`);
+  }
+  return placement;
 }
 
 /** Create the session whose dead placeholder pane the program will be respawned into. */
@@ -139,23 +169,49 @@ async function createSession(
   return paneId;
 }
 
+/** The placeholder's pane beside `from`, in its session and directory, and what to remove. */
+interface Beside {
+  readonly owned: Owned;
+  readonly paneId: string;
+  readonly sessionName: string;
+}
+
 /**
- * A window in `from`'s session and directory, holding the placeholder. Its id is
- * unknown inside the creating list, so remain-on-exit is set by its unique name.
+ * A split of `from`, or a window in its session, holding the placeholder. A
+ * window's id is unknown inside the creating list, so remain-on-exit is set by
+ * its unique name; a split takes it with `-m`, on its own pane alone.
  */
-async function createWindow(
+async function createBeside(
   runtime: RuntimeContext,
   from: Pane,
-): Promise<{ readonly paneId: string; readonly sessionName: string; readonly windowId: string }> {
+  placement: "split" | "window",
+): Promise<Beside> {
   const [sessionId = "", sessionName = "", path = ""] = await readPane(runtime, from.id, [
     "#{session_id}",
     "#{session_name}",
     "#{pane_current_path}",
   ]);
+  // tmux expands a start directory as a format; the inherited path is literal.
+  const directory = path === "" ? [] : ["-c", literalDirectory(path)];
+  if (placement === "split") {
+    const [paneId = ""] = await runCommand(runtime, [
+      "split-window",
+      "-d",
+      "-P",
+      "-F",
+      "#{pane_id}",
+      "-m",
+      "",
+      "-t",
+      from.id,
+      ...directory,
+      "--",
+      ...PLACEHOLDER,
+    ]);
+    return { owned: { kind: "pane", target: paneId }, paneId, sessionName };
+  }
   const name = `libtmux-program-${randomUUID().slice(0, 12)}`;
   const window = `${sessionId}:=${name}`;
-  // tmux expands a start directory as a format; the inherited path is literal.
-  const directory = path === "" ? undefined : literalDirectory(path);
   const [created = ""] = await runCommands(runtime, [
     [
       "new-window",
@@ -167,7 +223,7 @@ async function createWindow(
       `${sessionId}:`,
       "-n",
       name,
-      ...(directory === undefined ? [] : ["-c", directory]),
+      ...directory,
       "--",
       ...PLACEHOLDER,
     ],
@@ -179,35 +235,64 @@ async function createWindow(
     throw error;
   });
   const [paneId = "", windowId = ""] = created.split("\t");
-  return { paneId, sessionName, windowId };
+  return { owned: { kind: "window", target: windowId }, paneId, sessionName };
 }
 
-/** What `run` adds: tmux cleans up for a dead caller, and `signal` also stops setup. */
-type Reap = { readonly signal?: AbortLike; readonly timeoutMs?: number };
+/** The wrapper and its arguments: argv stays `$0 "$@"`, after what the steps take. */
+function wrapped(
+  argv: readonly string[],
+  spawn: SpawnOptions,
+  input: string | undefined,
+): string[] {
+  const [program = "", ...rest] = argv;
+  const steps: [string, string][] = [];
+  if (spawn.startDirectory !== undefined) steps.push([ENTER, spawn.startDirectory]);
+  if (input !== undefined) steps.push([READ, input]);
+  return [
+    "sh",
+    "-c",
+    `${steps.map(([step]) => step).join("")}${RUN}`,
+    program,
+    ...steps.map(([, value]) => value),
+    ...rest,
+  ];
+}
 
 /**
- * Has tmux SIGKILL the program in `seconds` if its pane still lives; the death
- * wakes the waiter and fires the hook. `##` defers the pane read to that moment.
+ * Whether the tmux server's machine sees this directory, which a stream and an
+ * input are written to: a file its shell creates must appear here.
  */
-export function deadlineReap(paneId: string, seconds: number): string[] {
-  const end = "'##{?pane_dead,:,kill -s KILL -- -##{pane_pid} 2>/dev/null; :}'";
-  return ["run-shell", "-b", "-d", String(seconds), "-C", `run-shell -t ${paneId} ${end}`];
+async function requireShared(runtime: RuntimeContext, directory: string): Promise<void> {
+  const probe = join(directory, "shared");
+  await runCommand(runtime, [
+    "run-shell",
+    "--",
+    literalDirectory(`: > ${shellQuote(probe)}`),
+  ]).catch(() => undefined);
+  if (!(await exists(probe))) {
+    throw new LibTmuxError(
+      "stream and input need the tmux server on this machine: a file it wrote never reached this temporary directory",
+    );
+  }
 }
 
 /**
  * Starts the program and waits for its exit in one list, inside which tmux
- * handles no other event; a `reap` adds the removing hook and the deadline timer.
+ * handles no other event; a `lease` arms tmux's cleanup for a caller that dies.
  */
 function startList(
   paneId: string,
   owned: Owned,
   argv: readonly string[],
   spawn: SpawnOptions,
-  files: StreamFiles | undefined,
-  reap: Reap | undefined,
+  files: RunFiles | undefined,
+  input: string | undefined,
+  lease: Lease | undefined,
   started: string,
 ): string[][] {
-  const remove = `run-shell -b -d ${String(ORPHAN_SECONDS)} -C 'kill-${owned.kind} -t ${owned.target}'`;
+  const stream = files?.stream;
+  // One byte past the limit, so a cut copy can be told from one that fit.
+  const copy = stream?.limit === undefined ? "cat" : `head -c ${String(stream.limit + 1)}`;
   return [
     [
       "respawn-pane",
@@ -219,15 +304,15 @@ function startList(
         `${name}=${value}`,
       ]),
       "--",
-      ...(spawn.startDirectory === undefined
-        ? [...EXEC, ...argv]
-        : [...EXEC_IN, argv[0] ?? "", spawn.startDirectory, ...argv.slice(1)]),
+      ...wrapped(argv, spawn, input),
     ],
-    ...(reap === undefined ? [] : [["set-hook", "-p", "-t", paneId, "pane-died", remove]]),
-    ...(reap?.timeoutMs === undefined
-      ? []
-      : [deadlineReap(paneId, Math.ceil(reap.timeoutMs / 1000) + ORPHAN_SECONDS)]),
     ...(files === undefined
+      ? []
+      : [["set-option", "-p", "-t", paneId, "@libtmux-files", files.directory]]),
+    ...(lease === undefined
+      ? []
+      : leaseTimer(paneId, owned, spawn.keep === true, files !== undefined, 0, lease.ms / 1000)),
+    ...(stream === undefined
       ? []
       : [
           [
@@ -235,7 +320,7 @@ function startList(
             "-O",
             "-t",
             paneId,
-            literalPipe(`cat > ${shellQuote(files.out)}; : > ${shellQuote(files.done)}`),
+            literalPipe(`${copy} >> ${shellQuote(stream.out)}; : > ${shellQuote(stream.done)}`),
           ],
         ]),
     ["wait-for", "-S", started],
@@ -244,21 +329,19 @@ function startList(
 }
 
 /**
- * Wait until tmux has run the start list up to its `started` signal and, for a
- * stream, created its copy. A channel signalled before its waiter arrives stays
- * woken, so the order of the two clients does not matter.
+ * Wait until tmux has run the start list up to its `started` signal. A channel
+ * signalled before its waiter arrives stays woken, so the order of the two
+ * clients does not matter.
  */
 async function confirmStarted(
   runtime: RuntimeContext,
   paneId: string,
-  files: StreamFiles | undefined,
   failure: () => unknown,
   exited: Promise<void>,
   signal: AbortLike | undefined,
   started: string,
   watcher: AbortController,
 ): Promise<void> {
-  const deadline = performance.now() + SETUP_MS;
   // The waiter stops only once the list can no longer signal: a waiter stopped
   // first could miss a signal, which would then stay woken in tmux.
   const stop = new AbortController();
@@ -287,35 +370,17 @@ async function confirmStarted(
   }
   if (isAborted(signal)) throw cancelled(signal);
   if (timedOut) throw new LibTmuxError(`tmux did not start the program in ${paneId}`);
-  if (files === undefined) return;
-  // The copy is written on the tmux server's machine; elsewhere the file never appears.
-  // eslint-disable-next-line no-await-in-loop -- the pipe's shell creates the file at once.
-  while (!(await exists(files.out))) {
-    if (isAborted(signal)) throw cancelled(signal);
-    const failed = failure();
-    if (failed !== undefined) throw failed;
-    if (performance.now() >= deadline) {
-      throw new LibTmuxError(
-        "stream needs the tmux server on this machine: its copy never appeared in this temporary directory",
-      );
-    }
-    // eslint-disable-next-line no-await-in-loop -- not there yet.
-    await delay(5);
-  }
 }
 
-/**
- * Start `argv` in a fresh detached session, with no shell parsing it; `run`
- * passes a `reap` so tmux cleans up for a caller that dies first.
- */
+/** Start `argv` in a pane of its own, with no shell parsing it; `signal` also stops setup. */
 export async function spawnProgram(
   server: Server,
   runtime: RuntimeContext,
   argv: readonly string[],
   spawn: SpawnOptions = {},
-  reap?: Reap,
+  signal?: AbortLike,
 ): Promise<Program> {
-  requireSpawn(argv, spawn);
+  const placement = requireSpawn(argv, spawn);
   if (spawn.from !== undefined) requireOnServer(spawn.from, server, "from");
   const { tmuxVersion } = await runtime.capabilities.bind();
   if (!hasCapability("program-run", tmuxVersion)) {
@@ -328,30 +393,51 @@ export async function spawnProgram(
     });
   }
   const watcher = new AbortController();
-  let files: StreamFiles | undefined;
+  let files: RunFiles | undefined;
   let owned: Owned | undefined;
   let paneId: string | undefined;
   try {
+    let input: string | undefined;
+    if (spawn.stream === true || spawn.input !== undefined) {
+      // mkdtemp makes the directory 0700 whatever the umask, which keeps both files private.
+      const directory = await mkdtemp(join(tmpdir(), "ltx-program-"));
+      const stream =
+        spawn.stream === true
+          ? {
+              done: join(directory, "done"),
+              limit: spawn.maxStreamBytes,
+              out: join(directory, "out"),
+            }
+          : undefined;
+      files = { directory, stream };
+      await requireShared(runtime, directory);
+      if (stream !== undefined) await writeFile(stream.out, "", { mode: 0o600 });
+      if (spawn.input !== undefined) {
+        input = join(directory, "in");
+        await writeFile(input, spawn.input, { mode: 0o600 });
+      }
+    }
     let sessionName: string;
     if (spawn.from === undefined) {
       sessionName = `libtmux-program-${randomUUID().slice(0, 12)}`;
       owned = { kind: "session", target: `=${sessionName}` };
       paneId = await createSession(runtime, sessionName, spawn);
     } else {
-      const window = await createWindow(runtime, spawn.from);
-      ({ paneId, sessionName } = window);
-      owned = { kind: "window", target: window.windowId };
+      ({ owned, paneId, sessionName } = await createBeside(
+        runtime,
+        spawn.from,
+        placement === "split" ? "split" : "window",
+      ));
     }
-    if (spawn.stream === true) {
-      // mkdtemp makes the directory 0700 whatever the umask, which keeps the copy private.
-      const directory = await mkdtemp(join(tmpdir(), "libtmux-program-"));
-      files = { directory, done: join(directory, "done"), out: join(directory, "out") };
-    }
+    const lease: Lease | undefined =
+      spawn.orphanAfterMs === undefined
+        ? undefined
+        : { ms: spawn.orphanAfterMs, renewing: false, timer: undefined, token: 0 };
     let failure: unknown;
     const started = `libtmux-program-started-${randomUUID()}`;
     const exited = runCommands(
       runtime,
-      startList(paneId, owned, argv, spawn, files, reap, started),
+      startList(paneId, owned, argv, spawn, files, input, lease, started),
       {
         signal: watcher.signal,
         timeoutMs: null,
@@ -362,16 +448,7 @@ export async function spawnProgram(
         if (!(error instanceof TmuxTransportError && error.kind === "cancelled")) failure = error;
       },
     );
-    await confirmStarted(
-      runtime,
-      paneId,
-      files,
-      () => failure,
-      exited,
-      reap?.signal,
-      started,
-      watcher,
-    );
+    await confirmStarted(runtime, paneId, () => failure, exited, signal, started, watcher);
     // Handles come from a whole-server snapshot, as `Pane.refreshed` reads them.
     const pane = (await server.panes()).toArray().find((candidate) => candidate.id === paneId);
     if (pane === undefined)
@@ -385,7 +462,9 @@ export async function spawnProgram(
       exit: undefined,
       exited,
       files,
+      keep: spawn.keep === true,
       killing: undefined,
+      lease,
       owned,
       paneId,
       runtime,
@@ -398,13 +477,15 @@ export async function spawnProgram(
     // Nothing else would end a program whose setup failed, or remove what it ran in.
     watcher.abort();
     if (paneId !== undefined) await stopPane(runtime, paneId).catch(() => undefined);
-    if (owned !== undefined) await removeOwned(runtime, owned).catch(() => undefined);
+    if (owned !== undefined && spawn.keep !== true) {
+      await removeOwned(runtime, owned).catch(() => undefined);
+    }
     if (files !== undefined) await rm(files.directory, { force: true, recursive: true });
     throw error;
   }
 }
 
-/** Run `argv` to completion in a detached session and report what it printed. */
+/** Run `argv` to completion in a pane of its own and report what it printed. */
 export async function runProgram(
   server: Server,
   runtime: RuntimeContext,
@@ -413,11 +494,13 @@ export async function runProgram(
 ): Promise<ProgramResult> {
   requireCount("timeoutMs", options.timeoutMs, MAX_TIMER_MS);
   if (isAborted(options.signal)) throw cancelled(options.signal);
-  // The deadline and the signal bound the program, not the tmux commands that start it.
-  const program = await spawnProgram(server, runtime, argv, options, {
-    ...(options.signal === undefined ? {} : { signal: options.signal }),
-    ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
-  });
+  const program = await spawnProgram(
+    server,
+    runtime,
+    argv,
+    { ...options, orphanAfterMs: options.orphanAfterMs ?? RUN_ORPHAN_MS },
+    options.signal,
+  );
   let failed = true;
   try {
     let exit: ProgramExit = { exitCode: null, signalCode: null };

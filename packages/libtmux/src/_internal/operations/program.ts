@@ -35,17 +35,34 @@ const DRAIN_MS = 5000;
 const STREAM_POLL_MS = 25;
 export const MAX_TIMER_MS: number = 2 ** 31 - 1;
 
-export interface StreamFiles {
+/** The run's private directory, holding its input and its stream copy. */
+export interface RunFiles {
   readonly directory: string;
-  readonly done: string;
-  readonly out: string;
+  readonly stream: StreamFiles | undefined;
 }
 
-/** A session of the program's own, or a window it added to someone else's. */
+export interface StreamFiles {
+  /** Written once the copy has ended. */
+  readonly done: string;
+  /** The bytes the program wrote, in order. */
+  readonly out: string;
+  /** Where the copy stops, from `maxStreamBytes`. */
+  readonly limit: number | undefined;
+}
+
+/** A session of the program's own, or the window or split it added to someone else's. */
 export interface Owned {
-  readonly kind: "session" | "window";
-  /** `=name` for a session, `@N` for a window. */
+  readonly kind: "pane" | "session" | "window";
+  /** `=name` for a session, `@N` for a window, `%N` for a pane. */
   readonly target: string;
+}
+
+/** A lease tmux holds on the program; see {@link leaseTimer}. */
+export interface Lease {
+  readonly ms: number;
+  token: number;
+  renewing: boolean;
+  timer: ReturnType<typeof setInterval> | undefined;
 }
 
 export interface ProgramState {
@@ -57,7 +74,10 @@ export interface ProgramState {
   readonly watcher: AbortController;
   /** Settles when tmux reports the exit, or the waiter is stopped; never rejects. */
   readonly exited: Promise<void>;
-  readonly files: StreamFiles | undefined;
+  readonly files: RunFiles | undefined;
+  /** Whether the pane outlives the program, for a person to read. */
+  readonly keep: boolean;
+  readonly lease: Lease | undefined;
   exit: ProgramExit | undefined;
   killing: Promise<void> | undefined;
   /** Whether `exited` has settled; then each wait in `wakes` was woken once. */
@@ -68,9 +88,63 @@ export interface ProgramState {
 // Kept off the object, so a `Program` carries no field a caller could read or set.
 const states = new WeakMap<object, ProgramState>();
 
+/**
+ * tmux's side of a lease: in `seconds`, if the pane's lease still holds `token`,
+ * SIGKILL a program still running and remove what it ran in, unless kept. The
+ * files go a second later, once a stream's writer, ended with the pane, has
+ * finished. A renewal moves the token on. `##` defers each read to that moment.
+ */
+export function leaseTimer(
+  paneId: string,
+  owned: Owned,
+  keep: boolean,
+  files: boolean,
+  token: number,
+  seconds: number,
+): string[][] {
+  const kill = "##{?pane_dead,:,kill -s KILL -- -##{pane_pid} 2>/dev/null}";
+  const clear = files ? "(sleep 1; rm -rf -- ##{q:@libtmux-files}) >/dev/null 2>&1 &" : ":";
+  const remove = keep ? "" : ` ; kill-${owned.kind} -t ${owned.target}`;
+  const expire = `if-shell -F -t ${paneId} "##{==:##{@libtmux-lease},${String(token)}}" "run-shell -t ${paneId} '${kill}; ${clear}'${remove}"`;
+  return [
+    ["set-option", "-p", "-t", paneId, "@libtmux-lease", String(token)],
+    ["run-shell", "-b", "-d", seconds.toFixed(3), "-C", expire],
+  ];
+}
+
+/** Move the lease on; a renewal still in flight is not overtaken, so tokens arrive in order. */
+async function renew(state: ProgramState, lease: Lease): Promise<void> {
+  if (lease.renewing) return;
+  lease.renewing = true;
+  lease.token += 1;
+  try {
+    await runCommands(
+      state.runtime,
+      leaseTimer(
+        state.paneId,
+        state.owned,
+        state.keep,
+        state.files !== undefined,
+        lease.token,
+        lease.ms / 1000,
+      ),
+    );
+  } catch {
+    // A pane gone from outside has nothing left to lease.
+  } finally {
+    lease.renewing = false;
+  }
+}
+
 /** Attach a started program's state to its handle; `program_start.ts` calls it once. */
 export function registerProgram(program: Program, state: ProgramState): void {
   states.set(program, state);
+  const { lease } = state;
+  if (lease !== undefined) {
+    // Unreferenced: a process with nothing else to do exits, and tmux then ends the program.
+    lease.timer = setInterval(() => void renew(state, lease), lease.ms / 3);
+    lease.timer.unref();
+  }
   // One listener per program: one per wait would pile up on a long-lived exit.
   void state.exited.then(() => {
     state.settled = true;
@@ -259,7 +333,7 @@ export async function programOutput(
 /** The program's output as UTF-8 text, as it is written, until it exits. */
 export async function* streamProgram(program: Program): AsyncGenerator<string, void, undefined> {
   const state = stateOf(program);
-  const { files } = state;
+  const files = state.files?.stream;
   if (files === undefined) {
     throw new TypeError("spawn the program with { stream: true } to stream its output");
   }
@@ -303,8 +377,17 @@ export async function* streamProgram(program: Program): AsyncGenerator<string, v
       do {
         // eslint-disable-next-line no-await-in-loop -- read what has arrived, in order.
         ({ bytesRead: read } = await handle.read(buffer, 0, buffer.length, offset));
+        const kept = files.limit === undefined ? read : Math.min(read, files.limit - offset);
         offset += read;
-        if (read > 0) yield decoder.decode(buffer.subarray(0, read), { stream: true });
+        if (kept > 0) yield decoder.decode(buffer.subarray(0, kept), { stream: true });
+        // The copy holds one byte past the limit, which is how a cut copy is told apart.
+        if (files.limit !== undefined && offset > files.limit) {
+          const tail = decoder.decode();
+          if (tail !== "") yield tail;
+          throw new LibTmuxError(
+            `the program wrote more than maxStreamBytes (${String(files.limit)}); the copy stopped there`,
+          );
+        }
       } while (read > 0);
       if (state.killing !== undefined) {
         throw new LibTmuxError("the program was killed while its output streamed");
@@ -373,11 +456,12 @@ export async function stopPane(runtime: RuntimeContext, paneId: string): Promise
 }
 
 async function endProgram(state: ProgramState): Promise<void> {
+  clearInterval(state.lease?.timer);
   try {
     state.watcher.abort();
     await state.exited;
     await stopPane(state.runtime, state.paneId);
-    await removeOwned(state.runtime, state.owned);
+    if (!state.keep) await removeOwned(state.runtime, state.owned);
   } finally {
     if (state.files !== undefined)
       await rm(state.files.directory, { force: true, recursive: true });
@@ -392,7 +476,7 @@ export async function removeOwned(runtime: RuntimeContext, owned: Owned): Promis
     const probe =
       owned.kind === "session"
         ? ["has-session", "-t", owned.target]
-        : ["display-message", "-p", "-t", owned.target, "#{window_id}"];
+        : ["display-message", "-p", "-t", owned.target, `#{${owned.kind}_id}`];
     const [still = ""] = await runCommand(runtime, probe).then(
       (lines) => (owned.kind === "session" ? ["yes"] : lines),
       () => [""],
@@ -401,7 +485,7 @@ export async function removeOwned(runtime: RuntimeContext, owned: Owned): Promis
   }
 }
 
-/** End the program, then remove its session and any stream copy. Every call waits for the same end. */
+/** End the program, then remove its pane unless kept, and its files. Every call waits for the same end. */
 export function killProgram(program: Program): Promise<void> {
   const state = stateOf(program);
   // Concurrent kills share one end; a kill that failed can be tried again.

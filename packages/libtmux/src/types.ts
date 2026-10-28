@@ -495,25 +495,59 @@ export interface RunShellOptions extends CommandOptions {
 }
 
 /**
- * Where a program started by {@link Server.spawn} runs.
+ * Where a program runs: a detached session of its own, a background window of
+ * the `from` pane's session, or a split beside the `from` pane, where a person
+ * sees it run.
+ */
+export type ProgramPlacement = "session" | "split" | "window";
+
+/**
+ * Where a program started by {@link Server.spawn} runs, and what it gets.
  *
- * The program gets a fresh detached session of its own and a real terminal.
- * Nothing is typed and no shell parses `argv`, so no command line appears in
- * its output. It runs on the machine the tmux server is on, with the tmux
- * server's environment and `PATH` rather than the caller's. Its terminal is
- * its only stdin, stderr shares the screen with stdout, and a program that
- * pages or prompts (`git log`, `sudo`) waits for keys as it would in a terminal.
+ * The program gets a pane of its own and a real terminal. Nothing is typed and
+ * no shell parses `argv`, so no command line appears in its output. It runs on
+ * the machine the tmux server is on, with the tmux server's environment and
+ * `PATH` rather than the caller's. stderr shares the screen with stdout, and
+ * without `input` the terminal is its stdin, so a program that pages or
+ * prompts (`git log`, `sudo`) waits for keys as it would in a terminal.
  */
 export interface SpawnOptions {
   /**
-   * Run in a new background window of this pane's session instead of a
-   * session of the program's own, starting in the pane's current directory
-   * and with that session's tmux environment. Variables the pane's shell
-   * exported are not inherited: only typing into that shell reaches them.
-   * The program then owns only its window. Not combined with `width`,
-   * `height` or `historyLimit`, which belong to that session.
+   * The pane to run beside: the program starts in its current directory, in
+   * its session, with that session's tmux environment. Variables the pane's
+   * shell exported are not inherited; only typing into that shell reaches them.
    */
   readonly from?: Pane;
+  /**
+   * `"session"`, the default without `from`, is a detached session of the
+   * program's own. With `from`, `"window"`, the default, is a background
+   * window of that pane's session, and `"split"` splits that pane, leaving
+   * focus where it was.
+   */
+  readonly placement?: ProgramPlacement;
+  /**
+   * Leave the pane in place once the program has ended, showing its output,
+   * for a person to read; it is theirs to close. A kept split closes at the
+   * next key pressed in it. {@link Program.kill} and `await using` still end
+   * a running program.
+   */
+  readonly keep?: boolean;
+  /**
+   * The program's stdin, as bytes or UTF-8 text. It is written to a private
+   * file the program reads, so it passes through no shell or tmux command,
+   * and the terminal stays the program's output. Needs the tmux server on
+   * this machine, as `stream` does.
+   */
+  readonly input?: string | Uint8Array;
+  /**
+   * Have tmux end the program, and remove its pane unless `keep` is set, this
+   * many milliseconds after this process stops renewing a lease on it: after
+   * it exits or dies without {@link Program.kill}. A live process renews the
+   * lease every third of this period. At least 1000. {@link Server.run}
+   * defaults to 60000; {@link Server.spawn} takes none, and a program it
+   * starts outlives this process.
+   */
+  readonly orphanAfterMs?: number;
   /**
    * Directory the program starts in, taken as a literal path. Defaults to this
    * process's current directory, or the `from` pane's. One that cannot be
@@ -522,14 +556,14 @@ export interface SpawnOptions {
   readonly startDirectory?: string;
   /** Variables added to the program's environment. */
   readonly environment?: Readonly<Record<string, string>>;
-  /** Terminal width in columns. Defaults to tmux's `default-size`. */
+  /** Terminal width in columns, for `"session"`. Defaults to tmux's `default-size`. */
   readonly width?: number;
-  /** Terminal height in rows. Defaults to tmux's `default-size`. */
+  /** Terminal height in rows, for `"session"`. Defaults to tmux's `default-size`. */
   readonly height?: number;
   /**
-   * Lines of scrollback kept for {@link Program.output}, up to tmux's 2147483647.
-   * Defaults to 100000; older lines are dropped, and {@link ProgramResult.truncated}
-   * says so.
+   * Lines of scrollback kept for {@link Program.output}, for `"session"`, up to
+   * tmux's 2147483647. Defaults to 100000; older lines are dropped, and
+   * {@link ProgramResult.truncated} says so.
    */
   readonly historyLimit?: number;
   /**
@@ -538,10 +572,16 @@ export interface SpawnOptions {
    * this process's temporary directory.
    */
   readonly stream?: boolean;
+  /**
+   * Stop the copy after this many bytes; {@link Program.stream} then yields
+   * them and throws {@link LibTmuxError}. The program runs on. No limit by
+   * default, and the temporary directory may be memory-backed.
+   */
+  readonly maxStreamBytes?: number;
 }
 
 /** How long {@link Server.run} lets a program run, and how to stop it early. */
-export interface RunOptions extends Omit<SpawnOptions, "stream"> {
+export interface RunOptions extends Omit<SpawnOptions, "maxStreamBytes" | "stream"> {
   /**
    * Stop the program after this many milliseconds and report what it printed
    * with `timedOut` set. A positive timer-safe integer; no limit by default.

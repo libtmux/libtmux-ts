@@ -8,15 +8,16 @@ import type { Pane } from "./pane.js";
 import type { ProgramExit, ProgramWaitOptions } from "./types.js";
 
 /**
- * A program started by {@link Server.spawn}, running in a session of its own.
+ * A program started by {@link Server.spawn}, running in a pane of its own.
  *
  * Nothing was typed to start it, so its pane holds only what it printed. The
  * pane is a real terminal: drive a full-screen program with
  * {@link Pane.sendKeys} and read its screen with {@link Pane.capture}.
  *
- * It owns its session. {@link Program.kill}, or leaving an `await using`
- * scope, ends the program and removes the session; a program left running
- * keeps both, also after this process exits. A kill ends a stream in progress
+ * It owns its pane. {@link Program.kill}, or leaving an `await using` scope,
+ * ends the program and removes the pane, unless spawned with `keep`; a
+ * program left running keeps both, also after this process exits, unless
+ * spawned with `orphanAfterMs`. A kill ends a stream in progress
  * with {@link LibTmuxError}, and a pane removed from outside with
  * {@link ObjectNotFoundError}. After `kill`, `output` raises
  * {@link ObjectNotFoundError}, `stream` raises {@link LibTmuxError}, and
@@ -39,7 +40,7 @@ export class Program implements AsyncDisposable {
   /**
    * The session the program runs in: a detached one of its own, removed with
    * it, or with `from` that pane's session, which loses only the program's
-   * window. `tmux attach -t` it to watch the program.
+   * window or split. `tmux attach -t` it to watch the program.
    *
    * ```ts
    * await using program = await server.spawn(["sleep", "1"]);
@@ -106,7 +107,7 @@ export class Program implements AsyncDisposable {
   }
 
   /**
-   * End the program and remove its session; every call waits for the same end.
+   * End the program and remove its pane, unless kept; every call waits for the same end.
    *
    * A running program gets SIGTERM and, two seconds later, SIGKILL, sent to
    * its process group on the tmux server's machine, so one that ignores
