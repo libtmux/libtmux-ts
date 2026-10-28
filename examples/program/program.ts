@@ -134,10 +134,11 @@ export async function startService(
     stream: true,
   });
   try {
-    let printed = "";
+    // Only the tail is kept: enough for `ready` to straddle two chunks.
+    let tail = "";
     for await (const chunk of service.stream()) {
-      printed += chunk;
-      if (printed.includes(ready)) return service;
+      tail = (tail + chunk).slice(-(ready.length + chunk.length));
+      if (tail.includes(ready)) return service;
     }
   } catch (error) {
     await service.kill();
