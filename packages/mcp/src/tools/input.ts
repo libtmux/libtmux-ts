@@ -7,8 +7,11 @@
  */
 
 import { randomUUID } from "node:crypto";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
-import { TmuxTransportError, VersionTooLowError, type Pane } from "libtmux";
+import { LibTmuxError, TmuxTransportError, VersionTooLowError, type Pane } from "libtmux";
 import { z } from "zod";
 
 import {
@@ -16,6 +19,7 @@ import {
   reserveFramedCommand,
   reservePaneInput,
   runFramedCommand,
+  type FramedResult,
 } from "../command.js";
 import type { ToolContext } from "../context.js";
 import { noteLiteralWrite } from "../pane_echo.js";
@@ -36,7 +40,13 @@ import {
   inlineRequestText,
   paneIdSchema,
 } from "../schemas.js";
+import { shellQuote } from "../startup.js";
 import { isFailure } from "../target_resolution.js";
+
+/** How long reading a shell's environment may take; `env` answers at once from an idle shell. */
+const INHERIT_TIMEOUT_MS = 10_000;
+/** The most stdin `run_program` takes, which it writes to a file rather than typing. */
+const MAX_INPUT_BYTES = 1_048_576;
 
 /**
  * Shells whose syntax the command framing is written in.
@@ -55,6 +65,115 @@ const POSIX_SHELLS = new Set(["ash", "bash", "dash", "ksh", "mksh", "sh", "zsh"]
  * call and several.
  */
 const OTHER_SHELLS = new Set(["csh", "elvish", "fish", "ion", "nu", "pwsh", "tcsh", "xonsh"]);
+
+/**
+ * Run `command` in a pane's idle POSIX shell through the framing, holding the
+ * pane's input for the run, or answer why it cannot be run there.
+ */
+async function runInShell(
+  context: ToolContext,
+  paneId: string,
+  command: string,
+  force: boolean | undefined,
+  timeoutMs: number | undefined,
+  signal: AbortSignal,
+): Promise<FramedResult | ReturnType<typeof fail>> {
+  const initialPlan = planPaneInput(await context.observeInput(signal), paneId, force, "run in");
+  if (isFailure(initialPlan)) return initialPlan;
+  const initial = runPreflight(initialPlan, paneId);
+  if (isFailure(initial)) return initial;
+
+  const reservation = reserveFramedCommand(initial.plan.observation.authority, paneId, command);
+  if (isPaneInputConflict(reservation)) return busyPane(reservation);
+  let result: FramedResult;
+  try {
+    result = await runFramedCommand(
+      context,
+      initial.pane,
+      command,
+      timeoutMs,
+      signal,
+      true,
+      async () => {
+        let final: ReturnType<typeof runPreflight>;
+        try {
+          const finalPlan = planPaneInput(await context.observeInput(), paneId, force, "run in");
+          if (isFailure(finalPlan)) throw RUN_TRANSITION;
+          final = runPreflight(finalPlan, paneId);
+        } catch {
+          throw RUN_TRANSITION;
+        }
+        if (isFailure(final) || final.signature !== initial.signature) {
+          throw RUN_TRANSITION;
+        }
+        return final.pane;
+      },
+      initial.plan.observation.authority,
+    );
+  } catch (error) {
+    reservation.release();
+    if (error === RUN_TRANSITION) return runTransitionFailure(paneId);
+    throw error;
+  }
+  reservation.settleWith(result.settled);
+  return result;
+}
+
+/** A variable name a POSIX shell can export; `env` also lists names such as `BASH_FUNC_f%%`. */
+const SHELL_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/u;
+
+/**
+ * Variables a shell exported, from `env -0` output, as a file `sh` can source.
+ * TMUX_PANE names the shell's own pane, which the program's pane is not.
+ */
+export function sourceableEnvironment(dump: string): string {
+  return dump
+    .split("\0")
+    .map((entry) => [entry.slice(0, entry.indexOf("=")), entry.slice(entry.indexOf("=") + 1)])
+    .filter(([name = ""]) => SHELL_NAME.test(name) && name !== "TMUX_PANE")
+    .map(([name = "", value = ""]) => `export ${name}=${shellQuote(value)}\n`)
+    .join("");
+}
+
+/**
+ * Read the variables a pane's shell exported, by typing one framed `env -0` into
+ * it, and return the file the program sources before it starts.
+ */
+async function inheritedEnvironment(
+  context: ToolContext,
+  paneId: string,
+  directory: string,
+  signal: AbortSignal,
+): Promise<string | ReturnType<typeof fail>> {
+  const dump = join(directory, "env");
+  const ran = await runInShell(
+    context,
+    paneId,
+    `env -0 > ${shellQuote(dump)}`,
+    false,
+    INHERIT_TIMEOUT_MS,
+    signal,
+  );
+  if (isFailure(ran)) return ran;
+  if (ran.outcome !== "completed" || ran.exitStatus !== 0) {
+    return fail({
+      hint: "Run without inheritShell, or check the pane's shell with capture_pane.",
+      reason: `Reading the shell's environment ended with ${ran.outcome === "completed" ? `exit ${String(ran.exitStatus)}` : ran.outcome}; no program was started.`,
+    });
+  }
+  let text: string;
+  try {
+    text = await readFile(dump, "utf8");
+  } catch {
+    return fail({
+      hint: "Run without inheritShell: the pane's shell is on another machine than this server.",
+      reason: "The pane's shell wrote its environment where this server cannot read it.",
+    });
+  }
+  const sourced = join(directory, "environment.sh");
+  await writeFile(sourced, sourceableEnvironment(text), { mode: 0o600 });
+  return sourced;
+}
 
 /** tmux reports a login shell as `-zsh`; the leading dash is not part of it. */
 function shellName(command: string): string {
@@ -406,54 +525,8 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
       if (command.trim() === "") {
         return fail({ reason: "command must not be empty." });
       }
-      const initialPlan = planPaneInput(
-        await context.observeInput(extra.signal),
-        paneId,
-        force,
-        "run in",
-      );
-      if (isFailure(initialPlan)) return initialPlan;
-      const initial = runPreflight(initialPlan, paneId);
-      if (isFailure(initial)) return initial;
-
-      const reservation = reserveFramedCommand(initial.plan.observation.authority, paneId, command);
-      if (isPaneInputConflict(reservation)) return busyPane(reservation);
-      let result: Awaited<ReturnType<typeof runFramedCommand>>;
-      try {
-        result = await runFramedCommand(
-          context,
-          initial.pane,
-          command,
-          timeoutMs,
-          extra.signal,
-          true,
-          async () => {
-            let final: ReturnType<typeof runPreflight>;
-            try {
-              const finalPlan = planPaneInput(
-                await context.observeInput(),
-                paneId,
-                force,
-                "run in",
-              );
-              if (isFailure(finalPlan)) throw RUN_TRANSITION;
-              final = runPreflight(finalPlan, paneId);
-            } catch {
-              throw RUN_TRANSITION;
-            }
-            if (isFailure(final) || final.signature !== initial.signature) {
-              throw RUN_TRANSITION;
-            }
-            return final.pane;
-          },
-          initial.plan.observation.authority,
-        );
-      } catch (error) {
-        reservation.release();
-        if (error === RUN_TRANSITION) return runTransitionFailure(paneId);
-        throw error;
-      }
-      reservation.settleWith(result.settled);
+      const result = await runInShell(context, paneId, command, force, timeoutMs, extra.signal);
+      if (isFailure(result)) return result;
       const bounded = boundText(
         result.output === "" ? [] : result.output.split("\n"),
         effectiveResultLines(context.policy, maxLines),
@@ -524,16 +597,16 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
       description:
         "Run a program in a pane of its own and return its output and exit status. " +
         "It runs in a fresh detached session with the tmux server's environment, or with " +
-        "fromPaneId in a background window of that pane's session and directory. " +
+        "fromPaneId beside that pane, in its session and directory. " +
         "No shell parses argv and nothing is typed, so the output holds no command line or echo. " +
-        "The session or window is removed before this returns. " +
+        "The pane is removed before this returns, unless keep leaves it for a person. " +
         "A program still running at the timeout is ended. " +
         "Commands are found on the tmux server's PATH; exit 127 means not found. " +
-        "The program has a terminal but no input, so one that prompts waits until the timeout. " +
-        "PAGER and GIT_PAGER are cat unless argv sets them with the env command. " +
+        "Its stdin is input when given, else the terminal, so one that prompts waits until the " +
+        "timeout. PAGER and GIT_PAGER are cat unless argv sets them with the env command. " +
         'Use ["sh", "-c", ...] for pipes and redirections. ' +
-        "Use run_shell_command for shell builtins such as cd, or for variables a pane's shell " +
-        "exported. Requires tmux 3.8 or newer.",
+        "inheritShell adds the variables a fromPaneId shell exported; run_shell_command runs " +
+        "shell builtins such as cd. Requires tmux 3.8 or newer.",
       inputSchema: {
         argv: z
           .array(inlineRequestText("argv item"))
@@ -554,9 +627,33 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
         fromPaneId: paneIdSchema
           .optional()
           .describe(
-            "Start in this pane's directory, in a background window of its session with that " +
-              "session's tmux environment; the window is removed afterwards. Variables the " +
-              "pane's shell exported are not inherited: run_shell_command reaches those.",
+            "Run beside this pane, in its directory and session, with that session's tmux " +
+              "environment. Variables the pane's shell exported come only with inheritShell.",
+          ),
+        inheritShell: z
+          .boolean()
+          .optional()
+          .describe(
+            "With fromPaneId, first read the variables that pane's idle shell exported, by " +
+              "typing one env command into it, then run the program with them. The shell " +
+              "must be a POSIX one at its prompt, as run_shell_command requires.",
+          ),
+        input: z
+          .string()
+          .refine((value) => Buffer.byteLength(value) <= MAX_INPUT_BYTES, {
+            message: `input must be at most ${String(MAX_INPUT_BYTES)} bytes.`,
+          })
+          .optional()
+          .describe(
+            "Text the program reads as its stdin, written to a private file rather than typed, " +
+              "so no shell quotes it. Needs the tmux server on this machine.",
+          ),
+        keep: z
+          .boolean()
+          .optional()
+          .describe(
+            "Leave the pane, dead and showing the output, for a person to read and close. " +
+              "Set it only when a person asked to see the run; the pane is then theirs.",
           ),
         height: z
           .number()
@@ -571,6 +668,13 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
           .positive()
           .optional()
           .describe("Keep at most this many lines, from the end. Defaults to the server limit."),
+        placement: z
+          .enum(["window", "split"])
+          .optional()
+          .describe(
+            'With fromPaneId: "window", the default, is a background window of its session; ' +
+              '"split" splits that pane, so a person watching it sees the run. Focus stays put.',
+          ),
         startDirectory: inlineRequestText("startDirectory")
           .optional()
           .describe(
@@ -636,13 +740,35 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
       },
       title: "Run a program and wait",
     },
-    async ({ argv, fromPaneId, height, maxLines, startDirectory, timeoutMs, width }, extra) => {
+    async (
+      {
+        argv,
+        fromPaneId,
+        height,
+        inheritShell,
+        input,
+        keep,
+        maxLines,
+        placement,
+        startDirectory,
+        timeoutMs,
+        width,
+      },
+      extra,
+    ) => {
       const effectiveTimeoutMs = effectiveWaitMs(context.policy, timeoutMs);
       let from: Pane | undefined;
-      if (fromPaneId !== undefined) {
+      if (fromPaneId === undefined) {
+        if (placement !== undefined || inheritShell === true) {
+          return fail({
+            hint: "Name the pane to run beside with fromPaneId.",
+            reason: "placement and inheritShell run beside a pane, and none was given.",
+          });
+        }
+      } else {
         if (width !== undefined || height !== undefined) {
           return fail({
-            hint: "Leave width and height out; the window takes that session's size.",
+            hint: "Leave width and height out; the pane takes that session's size.",
             reason: "fromPaneId runs in that pane's session, whose size is its own.",
           });
         }
@@ -654,24 +780,47 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
           });
         }
       }
+      // mkdtemp makes it 0700 whatever the umask: the shell's variables can hold secrets.
+      const directory =
+        inheritShell === true ? await mkdtemp(join(tmpdir(), "ltx-mcp-inherit-")) : undefined;
       let result: Awaited<ReturnType<typeof context.tmux.run>>;
       try {
-        result = await context.tmux.run(argv, {
+        let program = argv;
+        if (directory !== undefined && fromPaneId !== undefined) {
+          const sourced = await inheritedEnvironment(context, fromPaneId, directory, extra.signal);
+          if (typeof sourced !== "string") return sourced;
+          // Sourced by the program's own sh, so no variable passes through a tmux command.
+          program = ["sh", "-c", '. "$0" && exec "$@"', sourced, ...argv];
+        }
+        result = await context.tmux.run(program, {
           // A pager waits for keys nobody will press.
           environment: { GIT_PAGER: "cat", PAGER: "cat" },
           ...(from === undefined ? {} : { from }),
           ...(height === undefined ? {} : { height }),
+          ...(input === undefined ? {} : { input }),
+          ...(keep === undefined ? {} : { keep }),
+          ...(placement === undefined ? {} : { placement }),
           ...(startDirectory === undefined ? {} : { startDirectory }),
           ...(width === undefined ? {} : { width }),
           signal: extra.signal,
           timeoutMs: effectiveTimeoutMs,
         });
       } catch (error) {
-        if (!(error instanceof VersionTooLowError)) throw error;
-        return fail({
-          hint: "On this server, run the command with run_shell_command in an existing shell pane.",
-          reason: error.message,
-        });
+        if (error instanceof VersionTooLowError) {
+          return fail({
+            hint: "On this server, run the command with run_shell_command in an existing shell pane.",
+            reason: error.message,
+          });
+        }
+        if (error instanceof LibTmuxError && error.message.includes("on this machine")) {
+          return fail({
+            hint: 'Leave input out, or pipe it in with argv such as ["sh", "-c", "printf ... | program"].',
+            reason: error.message,
+          });
+        }
+        throw error;
+      } finally {
+        if (directory !== undefined) await rm(directory, { force: true, recursive: true });
       }
       const bounded = boundText(
         result.output === "" ? [] : result.output.split("\n"),
