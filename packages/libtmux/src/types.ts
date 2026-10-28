@@ -495,6 +495,98 @@ export interface RunShellOptions extends CommandOptions {
 }
 
 /**
+ * Where a program started by {@link Server.spawn} runs.
+ *
+ * The program gets a fresh detached session of its own and a real terminal.
+ * Nothing is typed and no shell parses `argv`, so no command line appears in
+ * its output. It runs on the machine the tmux server is on, with the tmux
+ * server's environment and `PATH` rather than the caller's. Its terminal is
+ * its only stdin, stderr shares the screen with stdout, and a program that
+ * pages or prompts (`git log`, `sudo`) waits for keys as it would in a terminal.
+ */
+export interface SpawnOptions {
+  /**
+   * Run in a new background window of this pane's session instead of a
+   * session of the program's own, starting in the pane's current directory
+   * and with that session's tmux environment. Variables the pane's shell
+   * exported are not inherited: only typing into that shell reaches them.
+   * The program then owns only its window. Not combined with `width`,
+   * `height` or `historyLimit`, which belong to that session.
+   */
+  readonly from?: Pane;
+  /**
+   * Directory the program starts in, taken as a literal path. Defaults to this
+   * process's current directory, or the `from` pane's. One that cannot be
+   * entered ends the run with exit code 126 before the program starts.
+   */
+  readonly startDirectory?: string;
+  /** Variables added to the program's environment. */
+  readonly environment?: Readonly<Record<string, string>>;
+  /** Terminal width in columns. Defaults to tmux's `default-size`. */
+  readonly width?: number;
+  /** Terminal height in rows. Defaults to tmux's `default-size`. */
+  readonly height?: number;
+  /**
+   * Lines of scrollback kept for {@link Program.output}, up to tmux's 2147483647.
+   * Defaults to 100000; older lines are dropped, and {@link ProgramResult.truncated}
+   * says so.
+   */
+  readonly historyLimit?: number;
+  /**
+   * Copy everything the program writes, so {@link Program.stream} can return
+   * all of it. Needs the tmux server on this machine: the copy is a file in
+   * this process's temporary directory.
+   */
+  readonly stream?: boolean;
+}
+
+/** How long {@link Server.run} lets a program run, and how to stop it early. */
+export interface RunOptions extends Omit<SpawnOptions, "stream"> {
+  /**
+   * Stop the program after this many milliseconds and report what it printed
+   * with `timedOut` set. A positive timer-safe integer; no limit by default.
+   */
+  readonly timeoutMs?: number;
+  /**
+   * Stop the program when this fires; the call rejects with
+   * {@link TmuxTransportError} of kind `cancelled`, the signal's reason as its `cause`.
+   */
+  readonly signal?: AbortLike;
+}
+
+/** Options for {@link Program.wait}. */
+export interface ProgramWaitOptions {
+  /** Stops the wait, not the program. */
+  readonly signal?: AbortLike;
+  /** Maximum time to wait. A positive timer-safe integer; no limit by default. */
+  readonly timeoutMs?: number;
+}
+
+/**
+ * How a program ended: an exit status or the signal that ended it. An exit
+ * status above 128 is reported as the signal it encodes, as a shell reports
+ * one, so `exit 130` reads as SIGINT.
+ */
+export interface ProgramExit {
+  /** The exit status, or null when a signal ended the program. */
+  readonly exitCode: number | null;
+  /** The signal that ended the program, such as `"SIGTERM"`, or null. */
+  readonly signalCode: string | null;
+}
+
+/** What {@link Server.run} reports once the program has ended or been stopped. */
+export interface ProgramResult extends ProgramExit {
+  /** What the program printed, as its terminal shows it, scrollback included. */
+  readonly output: string;
+  /** Whether the program exited with status 0. */
+  readonly success: boolean;
+  /** Whether `timeoutMs` stopped the program; its exit fields are then null. */
+  readonly timedOut: boolean;
+  /** Whether output scrolled past `historyLimit`, so `output` lacks its start. */
+  readonly truncated: boolean;
+}
+
+/**
  * How the condition is decided: by running it, or by expanding it.
  *
  * By default tmux runs it with `/bin/sh` and reads the exit status. Asked to

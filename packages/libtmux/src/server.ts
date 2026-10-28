@@ -17,12 +17,15 @@ import type {
   IfShellOptions,
   NewSessionOptions,
   PlannedOperation,
+  ProgramResult,
+  RunOptions,
   RunShellOptions,
   ServerSnapshot,
   SnapshotOptions,
   SaveBufferOptions,
   SetHookOptions,
   SetOptionOptions,
+  SpawnOptions,
   TmuxEventStream,
   WatchOptions,
 } from "./types.js";
@@ -49,6 +52,8 @@ import {
   unsetOption,
 } from "./_internal/operations/options.js";
 import { ifShell, runShell } from "./_internal/operations/shell.js";
+import { runProgram, spawnProgram } from "./_internal/operations/program_start.js";
+import type { Program } from "./program.js";
 import {
   deleteBuffer,
   isAlive,
@@ -131,7 +136,10 @@ export interface ServerOptions {
    * invocations as twelve sequential ones — twenty-four either way, plus the
    * query that reads the result back — and arriving out of order, so the
    * ceiling bounds the cost without bounding the work. Waiting for a slot spends the request's own deadline,
-   * and a request that never gets one fails `not_started`.
+   * and a request that never gets one fails `not_started`. An invocation that
+   * ends in a wait (`wait-for`, a popup or a prompt) takes no slot: it holds a
+   * client for as long as the wait, and its release may need one. A program's
+   * run is one.
    */
   readonly maxInFlight?: number;
   readonly socketName?: string;
@@ -1438,6 +1446,59 @@ export class Server {
    */
   runShell(command: string, options?: RunShellOptions): Promise<readonly string[]> {
     return runShell(runtimeForServer(this), command, options);
+  }
+
+  /**
+   * Start a program in a detached session of its own and return it running.
+   *
+   * No shell parses `argv`: `["echo", "$HOME"]` prints `$HOME`, and `cd` or
+   * a pipe needs `["sh", "-c", …]`. Nothing is typed into a terminal, so the
+   * program's output holds no command line. The program gets a real terminal,
+   * which is what a full-screen program needs to be driven by keys; see
+   * {@link SpawnOptions} for what that implies for pagers and prompts.
+   *
+   * The {@link Program} owns its session: `await using` or
+   * {@link Program.kill} ends the program and removes the session.
+   *
+   * Requires tmux 3.8 or newer, and raises {@link VersionTooLowError}
+   * below it. Earlier releases have no exit event to wait on, and through
+   * 3.7c a dead pane never closes the pipe `stream` reads.
+   *
+   * ```ts
+   * await using vim = await server.spawn(["vim", "-Nu", "NONE", "-i", "NONE", "-n", "notes.txt"]);
+   * await vim.pane.sendKeys("ihello", { enter: false });
+   * await vim.pane.sendKeys("Escape", { enter: false });
+   * await vim.pane.sendKeys(":wq");
+   * await vim.wait();
+   * ```
+   */
+  spawn(argv: readonly string[], options?: SpawnOptions): Promise<Program> {
+    return spawnProgram(this, runtimeForServer(this), argv, options);
+  }
+
+  /**
+   * Run a program to completion in a detached session and return what it printed.
+   *
+   * The output is the terminal's, scrollback included, with nothing typed
+   * before it. The session, or with `from` the window, is removed before this
+   * returns, whatever happened. The program has a terminal but no input; pipe
+   * any through `["sh", "-c", "printf ... | program"]`.
+   * A program still running at `timeoutMs` is ended, SIGTERM and then
+   * SIGKILL, and reported with `timedOut`; one aborted through `signal` is
+   * ended and the call rejects. Should this process die first, tmux itself
+   * removes the session a minute after the program exits, and kills a
+   * program still running a minute past `timeoutMs`.
+   *
+   * Requires tmux 3.8 or newer, like {@link Server.spawn}.
+   *
+   * ```ts
+   * const result = await server.run(["git", "--version"]);
+   * result.success; // true
+   * result.output.startsWith("git version"); // true
+   * ```
+   */
+  run(argv: readonly string[], options?: RunOptions): Promise<ProgramResult> {
+    return runProgram(this, runtimeForServer(this), argv, options);
   }
 
   /**

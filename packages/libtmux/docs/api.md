@@ -377,7 +377,7 @@ if (failures.length > 0) throw new AggregateError(failures, "Example failed");
 
 @throws TypeError if both `socketName` and `socketPath` are given.
 
-[`withConnection`](#serverwithconnection) · [`colors`](#servercolors) · [`configFile`](#serverconfigfile) · [`socketName`](#serversocketname) · [`socketPath`](#serversocketpath) · [`tmuxBin`](#servertmuxbin) · [`watch`](#serverwatch) · [`connect`](#serverconnect) · [`snapshot`](#serversnapshot) · [`sessions`](#serversessions) · [`windows`](#serverwindows) · [`panes`](#serverpanes) · [`daemonIdentity`](#serverdaemonidentity) · [`clients`](#serverclients) · [`showOptions`](#servershowoptions) · [`showResolvedOptions`](#servershowresolvedoptions) · [`setOption`](#serversetoption) · [`unsetOption`](#serverunsetoption) · [`saveBuffer`](#serversavebuffer) · [`showGlobalOptions`](#servershowglobaloptions) · [`setGlobalOption`](#serversetglobaloption) · [`unsetGlobalOption`](#serverunsetglobaloption) · [`showHooks`](#servershowhooks) · [`setHook`](#serversethook) · [`unsetHook`](#serverunsethook) · [`validateLayouts`](#servervalidatelayouts) · [`version`](#serverversion) · [`versionAtLeast`](#serverversionatleast) · [`showEnvironment`](#servershowenvironment) · [`getEnvironment`](#servergetenvironment) · [`setEnvironment`](#serversetenvironment) · [`unsetEnvironment`](#serverunsetenvironment) · [`removeEnvironment`](#serverremoveenvironment) · [`newSession`](#servernewsession) · [`kill`](#serverkill) · [`hasSession`](#serverhassession) · [`sourceFile`](#serversourcefile) · [`listCommands`](#serverlistcommands) · [`loadBuffer`](#serverloadbuffer) · [`setBuffer`](#serversetbuffer) · [`showBuffer`](#servershowbuffer) · [`showBufferBytes`](#servershowbufferbytes) · [`listBuffers`](#serverlistbuffers) · [`deleteBuffer`](#serverdeletebuffer) · [`runShell`](#serverrunshell) · [`ifShell`](#serverifshell) · [`isAlive`](#serverisalive) · [`checkAlive`](#servercheckalive) · [`raiseIfDead`](#serverraiseifdead) · [`cmd`](#servercmd) · [`pipeline`](#serverpipeline) · [`batch`](#serverbatch)
+[`withConnection`](#serverwithconnection) · [`colors`](#servercolors) · [`configFile`](#serverconfigfile) · [`socketName`](#serversocketname) · [`socketPath`](#serversocketpath) · [`tmuxBin`](#servertmuxbin) · [`watch`](#serverwatch) · [`connect`](#serverconnect) · [`snapshot`](#serversnapshot) · [`sessions`](#serversessions) · [`windows`](#serverwindows) · [`panes`](#serverpanes) · [`daemonIdentity`](#serverdaemonidentity) · [`clients`](#serverclients) · [`showOptions`](#servershowoptions) · [`showResolvedOptions`](#servershowresolvedoptions) · [`setOption`](#serversetoption) · [`unsetOption`](#serverunsetoption) · [`saveBuffer`](#serversavebuffer) · [`showGlobalOptions`](#servershowglobaloptions) · [`setGlobalOption`](#serversetglobaloption) · [`unsetGlobalOption`](#serverunsetglobaloption) · [`showHooks`](#servershowhooks) · [`setHook`](#serversethook) · [`unsetHook`](#serverunsethook) · [`validateLayouts`](#servervalidatelayouts) · [`version`](#serverversion) · [`versionAtLeast`](#serverversionatleast) · [`showEnvironment`](#servershowenvironment) · [`getEnvironment`](#servergetenvironment) · [`setEnvironment`](#serversetenvironment) · [`unsetEnvironment`](#serverunsetenvironment) · [`removeEnvironment`](#serverremoveenvironment) · [`newSession`](#servernewsession) · [`kill`](#serverkill) · [`hasSession`](#serverhassession) · [`sourceFile`](#serversourcefile) · [`listCommands`](#serverlistcommands) · [`loadBuffer`](#serverloadbuffer) · [`setBuffer`](#serversetbuffer) · [`showBuffer`](#servershowbuffer) · [`showBufferBytes`](#servershowbufferbytes) · [`listBuffers`](#serverlistbuffers) · [`deleteBuffer`](#serverdeletebuffer) · [`runShell`](#serverrunshell) · [`spawn`](#serverspawn) · [`run`](#serverrun) · [`ifShell`](#serverifshell) · [`isAlive`](#serverisalive) · [`checkAlive`](#servercheckalive) · [`raiseIfDead`](#serverraiseifdead) · [`cmd`](#servercmd) · [`pipeline`](#serverpipeline) · [`batch`](#serverbatch)
 
 ### Properties
 
@@ -1333,6 +1333,61 @@ without its output.
 ```ts
 const lines = await server.runShell("echo hello");
 lines[0]; // "hello"
+```
+
+#### `Server.spawn`
+
+```ts
+spawn(argv: readonly string[], options?: SpawnOptions): Promise<Program>
+```
+
+Start a program in a detached session of its own and return it running.
+
+No shell parses `argv`: `["echo", "$HOME"]` prints `$HOME`, and `cd` or
+a pipe needs `["sh", "-c", …]`. Nothing is typed into a terminal, so the
+program's output holds no command line. The program gets a real terminal,
+which is what a full-screen program needs to be driven by keys; see
+`SpawnOptions` for what that implies for pagers and prompts.
+
+The [`Program`](#program) owns its session: `await using` or
+[`Program.kill`](#programkill) ends the program and removes the session.
+
+Requires tmux 3.8 or newer, and raises `VersionTooLowError`
+below it. Earlier releases have no exit event to wait on, and through
+3.7c a dead pane never closes the pipe `stream` reads.
+
+```ts
+await using vim = await server.spawn(["vim", "-Nu", "NONE", "-i", "NONE", "-n", "notes.txt"]);
+await vim.pane.sendKeys("ihello", { enter: false });
+await vim.pane.sendKeys("Escape", { enter: false });
+await vim.pane.sendKeys(":wq");
+await vim.wait();
+```
+
+#### `Server.run`
+
+```ts
+run(argv: readonly string[], options?: RunOptions): Promise<ProgramResult>
+```
+
+Run a program to completion in a detached session and return what it printed.
+
+The output is the terminal's, scrollback included, with nothing typed
+before it. The session, or with `from` the window, is removed before this
+returns, whatever happened. The program has a terminal but no input; pipe
+any through `["sh", "-c", "printf ... | program"]`.
+A program still running at `timeoutMs` is ended, SIGTERM and then
+SIGKILL, and reported with `timedOut`; one aborted through `signal` is
+ended and the call rejects. Should this process die first, tmux itself
+removes the session a minute after the program exits, and kills a
+program still running a minute past `timeoutMs`.
+
+Requires tmux 3.8 or newer, like [`Server.spawn`](#serverspawn).
+
+```ts
+const result = await server.run(["git", "--version"]);
+result.success; // true
+result.output.startsWith("git version"); // true
 ```
 
 #### `Server.ifShell`
@@ -2985,6 +3040,148 @@ Whether `other` carries the same `%n`, wherever it came from.
 
 ```ts
 pane.sameTmuxIdAs(await pane.refreshed()); // true
+```
+
+## Program
+
+A program started by [`Server.spawn`](#serverspawn), running in a session of its own.
+
+Nothing was typed to start it, so its pane holds only what it printed. The
+pane is a real terminal: drive a full-screen program with
+[`Pane.sendKeys`](#panesendkeys) and read its screen with [`Pane.capture`](#panecapture).
+
+It owns its session. [`Program.kill`](#programkill), or leaving an `await using`
+scope, ends the program and removes the session; a program left running
+keeps both, also after this process exits. A kill ends a stream in progress
+with `LibTmuxError`, and a pane removed from outside with
+`ObjectNotFoundError`. After `kill`, `output` raises
+`ObjectNotFoundError`, `stream` raises `LibTmuxError`, and
+`wait` returns the exit it already saw or raises `ObjectNotFoundError`.
+
+Requires tmux 3.8 or newer.
+
+[`pane`](#programpane) · [`sessionName`](#programsessionname) · [`wait`](#programwait) · [`output`](#programoutput) · [`stream`](#programstream) · [`kill`](#programkill) · [`[Symbol.asyncDispose]`](#programsymbolasyncdispose)
+
+### Properties
+
+#### `Program.pane`
+
+```ts
+declare readonly pane: Pane
+```
+
+The pane the program runs in.
+
+```ts
+await using program = await server.spawn(["cat"]);
+await program.pane.sendKeys("hello");
+```
+
+#### `Program.sessionName`
+
+```ts
+declare readonly sessionName: string
+```
+
+The session the program runs in: a detached one of its own, removed with
+it, or with `from` that pane's session, which loses only the program's
+window. `tmux attach -t` it to watch the program.
+
+```ts
+await using program = await server.spawn(["sleep", "1"]);
+program.sessionName.startsWith("libtmux-program-"); // true
+```
+
+### Methods
+
+#### `Program.wait`
+
+```ts
+wait(options?: ProgramWaitOptions): Promise<ProgramExit>
+```
+
+Resolve with how the program ended, once it has.
+
+Giving up leaves the program running: a timeout throws
+`WaitTimeoutError` and an abort throws `TmuxTransportError`
+of kind `cancelled`. A program whose pane is killed from outside raises
+`ObjectNotFoundError` in about a second.
+
+```ts
+await using program = await server.spawn(["sh", "-c", "exit 3"]);
+(await program.wait()).exitCode; // 3
+```
+
+#### `Program.output`
+
+```ts
+async output(): Promise<string>
+```
+
+What the program has printed so far, as its terminal shows it.
+
+Scrollback is included and wrapped lines are joined. Tabs and trailing
+spaces are kept; colors and cursor movement are applied rather than
+returned.
+
+```ts
+await using program = await server.spawn(["echo", "hello"]);
+await program.wait();
+await program.output(); // "hello"
+```
+
+#### `Program.stream`
+
+```ts
+stream(): AsyncGenerator<string, void, undefined>
+```
+
+Everything the program writes, as UTF-8 text in the order it was written,
+until it exits and its last write has arrived.
+
+Needs `stream: true` at spawn. The text is the terminal's: line ends are
+`\r\n`, escape sequences are left in, and bytes that are not UTF-8 become
+U+FFFD. Each call reads from the start; leaving the loop early stops it.
+
+```ts
+await using program = await server.spawn(["seq", "1", "3"], { stream: true });
+let text = "";
+for await (const chunk of program.stream()) text += chunk;
+text; // "1\r\n2\r\n3\r\n"
+```
+
+#### `Program.kill`
+
+```ts
+kill(): Promise<void>
+```
+
+End the program and remove its session; every call waits for the same end.
+
+A running program gets SIGTERM and, two seconds later, SIGKILL, sent to
+its process group on the tmux server's machine, so one that ignores
+SIGHUP still ends.
+
+```ts
+const program = await server.spawn(["sleep", "30"]);
+await program.kill();
+```
+
+#### `Program.[Symbol.asyncDispose]`
+
+```ts
+[Symbol.asyncDispose](): Promise<void>
+```
+
+Kill the program when an `await using` scope ends.
+
+```ts
+let name = "";
+{
+  await using program = await server.spawn(["sleep", "30"]);
+  name = program.sessionName;
+}
+await server.hasSession(name); // false
 ```
 
 ## Client

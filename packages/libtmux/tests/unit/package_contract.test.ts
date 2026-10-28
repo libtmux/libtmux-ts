@@ -194,6 +194,7 @@ describe("package contract", () => {
       "OptionScope",
       "Pane",
       "PaneDirection",
+      "Program",
       "QueryValidationError",
       "ResizeAdjustmentDirection",
       "Server",
