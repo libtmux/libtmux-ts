@@ -24,7 +24,7 @@ export const PLACEHOLDER: readonly ["true", "libtmux-program-placeholder"] = [
   "libtmux-program-placeholder",
 ];
 export const PLACEHOLDER_COMMAND: string = PLACEHOLDER.join(" ");
-/** A killed pane fires no event, so a wait reads the pane again this often anyway. */
+/** A killed pane fires no event, so a wait also reads the pane this often. */
 const BACKSTOP_MS = 1000;
 /**
  * How often a wait reads the pane after the watcher has settled without an exit:
@@ -407,13 +407,21 @@ export class MarkFilter {
   }
 }
 
-/** The program's output as UTF-8 text, as it is written, until it exits. */
-export async function* streamProgram(program: Program): AsyncGenerator<string, void, undefined> {
+/** The program's output as UTF-8 text, as it is written, until it exits; misuse throws at once. */
+export function streamProgram(program: Program): AsyncGenerator<string, void, undefined> {
   const state = stateOf(program);
   const files = state.files?.stream;
   if (files === undefined) {
     throw new TypeError("spawn the program with { stream: true } to stream its output");
   }
+  return readStream(program, state, files);
+}
+
+async function* readStream(
+  program: Program,
+  state: ProgramState,
+  files: StreamFiles,
+): AsyncGenerator<string, void, undefined> {
   if (state.killing !== undefined) {
     throw new LibTmuxError("the program was killed, and its copied output with it");
   }

@@ -1,7 +1,12 @@
 // Waiting on any pane through tmux's own events: its program's exit, or a shell command's end.
 import { randomUUID } from "node:crypto";
 
-import { TmuxObjectNotFoundError, VersionTooLowError, WaitTimeoutError } from "../../errors.js";
+import {
+  LibTmuxError,
+  TmuxObjectNotFoundError,
+  VersionTooLowError,
+  WaitTimeoutError,
+} from "../../errors.js";
 import type { CommandWaitOptions, ProgramExit, ProgramWaitOptions } from "../../types.js";
 import type { RuntimeContext } from "../runtime/context.js";
 import { capabilitySince, hasCapability } from "../support/capabilities.js";
@@ -224,8 +229,9 @@ export async function waitForPaneCommand(
       return Number.isSafeInteger(status) ? status : undefined;
     },
     async () => {
-      // Only a read that fails says anything here: a pane that is gone.
-      await readPane(runtime, paneId, []);
+      // A gone pane fails the read; a dead one will finish no command.
+      const [dead] = await readPane(runtime, paneId, ["#{pane_dead}"]);
+      if (dead === "1") throw new LibTmuxError(`${paneId} has exited; no command will finish`);
       return undefined;
     },
     async () => {

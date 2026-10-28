@@ -486,6 +486,17 @@ describe("program runs", () => {
   );
 
   testProgram(
+    "stream() without stream: true throws at the call",
+    async () => {
+      await withServer(async (server) => {
+        await using program = await server.spawn(["true"]);
+        expect(() => program.stream()).toThrow(TypeError);
+      });
+    },
+    40_000,
+  );
+
+  testProgram(
     "a pane removed from outside ends its stream with the wait's error",
     async () => {
       await withServer(async (server) => {

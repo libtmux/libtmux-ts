@@ -379,7 +379,8 @@ export class Pane {
    * status`) from its prompt; tmux turns the mark into a
    * `pane-command-finished` event. `send` types a command line once the wait
    * is listening, so a command that ends at once is not missed. A shell
-   * without the marks never resolves this: give it a `timeoutMs`.
+   * without the marks never resolves this: give it a `timeoutMs`. A pane
+   * whose program has exited rejects with {@link LibTmuxError}.
    *
    * Requires tmux 3.8 or newer.
    *

@@ -12,6 +12,7 @@ import {
   makeTestDirectory,
 } from "../../src/_internal/test/testkit.js";
 import {
+  LibTmuxError,
   ObjectNotFoundError,
   TmuxTransportError,
   VersionTooLowError,
@@ -121,6 +122,10 @@ describe("pane waits", () => {
           signalCode: "SIGTERM",
         });
         expect(performance.now() - started).toBeLessThan(1000);
+        // A dead pane will finish no command, so a command wait on it rejects.
+        await expect(pane.waitForCommand({ timeoutMs: 10_000 })).rejects.toBeInstanceOf(
+          LibTmuxError,
+        );
       });
     },
     40_000,
