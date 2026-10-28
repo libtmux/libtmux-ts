@@ -101,7 +101,12 @@ testProgram(
             name: "run_program",
           }),
         );
-        expect(ran).toMatchObject({ exitStatus: null, outcome: "timed_out", output: "started" });
+        expect(ran).toMatchObject({
+          exitStatus: null,
+          outcome: "timed_out",
+          output: "started",
+          outputComplete: false,
+        });
         expect(await programSessions(call)).toBe(0);
       });
     });

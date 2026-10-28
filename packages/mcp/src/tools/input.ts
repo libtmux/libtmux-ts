@@ -667,9 +667,9 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
       description:
         "Run a program in a pane of its own and wait for it; returns its output and exit " +
         "status. No shell parses argv and nothing is typed into its pane, so the output " +
-        "holds no command line or echo. The pane is removed before this returns unless keep " +
-        "is set. A program still running at the timeout, capped by the server's wait " +
-        "ceiling, is ended: run " +
+        "holds no command line or echo. Check outcome and outputComplete before trusting " +
+        "output. The pane is removed before this returns unless keep is set. A program " +
+        "still running at the timeout, capped by the server's wait ceiling, is ended: run " +
         "longer ones with start_program. Commands come from the tmux server's PATH; exit 127 " +
         "means not found. stdin is input when given, else the terminal. PAGER and GIT_PAGER " +
         'are cat. Use ["sh", "-c", ...] for pipes, and run_shell_command for shell builtins ' +
@@ -806,8 +806,8 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
         outputComplete: z
           .boolean()
           .describe(
-            "False when lostStart or lostEnd is true, or maxLines or the result limit cut " +
-              "the output or stderr.",
+            "False when outcome is timed_out, lostStart or lostEnd is true, or maxLines or " +
+              "the result limit cut the output or stderr.",
           ),
         returnedBytes: z.number().int().describe("UTF-8 output bytes returned."),
         signal: z
@@ -928,6 +928,7 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
               MAX_RESULT_BYTES / 4,
             );
       const outputComplete =
+        !result.timedOut &&
         !result.lostStart &&
         !result.lostEnd &&
         bounded.droppedLines === 0 &&

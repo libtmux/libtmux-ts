@@ -494,7 +494,9 @@ run_program  argv=["git","status","--short"]  timeoutMs=20000
   this server die mid-run, tmux ends the program and removes its pane within a
   minute: the server holds a lease on it that only a live server renews.
 - The output is the terminal's rendering, stderr included, scrollback too.
-  `outputComplete` is false when scrollback or `maxLines` cut it.
+  `outputComplete` is false when scrollback, `maxLines` or the result's byte
+  limit cut it, when `lostEnd` says tmux closed the pane before reading the
+  end, or when the timeout ended the program.
 - Needs tmux 3.8 or newer; earlier servers answer with a refusal that points
   at `run_shell_command`.
 - [Program runs](docs/contracts.md#run_program-program-runs).

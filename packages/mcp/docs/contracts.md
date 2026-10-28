@@ -303,7 +303,8 @@ the session's history limit is dropped, and `outputComplete` reports it.
 The pane is removed before the call returns, on every path, unless `keep` is
 set. A program still running at the effective timeout gets SIGTERM and, two
 seconds later, SIGKILL, sent to its process group on the tmux server's machine,
-so one that ignores SIGHUP still ends; it is reported `timed_out`, and a retry
+so one that ignores SIGHUP still ends; it is reported `timed_out`, with
+`outputComplete` false, and a retry
 starts a new run. Should this server die mid-run, tmux finishes the job: the
 run holds the library's default lease, which this server renews,
 and once renewals stop, a tmux timer SIGKILLs the program and removes its pane.
