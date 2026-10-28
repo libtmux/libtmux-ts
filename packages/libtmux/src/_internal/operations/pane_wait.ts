@@ -34,6 +34,7 @@ type Payload = ReadonlyMap<string, string>;
 /**
  * The last of the payloads a `wait-for -E -v` client printed, one per event it
  * checked, each with sorted keys: a key not after the one before starts the next.
+ * tmux prints values raw, so only a session name holding a newline could split one.
  */
 export function lastPayload(lines: readonly string[]): Payload {
   let block = new Map<string, string>();
@@ -123,18 +124,28 @@ async function deadExit(runtime: RuntimeContext, paneId: string): Promise<Progra
   return { exitCode: status === "" ? null : Number(status), signalCode: signalName(signal) };
 }
 
+/** What a pane wait listens for and how it reads its answer. */
+interface PaneWait<T> {
+  readonly events: readonly string[];
+  /** The answer a payload carries, if any. */
+  readonly decide: (payload: Payload) => T | undefined;
+  /** Read the pane for an answer the events may have come before. */
+  readonly check: () => Promise<T | undefined>;
+  /** Run once the waiters are armed. */
+  readonly act?: () => Promise<void>;
+  /** What a timeout says was still awaited. */
+  readonly awaited: string;
+}
+
 /**
- * Arm waiters for `events`, run `act`, then resolve with the first payload
- * `decide` accepts, or what `check` reads from the pane.
+ * Arm waiters for `wait.events`, run `wait.act`, then resolve with the first
+ * payload `wait.decide` accepts, or what `wait.check` reads from the pane.
  */
 async function waitOnPane<T>(
   runtime: RuntimeContext,
   paneId: string,
-  events: readonly string[],
   options: ProgramWaitOptions,
-  decide: (payload: Payload) => T | undefined,
-  check: () => Promise<T | undefined>,
-  act: () => Promise<void>,
+  wait: PaneWait<T>,
 ): Promise<T> {
   const { signal, timeoutMs } = options;
   requireCount("timeoutMs", timeoutMs, MAX_TIMER_MS);
@@ -146,7 +157,7 @@ async function waitOnPane<T>(
   options.signal?.addEventListener("abort", onAbort, { once: true });
   try {
     const waiters = await Promise.all(
-      events.map((event) => arm(runtime, paneId, event, stop.signal)),
+      wait.events.map((event) => arm(runtime, paneId, event, stop.signal)),
     );
     if (isAborted(signal)) throw cancelled(signal);
     let found: T | undefined;
@@ -154,7 +165,7 @@ async function waitOnPane<T>(
     stop.signal.addEventListener("abort", () => wake.abort(), { once: true });
     for (const { fired } of waiters) {
       void fired.then((payload) => {
-        const value = payload === undefined ? undefined : decide(payload);
+        const value = payload === undefined ? undefined : wait.decide(payload);
         if (value !== undefined && found === undefined) {
           found = value;
           wake.abort();
@@ -162,13 +173,13 @@ async function waitOnPane<T>(
       });
     }
     // An end before the waiters armed shows in the pane, which every read checks.
-    await act();
+    await wait.act?.();
     for (;;) {
       if (found !== undefined) return found;
       let seen: T | undefined;
       try {
         // eslint-disable-next-line no-await-in-loop -- each read follows the last wake.
-        seen = await check();
+        seen = await wait.check();
       } catch (error) {
         if (!(error instanceof TmuxObjectNotFoundError)) throw error;
         // A pane that closed fired its event as it went; the payload may still be on its way.
@@ -185,7 +196,7 @@ async function waitOnPane<T>(
       if (found !== undefined) return found;
       if (isAborted(signal)) throw cancelled(signal);
       if (performance.now() >= deadline) {
-        throw new WaitTimeoutError(`${paneId} was still running after ${String(timeoutMs)}ms`);
+        throw new WaitTimeoutError(`${paneId}: ${wait.awaited} after ${String(timeoutMs)}ms`);
       }
       // eslint-disable-next-line no-await-in-loop -- sleep until an event, an abort, or the next read.
       await sleep(Math.min(BACKSTOP_MS, Math.max(1, deadline - performance.now())), wake.signal);
@@ -202,15 +213,12 @@ export async function waitForPaneExit(
   paneId: string,
   options: ProgramWaitOptions = {},
 ): Promise<ProgramExit> {
-  return waitOnPane(
-    runtime,
-    paneId,
-    ["pane-exited", "pane-died"],
-    options,
-    exitOf,
-    () => deadExit(runtime, paneId),
-    async () => undefined,
-  );
+  return waitOnPane(runtime, paneId, options, {
+    awaited: "its program was still running",
+    check: () => deadExit(runtime, paneId),
+    decide: exitOf,
+    events: ["pane-exited", "pane-died"],
+  });
 }
 
 /** Resolve with the status of the next command the pane's shell marks as finished with OSC 133. */
@@ -219,24 +227,22 @@ export async function waitForPaneCommand(
   paneId: string,
   options: CommandWaitOptions = {},
 ): Promise<number> {
-  return waitOnPane(
-    runtime,
-    paneId,
-    ["pane-command-finished"],
-    options,
-    (payload) => {
-      const status = Number(payload.get("command_status") ?? Number.NaN);
-      return Number.isSafeInteger(status) ? status : undefined;
+  return waitOnPane(runtime, paneId, options, {
+    act: async () => {
+      if (options.send !== undefined)
+        await sendKeys(runtime, paneId, options.send, { literal: true });
     },
-    async () => {
+    awaited: "no command had finished",
+    check: async () => {
       // A gone pane fails the read; a dead one will finish no command.
       const [dead] = await readPane(runtime, paneId, ["#{pane_dead}"]);
       if (dead === "1") throw new LibTmuxError(`${paneId} has exited; no command will finish`);
       return undefined;
     },
-    async () => {
-      if (options.send !== undefined)
-        await sendKeys(runtime, paneId, options.send, { literal: true });
+    decide: (payload) => {
+      const status = Number(payload.get("command_status") ?? Number.NaN);
+      return Number.isSafeInteger(status) ? status : undefined;
     },
-  );
+    events: ["pane-command-finished"],
+  });
 }
