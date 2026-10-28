@@ -1,4 +1,4 @@
-import type { Server } from "libtmux";
+import type { Pane, Program, Server } from "libtmux";
 
 /**
  * Run a program and keep only what it printed.
@@ -39,14 +39,53 @@ export async function prependLine(
  * Follow a program's output as it is written, its last write included.
  *
  * The stream ends when the program exits and its last write has arrived. Its
- * text is the terminal's: `\r\n` line ends, escape sequences left in.
+ * text is the terminal's: `\r\n` line ends, escape sequences left in. The copy
+ * stops at a mebibyte, and the stream then throws after what it kept.
  */
 export async function followOutput(
   server: Server,
   argv: readonly string[],
   onChunk: (chunk: string) => void,
 ): Promise<number | null> {
-  await using program = await server.spawn(argv, { stream: true });
+  await using program = await server.spawn(argv, { maxStreamBytes: 1_048_576, stream: true });
   for await (const chunk of program.stream()) onChunk(chunk);
   return (await program.wait()).exitCode;
+}
+
+/**
+ * Give a program a stdin.
+ *
+ * The input is written to a private file the program reads, so it passes
+ * through no shell quoting, and the terminal stays the program's output.
+ */
+export async function sortLines(server: Server, input: string): Promise<readonly string[]> {
+  const result = await server.run(["sort"], { input });
+  return result.output.split("\n");
+}
+
+/**
+ * Run a program beside a person's pane and leave its output there for them.
+ *
+ * The split leaves focus where it was, and `keep` leaves the pane once the
+ * program has ended, for the person to read and close.
+ */
+export async function runBeside(
+  server: Server,
+  pane: Pane,
+  argv: readonly string[],
+): Promise<boolean> {
+  const result = await server.run(argv, { from: pane, keep: true, placement: "split" });
+  return result.success;
+}
+
+/**
+ * Start a program that ends with this process.
+ *
+ * This process renews a lease on it. Should it exit or die without killing
+ * the program, tmux ends the program and removes its session within ten
+ * seconds.
+ */
+export async function startWorker(server: Server, argv: readonly string[]): Promise<Program> {
+  const worker = await server.spawn(argv, { orphanAfterMs: 10_000 });
+  return worker;
 }
