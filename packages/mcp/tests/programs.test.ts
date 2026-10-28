@@ -18,7 +18,7 @@ interface Started {
 interface Read {
   readonly cursor: number;
   readonly outcome: string;
-  readonly outputCut: boolean;
+  readonly outputComplete: boolean;
   readonly exited: boolean;
   readonly exitStatus: number | null;
   readonly signal: string | null;
@@ -47,10 +47,15 @@ async function until(check: () => Promise<boolean>, ms: number): Promise<boolean
 }
 
 /** Read to the exit, returning every read in order. */
-async function readAll(call: Call, programId: string, timeoutMs: number): Promise<Read[]> {
+async function readAll(
+  call: Call,
+  programId: string,
+  timeoutMs: number,
+  maxReads = 100,
+): Promise<Read[]> {
   const reads: Read[] = [];
   let cursor = 0;
-  for (let i = 0; i < 100; i += 1) {
+  for (let i = 0; i < maxReads; i += 1) {
     const read = structured<Read>(
       await call({ arguments: { cursor, programId, timeoutMs }, name: "read_program" }),
     );
@@ -111,6 +116,67 @@ testProgram(
         );
         expect(again.text).toContain("line5");
         await call({ arguments: { programId: started.programId }, name: "stop_program" });
+        expect(await programSessions(call)).toEqual([]);
+      });
+    });
+  },
+  60_000,
+);
+
+testProgram(
+  "read_program says a stop ended it, and a copy past its limit is incomplete",
+  async () => {
+    await withServer(async (fixture) => {
+      await withClient(fixture, async (client) => {
+        const call: Call = (request) => client.callTool(request);
+        const sleeper = structured<Started>(
+          await call({
+            arguments: { argv: ["sh", "-c", "echo up; sleep 30"] },
+            name: "start_program",
+          }),
+        );
+        const reading = call({
+          arguments: { cursor: 3, programId: sleeper.programId, timeoutMs: 10_000 },
+          name: "read_program",
+        });
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        await call({ arguments: { programId: sleeper.programId }, name: "stop_program" });
+        expect(structured<Read>(await reading)).toMatchObject({ exited: true, outcome: "stopped" });
+
+        // Past the 4 MiB copy limit, the text is cut and the exit still arrives.
+        const flood = structured<Started>(
+          await call({ arguments: { argv: ["seq", "1", "1000000"] }, name: "start_program" }),
+        );
+        // 4 MiB arrives a megabyte per read at most, and a read may come before it all has.
+        const reads = await readAll(call, flood.programId, 10_000, 1000);
+        expect(reads.at(-1)).toMatchObject({ exitStatus: 0, exited: true, outputComplete: false });
+        await call({ arguments: { programId: flood.programId }, name: "stop_program" });
+      });
+    });
+  },
+  60_000,
+);
+
+testProgram(
+  "start_program refuses a seventeenth running program",
+  async () => {
+    await withServer(async (fixture) => {
+      await withClient(fixture, async (client) => {
+        const call: Call = (request) => client.callTool(request);
+        const started = await Promise.all(
+          Array.from({ length: 17 }, () =>
+            call({ arguments: { argv: ["sleep", "30"] }, name: "start_program" }),
+          ),
+        );
+        const refused = started.filter(
+          (answer) => (answer as { isError?: boolean }).isError === true,
+        );
+        expect(refused).toHaveLength(1);
+        for (const answer of started) {
+          if ((answer as { isError?: boolean }).isError === true) continue;
+          const { programId } = structured<Started>(answer);
+          await call({ arguments: { programId }, name: "stop_program" });
+        }
         expect(await programSessions(call)).toEqual([]);
       });
     });

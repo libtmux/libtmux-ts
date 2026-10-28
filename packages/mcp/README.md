@@ -472,9 +472,10 @@ run_program  argv=["git","status","--short"]  timeoutMs=20000
   session's tmux environment: in a background window, or with
   `placement: "split"` in a split beside the pane, where a person watching sees
   it run. Focus stays where it was.
-- `inheritShell: true` adds the variables that pane's shell exported. It types
-  one framed `env` into the shell first, so the shell must be an idle POSIX one,
-  as `run_shell_command` requires.
+- `inheritShell: true` adds the variables that pane's shell exported, and a
+  list such as `["PATH", "VIRTUAL_ENV"]` adds only those. It types one framed
+  `env` into the shell first, so the shell must be an idle POSIX one, as
+  `run_shell_command` requires.
 - `keep: true` leaves the pane, dead and showing the output, for a person to
   read and close. Set it only when a person asked to see the run.
 - `input` is the program's stdin, written to a private file rather than typed.
@@ -538,8 +539,9 @@ try {
   with the same cursor carries on, past any wait ceiling.
 - The text is the byte stream with escape sequences removed, as
   `capture_since` gives it. `exited` turns true once the program ended and
-  every byte was read, with `exitStatus` or `signal`. After 4 MiB the copy
-  stops, `outputCut` turns true, and the program runs on.
+  every byte was read, with `exitStatus` or `signal`. `outputComplete` is
+  false once the copy stops at 4 MiB, while the program runs on, or when tmux
+  closed the pane before reading the end.
 - A program's lifetime is `timeoutMs` on `start_program`, ten minutes by
   default and at most an hour. When it runs out, this server ends the program
   and removes its pane whatever else was called. Should this server die, tmux

@@ -252,8 +252,8 @@ an `sh` given `argv` as positional parameters, which it does not parse, so
 `argv[0]` is always a program name: never shell text, and never an assignment
 the way `env` would read `A=b`. That `sh` runs the program and lingers 50 ms
 after it, because tmux can remove a pane before reading its last output, then
-exits the same way; an exit status above 128 is reported as the signal it
-encodes, as a shell reports one. The library's
+exits with the status it saw, as `$?` reports it, so a program a signal
+ended reads 128 plus the signal's number. The library's
 [program runs contract](../../libtmux/docs/contracts.md#program-runs) has the
 detail.
 
@@ -271,9 +271,12 @@ not apply.
 `inheritShell` is the one route that types: it runs `env -0` into a file in a
 fresh 0700 directory through `run_shell_command`'s framing, with every one of
 its checks, then turns the dump into a file of `export NAME='value'` lines that
-the program's own `sh` sources before it starts. Values never pass through a
-tmux command or `argv`. Names a POSIX shell cannot export are skipped, and so is
-`TMUX_PANE`, which names the shell's pane rather than the program's. A pane whose
+the program's own `sh` sources and deletes before it starts; the dump is
+deleted once read. Values never pass through a tmux command or `argv`. A list
+of names carries only those variables. Names a POSIX shell cannot export are
+skipped, and so is `TMUX_PANE`, which names the shell's pane rather than the
+program's. The typed command starts with a space, so a shell that ignores such
+lines keeps it out of its history. A pane whose
 shell runs on another host than this server, under `ssh` or in a container,
 writes the dump where this server cannot read it, and the call refuses before
 starting anything.
@@ -320,9 +323,11 @@ for new output or the end, up to the wait ceiling, so a program of any length
 is read whole over several calls.
 
 `exited` is true only once the program has ended and every byte it wrote has
-been returned. The library's stream ends with the last write, which tmux holds
-the pane for (`window_pane_destroy_ready`), so nothing is lost at the end. The
-copy stops at 4 MiB and the program runs on; `outputCut` says so.
+been returned. tmux holds a dying pane until its pipe has drained, so what tmux
+read reaches the copy; an end tmux never read, which the library's end mark
+detects, makes `outputComplete` false. So does the copy stopping at 4 MiB,
+while the program runs on. The headline says which. `outcome` is `stopped` for
+a program `stop_program` or its lifetime ended.
 
 No later call owns cleanup:
 

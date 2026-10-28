@@ -11,7 +11,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { LibTmuxError, TmuxTransportError, VersionTooLowError, type Pane } from "libtmux";
+import { ServerNotLocalError, TmuxTransportError, VersionTooLowError, type Pane } from "libtmux";
 import { z } from "zod";
 
 import {
@@ -143,14 +143,14 @@ export async function besidePane(
   request: {
     readonly fromPaneId?: string | undefined;
     readonly height?: number | undefined;
-    readonly inheritShell?: boolean | undefined;
+    readonly inheritShell?: boolean | readonly string[] | undefined;
     readonly placement?: string | undefined;
     readonly width?: number | undefined;
   },
 ): Promise<Pane | undefined | ReturnType<typeof fail>> {
   const { fromPaneId } = request;
   if (fromPaneId === undefined) {
-    if (request.placement === undefined && request.inheritShell !== true) return undefined;
+    if (request.placement === undefined && !inherits(request.inheritShell)) return undefined;
     return fail({
       hint: "Name the pane to run beside with fromPaneId.",
       reason: "placement and inheritShell run beside a pane, and none was given.",
@@ -173,15 +173,24 @@ export async function besidePane(
 /** A variable name a POSIX shell can export; `env` also lists names such as `BASH_FUNC_f%%`. */
 const SHELL_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/u;
 
+/** Whether `inheritShell` asks for any variables: `true`, or a list naming some. */
+function inherits(inheritShell: boolean | readonly string[] | undefined): boolean {
+  return inheritShell === true || (Array.isArray(inheritShell) && inheritShell.length > 0);
+}
+
 /**
- * Variables a shell exported, from `env -0` output, as a file `sh` can source.
- * TMUX_PANE names the shell's own pane, which the program's pane is not.
+ * Variables a shell exported, from `env -0` output, as a file `sh` can source:
+ * every one, or only those `names` lists. TMUX_PANE names the shell's own pane,
+ * which the program's pane is not.
  */
-export function sourceableEnvironment(dump: string): string {
+export function sourceableEnvironment(dump: string, names?: readonly string[]): string {
+  const wanted = names === undefined ? undefined : new Set(names);
   return dump
     .split("\0")
     .map((entry) => [entry.slice(0, entry.indexOf("=")), entry.slice(entry.indexOf("=") + 1)])
-    .filter(([name = ""]) => SHELL_NAME.test(name) && name !== "TMUX_PANE")
+    .filter(
+      ([name = ""]) => SHELL_NAME.test(name) && name !== "TMUX_PANE" && (wanted?.has(name) ?? true),
+    )
     .map(([name = "", value = ""]) => `export ${name}=${shellQuote(value)}\n`)
     .join("");
 }
@@ -194,6 +203,7 @@ async function inheritedEnvironment(
   context: ToolContext,
   paneId: string,
   directory: string,
+  names: readonly string[] | undefined,
   signal: AbortSignal,
 ): Promise<string | ReturnType<typeof fail>> {
   const dump = join(directory, "env");
@@ -223,7 +233,7 @@ async function inheritedEnvironment(
     });
   }
   const sourced = join(directory, "environment.sh");
-  await writeFile(sourced, sourceableEnvironment(text), { mode: 0o600 });
+  await writeFile(sourced, sourceableEnvironment(text, names), { mode: 0o600 });
   return sourced;
 }
 
@@ -664,12 +674,13 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
               "environment. Variables the pane's shell exported come only with inheritShell.",
           ),
         inheritShell: z
-          .boolean()
+          .union([z.boolean(), z.array(z.string().regex(SHELL_NAME)).min(1).max(256)])
           .optional()
           .describe(
             "With fromPaneId, first read the variables that pane's idle shell exported, by " +
-              "typing one env command into it, then run the program with them. The shell " +
-              "must be a POSIX one at its prompt, as run_shell_command requires.",
+              "typing one env command into it, and run the program with them: true for " +
+              'all, or a list of names, such as ["PATH", "VIRTUAL_ENV"], for only those. ' +
+              "The shell must be a POSIX one at its prompt, as run_shell_command requires.",
           ),
         input: z
           .string()
@@ -767,8 +778,8 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
           .string()
           .nullable()
           .describe(
-            'The signal that ended the program, such as "SIGTERM"; otherwise null. An exit ' +
-              "status above 128 reads as the signal it encodes, as a shell reports one.",
+            'The signal that ended the program and its sh, such as "SIGKILL"; otherwise ' +
+              "null. A program a signal ended alone exits 128 plus its number, as $? says.",
           ),
       },
       title: "Run a program and wait",
@@ -799,13 +810,21 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
       });
       if (isFailure(from)) return from;
       // mkdtemp makes it 0700 whatever the umask: the shell's variables can hold secrets.
-      const directory =
-        inheritShell === true ? await mkdtemp(join(tmpdir(), "ltx-mcp-inherit-")) : undefined;
+      const directory = inherits(inheritShell)
+        ? await mkdtemp(join(tmpdir(), "ltx-mcp-inherit-"))
+        : undefined;
       let result: Awaited<ReturnType<typeof context.tmux.run>>;
       try {
         let program = argv;
         if (directory !== undefined && fromPaneId !== undefined) {
-          const sourced = await inheritedEnvironment(context, fromPaneId, directory, extra.signal);
+          const names = Array.isArray(inheritShell) ? inheritShell : undefined;
+          const sourced = await inheritedEnvironment(
+            context,
+            fromPaneId,
+            directory,
+            names,
+            extra.signal,
+          );
           if (typeof sourced !== "string") return sourced;
           // Sourced by the program's own sh, so no variable passes through a tmux command,
           // and removed once read; the pagers are set again after the shell's own values.
@@ -837,7 +856,7 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
             reason: error.message,
           });
         }
-        if (error instanceof LibTmuxError && error.message.includes("on this machine")) {
+        if (error instanceof ServerNotLocalError) {
           return fail({
             hint: 'Leave input out, or pipe it in with argv such as ["sh", "-c", "printf ... | program"].',
             reason: error.message,
@@ -874,7 +893,9 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
           bounded,
           "raise maxLines within the server limit or pipe large output before running",
         )}\n\n[${headline}]${
-          result.truncated ? "\n[output scrolled past the scrollback limit; its start is gone]" : ""
+          result.truncated
+            ? "\n[some output is missing: its start scrolled past the scrollback limit, or tmux closed the pane before reading its end]"
+            : ""
         }`,
       );
     },

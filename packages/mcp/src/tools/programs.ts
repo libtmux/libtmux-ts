@@ -1,17 +1,19 @@
 /**
  * Programs that outlive one call: `start_program`, `read_program`, `stop_program`.
  *
- * `run_program` returns once the program ends, inside one blocking wait; these
- * three serve a build or a server that runs longer, or needs keys between
- * reads. This server owns every program it starts and ends it when its
- * lifetime runs out, whatever the caller does next. Should this server die
- * first, tmux ends it through the lease the library renews. Either way no
- * later call owns cleanup.
+ * No later call owns cleanup: this server ends each program at its lifetime, and
+ * tmux ends it through the library's lease should this server die first.
  */
 
 import { randomUUID } from "node:crypto";
 
-import { StreamLimitError, VersionTooLowError, type Program, type ProgramExit } from "libtmux";
+import {
+  OutputLostError,
+  StreamLimitError,
+  VersionTooLowError,
+  type Program,
+  type ProgramExit,
+} from "libtmux";
 import { z } from "zod";
 
 import type { ToolContext } from "../context.js";
@@ -41,8 +43,8 @@ interface Entry {
   /** The readable text so far, as UTF-8, in arrival order. */
   readonly chunks: Buffer[];
   size: number;
-  /** Whether the copy stopped at its cap before the program ended. */
-  cut: boolean;
+  /** Why the text lacks part of the output: the copy hit its cap, or the end was lost. */
+  missing: "cut" | "lost" | undefined;
   exit: ProgramExit | undefined;
   endedBy: EndedBy | undefined;
   timer: ReturnType<typeof setTimeout> | undefined;
@@ -93,8 +95,9 @@ async function pump(entry: Entry): Promise<void> {
       wake(entry);
     }
   } catch (error) {
-    // A stop, the lifetime, or an outside removal ends the stream too; only the cap runs on.
-    if (error instanceof StreamLimitError) entry.cut = true;
+    // A stop, the lifetime or an outside removal ends the stream too, and is reported as such.
+    if (error instanceof StreamLimitError) entry.missing = "cut";
+    if (error instanceof OutputLostError) entry.missing = "lost";
   }
   try {
     entry.exit = await entry.program.wait();
@@ -252,7 +255,7 @@ export function registerPrograms(mcp: ToolRegistrar, context: ToolContext): Star
       const id = `program-${randomUUID().slice(0, 8)}`;
       const entry: Entry = {
         chunks: [],
-        cut: false,
+        missing: undefined,
         endedBy: undefined,
         exit: undefined,
         program,
@@ -308,15 +311,17 @@ export function registerPrograms(mcp: ToolRegistrar, context: ToolContext): Star
           .boolean()
           .describe("Whether it has ended and every byte it wrote has been returned."),
         outcome: z
-          .enum(["running", "exited", "gone"])
+          .enum(["running", "exited", "stopped", "gone"])
           .describe(
             "running: call again with cursor. exited: it ended, as exitStatus or signal " +
-              "says. gone: its pane was removed from outside, with no status.",
+              "says. stopped: stop_program or its lifetime ended it. gone: its pane was " +
+              "removed from outside, with no status.",
           ),
-        outputCut: z
+        outputComplete: z
           .boolean()
           .describe(
-            `True once the program wrote more than ${String(MAX_COPY_BYTES)} bytes; later output is not kept.`,
+            "False when text lacks part of the output: the copy stopped at its limit, or " +
+              "tmux closed the pane before reading the end. The headline says which.",
           ),
         signal: z
           .string()
@@ -335,27 +340,37 @@ export function registerPrograms(mcp: ToolRegistrar, context: ToolContext): Star
         });
       }
       const effectiveTimeoutMs = effectiveWaitMs(context.policy, timeoutMs);
-      const from = Math.min(cursor ?? 0, entry.size);
+      const after = cursor ?? 0;
       const deadline = Date.now() + effectiveTimeoutMs;
-      while (entry.size <= from && entry.endedBy === undefined && !extra.signal.aborted) {
+      while (entry.size <= after && entry.endedBy === undefined && !extra.signal.aborted) {
         const left = deadline - Date.now();
         if (left <= 0) break;
         // eslint-disable-next-line no-await-in-loop -- each wait follows the last change.
         await changed(entry, left, extra.signal);
       }
-      const { end, text } = readable(entry.chunks, entry.size, from);
+      // A cursor past the text read so far stays put rather than starting over.
+      const { end, text } = readable(entry.chunks, entry.size, Math.min(after, entry.size));
       // Ended only once every byte has been handed over.
       const finished = entry.endedBy !== undefined && end === entry.size;
       const exit = finished ? entry.exit : undefined;
-      let outcome: "exited" | "gone" | "running" = "running";
-      if (finished) outcome = exit === undefined ? "gone" : "exited";
+      let outcome: "exited" | "gone" | "running" | "stopped" = "running";
       let headline = `running; cursor ${String(end)}`;
       if (exit !== undefined) {
+        outcome = "exited";
         headline =
           exit.signalCode === null
             ? `exit ${String(exit.exitCode)}`
             : `ended by ${exit.signalCode}`;
-      } else if (finished) headline = "its pane is gone, with no exit status";
+      } else if (finished && (entry.endedBy === "stopped" || entry.endedBy === "lifetime")) {
+        outcome = "stopped";
+        headline = entry.endedBy === "lifetime" ? "ended at its lifetime" : "stopped";
+      } else if (finished) {
+        outcome = "gone";
+        headline = "its pane is gone, with no exit status";
+      }
+      let note = "";
+      if (entry.missing === "cut") note = "\n[output past the copy limit is not kept]";
+      if (entry.missing === "lost") note = "\n[tmux closed the pane before reading the end]";
       return ok(
         {
           cursor: end,
@@ -363,11 +378,11 @@ export function registerPrograms(mcp: ToolRegistrar, context: ToolContext): Star
           exitStatus: exit?.exitCode ?? null,
           exited: finished,
           outcome,
-          outputCut: entry.cut,
+          outputComplete: entry.missing === undefined,
           signal: exit?.signalCode ?? null,
           text,
         },
-        `${text}\n\n[${headline}]${entry.cut ? "\n[output past the copy limit is not kept]" : ""}`,
+        `${text}\n\n[${headline}]${note}`,
       );
     },
   );

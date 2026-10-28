@@ -271,6 +271,18 @@ testProgram(
           }),
         );
         expect(inherited.output.startsWith("[a b'c] %")).toBe(true);
+        // A list carries only the names it gives.
+        const listed = structured<Ran>(
+          await client.callTool({
+            arguments: {
+              argv: ["sh", "-c", 'echo "[$LTX_SECRET]"'],
+              fromPaneId: created.paneId,
+              inheritShell: ["PATH"],
+            },
+            name: "run_program",
+          }),
+        );
+        expect(listed.output).toBe("[]");
         expect(inherited.output).not.toContain(created.paneId);
         expect(await programSessions((request) => client.callTool(request))).toBe(0);
       });
