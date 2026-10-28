@@ -362,9 +362,10 @@ checks the same `FIONREAD` on all three
   temporary directory can hold any character.
 - The renewal timer is unreferenced: a process with nothing else to do exits,
   and tmux then ends what it left running within the lease.
-- Renewals run on this process's event loop. One that stalls for two thirds of
-  the lease misses two renewals, and tmux ends the program as though the process
-  had died; an `orphanAfterMs` above the longest stall expected keeps it.
+- Renewals run on this process's event loop, every third of the lease, and each
+  sets a timer for the whole lease. A stall longer than the lease lets the last
+  timer fire, and tmux ends the program as though the process had died; an
+  `orphanAfterMs` above the longest stall expected keeps it.
 - `orphanAfterMs: null` takes no lease: the program outlives its caller, and
   keeps its pane, its files and its exit watch until something
   removes them.
