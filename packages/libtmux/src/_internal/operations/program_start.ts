@@ -40,6 +40,7 @@ import {
   MAX_TIMER_MS,
   PLACEHOLDER,
   programOutput,
+  programStderr,
   readPane,
   registerProgram,
   removeOwned,
@@ -66,6 +67,7 @@ export const RUN: string =
 export const MARK = "m=$1; shift; ";
 const ENTER = 'cd -- "$1" || exit 126; shift; ';
 const READ = 'exec <"$1"; shift; ';
+const ERR = 'exec 2>"$1"; shift; ';
 /** How long setup waits for tmux to start the program. */
 const SETUP_MS = 10_000;
 /** How long tmux waits, after this process is gone, before ending the program. */
@@ -280,9 +282,12 @@ function wrapped(
   spawn: SpawnOptions,
   mark: string,
   input: string | undefined,
+  stderr: string | undefined,
 ): string[] {
   const [program = "", ...rest] = argv;
   const steps: [string, string][] = [[MARK, mark]];
+  // First, so a start directory the sh cannot enter says so there too.
+  if (stderr !== undefined) steps.push([ERR, stderr]);
   if (spawn.startDirectory !== undefined) steps.push([ENTER, spawn.startDirectory]);
   if (input !== undefined) steps.push([READ, input]);
   return [
@@ -308,7 +313,7 @@ async function requireShared(runtime: RuntimeContext, directory: string): Promis
   ]).catch(() => undefined);
   if (!(await exists(probe))) {
     throw new ServerNotLocalError(
-      "stream and input need the tmux server on this machine: a file it wrote never reached this temporary directory",
+      "stream, input and separateStderr need the tmux server on this machine: a file it wrote never reached this temporary directory",
     );
   }
 }
@@ -343,7 +348,7 @@ function startList(
         `${name}=${value}`,
       ]),
       "--",
-      ...wrapped(argv, spawn, mark, input),
+      ...wrapped(argv, spawn, mark, input, files?.stderr),
     ],
     ...armed,
     ...(stream === undefined
@@ -418,7 +423,7 @@ export async function spawnProgram(
   server: Server,
   runtime: RuntimeContext,
   argv: readonly string[],
-  spawn: SpawnOptions = {},
+  spawn: SpawnOptions & Pick<RunOptions, "separateStderr"> = {},
   signal?: AbortLike,
 ): Promise<Program> {
   const placement = requireSpawn(argv, spawn);
@@ -448,8 +453,8 @@ export async function spawnProgram(
   let paneId: string | undefined;
   try {
     let input: string | undefined;
-    if (spawn.stream === true || spawn.input !== undefined) {
-      // mkdtemp makes the directory 0700 whatever the umask, which keeps both files private.
+    if (spawn.stream === true || spawn.input !== undefined || spawn.separateStderr === true) {
+      // mkdtemp makes the directory 0700 whatever the umask, which keeps its files private.
       const directory = await mkdtemp(join(tmpdir(), "ltx-program-"));
       const stream =
         spawn.stream === true
@@ -459,8 +464,10 @@ export async function spawnProgram(
               out: join(directory, "out"),
             }
           : undefined;
-      files = { directory, stream };
+      const stderr = spawn.separateStderr === true ? join(directory, "err") : undefined;
+      files = { directory, stderr, stream };
       if (stream !== undefined) await writeFile(stream.out, "", { mode: 0o600 });
+      if (stderr !== undefined) await writeFile(stderr, "", { mode: 0o600 });
       if (spawn.input !== undefined) {
         input = join(directory, "in");
         await writeFile(input, spawn.input, { mode: 0o600 });
@@ -595,6 +602,7 @@ async function runSpawned(
       timedOut = true;
     }
     const { lostEnd, lostStart, text } = await programOutput(program);
+    const stderr = await programStderr(program);
     failed = false;
     // A timed-out run is read before its end, so no mark is due yet.
     return {
@@ -602,6 +610,7 @@ async function runSpawned(
       lostEnd: lostEnd && !timedOut,
       lostStart,
       output: text,
+      ...(stderr === undefined ? {} : { stderr }),
       success: exit.exitCode === 0,
       timedOut,
     };

@@ -593,6 +593,13 @@ export interface SpawnOptions {
 /** How long {@link Server.run} lets a program run, and how to stop it early. */
 export interface RunOptions extends Omit<SpawnOptions, "maxStreamBytes" | "stream"> {
   /**
+   * Send the program's stderr to a private file rather than the terminal, and
+   * return it as `stderr`, so `output` holds stdout alone. stderr is then no
+   * terminal, which some programs notice. Like `input`, it needs the tmux
+   * server on this machine.
+   */
+  readonly separateStderr?: boolean;
+  /**
    * Stop the program after this many milliseconds and report what it printed
    * with `timedOut` set. A positive timer-safe integer; no limit by default.
    */
@@ -644,6 +651,8 @@ export interface ProgramExit {
 export interface ProgramResult extends ProgramExit {
   /** What the program printed, as its terminal shows it, scrollback included. */
   readonly output: string;
+  /** What the program wrote to stderr, as written, when `separateStderr` was set. */
+  readonly stderr?: string;
   /** Whether the program exited with status 0. */
   readonly success: boolean;
   /** Whether `timeoutMs` stopped the program; its exit fields are then null. */

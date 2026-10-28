@@ -20,6 +20,7 @@ import {
   LibTmuxError,
   ObjectNotFoundError,
   OutputLostError,
+  ServerNotLocalError,
   TmuxTransportError,
   VersionTooLowError,
   WaitTimeoutError,
@@ -504,6 +505,29 @@ describe("program runs", () => {
         } finally {
           if (await cold.isAlive()) await cold.kill();
         }
+      });
+    },
+    40_000,
+  );
+
+  testProgram(
+    "separateStderr returns stderr apart from the terminal's output",
+    async () => {
+      await withServer(async (server) => {
+        const result = await server.run(["sh", "-c", "echo out; echo err >&2; exit 3"], {
+          separateStderr: true,
+        });
+        expect(result).toMatchObject({ exitCode: 3, output: "out", stderr: "err\n" });
+        const merged = await server.run(["sh", "-c", "echo out; echo err >&2"]);
+        expect(merged.output).toBe("out\nerr");
+        expect(merged.stderr).toBeUndefined();
+        // The sh's own complaint is stderr too.
+        const unentered = await server.run(["true"], {
+          separateStderr: true,
+          startDirectory: "/nonexistent-ltx-directory",
+        });
+        expect(unentered.exitCode).toBe(126);
+        expect(unentered.stderr).toContain("nonexistent-ltx-directory");
       });
     },
     40_000,
@@ -1042,7 +1066,7 @@ setInterval(() => undefined, 1000);`,
   );
 
   testProgram(
-    "refuses input and stream before anything starts when tmux cannot see this machine's files",
+    "refuses input, stream and separateStderr, leaving nothing, when tmux cannot see its files",
     async () => {
       await withServer(async (_server, directory, fixture) => {
         // A tmux whose shell writes nowhere this process can see, as a remote one would.
@@ -1059,6 +1083,9 @@ setInterval(() => undefined, 1000);`,
         });
         await expect(remote.run(["cat"], { input: "x" })).rejects.toThrow(/on this machine/u);
         await expect(remote.spawn(["true"], { stream: true })).rejects.toThrow(/on this machine/u);
+        await expect(remote.run(["true"], { separateStderr: true })).rejects.toBeInstanceOf(
+          ServerNotLocalError,
+        );
         expect(await programSessions(remote)).toBe(0);
       });
     },

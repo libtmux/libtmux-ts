@@ -449,7 +449,8 @@ export class OutputLostError extends LibTmuxError {
 
 /**
  * An option needs the tmux server on this machine, and a file its shell wrote
- * never reached this process's temporary directory. Nothing was started.
+ * never reached this process's temporary directory. The program was not
+ * started, and its pane was removed.
  */
 export class ServerNotLocalError extends LibTmuxError {
   static override readonly code: LibTmuxErrorCode = "ServerNotLocalError";

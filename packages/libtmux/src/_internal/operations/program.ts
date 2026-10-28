@@ -1,5 +1,5 @@
 // Program runs: the program's state once started, and waiting on, reading, streaming and ending it.
-import { access, open, rm } from "node:fs/promises";
+import { access, open, readFile, rm } from "node:fs/promises";
 import { constants as osConstants } from "node:os";
 import { setTimeout as delay } from "node:timers/promises";
 
@@ -51,6 +51,8 @@ export function drainChannel(runtime: RuntimeContext, channel: string): void {
 export interface RunFiles {
   readonly directory: string;
   readonly stream: StreamFiles | undefined;
+  /** Where the program's stderr goes, when kept apart from the terminal. */
+  readonly stderr: string | undefined;
 }
 
 export interface StreamFiles {
@@ -346,6 +348,13 @@ export async function waitProgram(
     state.wakes.delete(wake);
     stopListening();
   }
+}
+
+/** What the program wrote to stderr, for a run that kept it apart from the terminal. */
+export async function programStderr(program: Program): Promise<string | undefined> {
+  const path = stateOf(program).files?.stderr;
+  if (path === undefined) return undefined;
+  return new TextDecoder().decode(await readFile(path));
 }
 
 /** The pane's rendered text, and whether its start or, once ended, its end may be missing. */
