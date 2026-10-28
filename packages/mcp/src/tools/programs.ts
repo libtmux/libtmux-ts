@@ -440,8 +440,15 @@ export function registerPrograms(mcp: ToolRegistrar, context: ToolContext): Star
         // eslint-disable-next-line no-await-in-loop -- each wait follows the last change.
         await changed(entry, left, extra.signal);
       }
-      // A cursor past the text read so far stays put rather than starting over.
-      const { end, text } = readable(entry.chunks, entry.size, Math.min(after, entry.size));
+      // A cursor past the text read so far stays put rather than starting over. The page
+      // leaves room for the status line after it, so the ceiling never trims the page.
+      const status = 256 + Buffer.byteLength(entry.startError?.message ?? "");
+      const { end, text } = readable(
+        entry.chunks,
+        entry.size,
+        Math.min(after, entry.size),
+        MAX_RESULT_BYTES - status,
+      );
       // Ended only once every byte has been handed over.
       const finished = settled() && end === entry.size;
       // How it ended decides first: a stop's SIGTERM can also leave an exit status behind.

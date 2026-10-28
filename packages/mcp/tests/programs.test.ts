@@ -396,3 +396,41 @@ testProgram(
   },
   60_000,
 );
+
+testProgram(
+  "read_program pages so the model's text and the cursor cover the same bytes",
+  async () => {
+    await withServer(async (fixture) => {
+      await withClient(fixture, async (client) => {
+        const call: Call = (request) => client.callTool(request);
+        // Just under the result ceiling, so a page and its status line together pass it.
+        const argv = ["sh", "-c", "printf BEGIN-; printf '%999993s' '' | tr ' ' x"];
+        const started = structured<Started>(
+          await call({ arguments: { argv, lifetimeMs: 30_000 }, name: "start_program" }),
+        );
+        // Read once it has all arrived, so the first page is a full one.
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+        let cursor = 0;
+        let modelText = "";
+        let structuredText = "";
+        for (let read = 0; read < 200; read += 1) {
+          const answer = (await call({
+            arguments: { cursor, programId: started.programId, timeoutMs: 5000 },
+            name: "read_program",
+          })) as { content: { text: string }[]; structuredContent: Read };
+          const shown = answer.content[0]?.text ?? "";
+          expect(shown).not.toContain("omitted by the result ceiling");
+          modelText += shown.slice(0, shown.lastIndexOf("\n\n["));
+          structuredText += answer.structuredContent.text;
+          cursor = answer.structuredContent.cursor;
+          if (answer.structuredContent.ended) break;
+        }
+        expect(modelText.startsWith("BEGIN-")).toBe(true);
+        expect(modelText).toBe(structuredText);
+        expect(cursor).toBe(999_999);
+        await call({ arguments: { programId: started.programId }, name: "stop_program" });
+      });
+    });
+  },
+  60_000,
+);
