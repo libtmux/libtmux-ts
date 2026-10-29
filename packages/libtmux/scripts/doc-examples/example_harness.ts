@@ -115,6 +115,7 @@ declare const line: string;
 declare const input: string;
 declare const argv: readonly string[];
 declare const signal: AbortSignal;
+declare const onChunk: (chunk: string) => void;
 `;
 
 /**

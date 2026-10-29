@@ -172,6 +172,9 @@ server.
 - [Run a program and read its output](#run-a-program-and-read-its-output)
   - [`Server.run`: one call, only the output](#serverrun-one-call-only-the-output)
   - [`Server.spawn`: drive it, then wait](#serverspawn-drive-it-then-wait)
+  - [`Program.stream`: follow it as it writes](#programstream-follow-it-as-it-writes)
+  - [`Program.output`: read it once it ends](#programoutput-read-it-once-it-ends)
+  - [`Program.kill`: end it yourself](#programkill-end-it-yourself)
   - [`input`: give it a stdin](#input-give-it-a-stdin)
   - [`separateStderr`: keep stderr apart](#separatestderr-keep-stderr-apart)
   - [`signal`: cancel a run](#signal-cancel-a-run)
@@ -1015,6 +1018,54 @@ const { exitCode } = await vim.wait({ timeoutMs: 10_000 });
   `maxStreamBytes` caps the copy; the stream then throws
   [`StreamLimitError`][ref-streamlimiterror] after what it kept, and the
   program runs on. The copy is read every 25 ms.
+
+### [`Program.stream`][ref-program-stream]: follow it as it writes
+
+<!-- runs: examples/program/program.ts -->
+
+```ts
+await using program = await server.spawn(argv, { maxStreamBytes: 1_048_576, stream: true });
+for await (const chunk of program.stream()) onChunk(chunk);
+```
+
+- The text is the terminal's as written: `\r\n` line ends and escape sequences
+  left in. The stream ends once the program has exited and its last write has
+  arrived.
+- `stream({ signal })` ends the stream, and the program runs on.
+
+### [`Program.output`][ref-program-output]: read it once it ends
+
+<!-- runs: examples/program/program.ts -->
+
+```ts
+await using program = await server.spawn(argv);
+await program.wait({ timeoutMs: 10_000 });
+const screen = await program.output();
+```
+
+- `output()` reads the pane as `run`'s `output` does: the terminal's
+  rendering, scrollback included, wrapped lines joined.
+- The ended pane stays for it until `kill()` or `await using` removes the
+  pane; after that, `output()` raises `ObjectNotFoundError`.
+
+### [`Program.kill`][ref-program-kill]: end it yourself
+
+<!-- runs: examples/program/program.ts -->
+
+```ts
+const service = await server.spawn(argv, {
+  maxStreamBytes: 1_048_576,
+  orphanAfterMs: 10_000,
+  stream: true,
+});
+await service.kill();
+```
+
+- `kill()` sends SIGTERM, then SIGKILL two seconds later, to the program's
+  process group, and resolves once tmux has reaped it. It then removes the
+  pane, unless `keep` is set, and the program's files.
+- Every call waits for the same end, so a second `kill()`, or `await using`
+  after one, is safe.
 
 ### [`input`][ref-spawnoptions]: give it a stdin
 
@@ -2203,6 +2254,7 @@ MIT
 [ref-server-spawn]: https://libtmux.org/en/ts/latest/reference/server-server-spawn/
 [ref-program]: https://libtmux.org/en/ts/latest/reference/program-program/
 [ref-program-kill]: https://libtmux.org/en/ts/latest/reference/program-program-kill/
+[ref-program-output]: https://libtmux.org/en/ts/latest/reference/program-program-output/
 [ref-program-stream]: https://libtmux.org/en/ts/latest/reference/program-program-stream/
 [ref-runoptions]: https://libtmux.org/en/ts/latest/reference/types-runoptions/
 [ref-spawnoptions]: https://libtmux.org/en/ts/latest/reference/types-spawnoptions/
