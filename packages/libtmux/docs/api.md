@@ -1016,9 +1016,9 @@ Whether this server is at least `minimum`, written the way tmux writes it.
 This is how a caller gates on a feature that arrived in a known release
 without parsing `#{version}` themselves. A named development build such
 as `next-3.9` has not shipped the release it names: it is at least
-`3.8`, but not at least `3.9`. A candidate such as `3.8-rc2` ranks the
-same way, below `3.8` and above `3.7a`. `minimum` must be a form tmux
-prints, such as `3.7a`, or the call throws a `TypeError`.
+`3.8`, but not at least `3.9`. A candidate such as `X.Y-rcN` ranks the
+same way, below `X.Y` and above the release before it. `minimum` must be a
+form tmux prints, such as `3.7a`, or the call throws a `TypeError`.
 
 ```ts
 if (await server.versionAtLeast("3.5")) {

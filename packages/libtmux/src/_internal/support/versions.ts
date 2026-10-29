@@ -22,8 +22,8 @@ export { MINIMUM_TMUX };
  * Accept a version report for ordinary operations, or refuse it.
  *
  * Patch letters count, so `3.3` is below `3.3a`, and a candidate or
- * development build ranks below the release it names, so `3.3-rc` and
- * `next-3.3` are refused while `3.4-rc` and `next-3.4` are supported.
+ * development build ranks below the release it names, so a 3.3 candidate or
+ * `next-3.3` is refused, while either for 3.4 passes.
  */
 export function requireCoreVersion(raw: string): TmuxVersion {
   if (!releaseAtLeast(raw, MINIMUM_TMUX)) throw belowMinimum(raw, canParse(raw));
