@@ -187,8 +187,17 @@ async function capturedPaneState(
   context: ToolContext,
   paneId: string,
   authority?: InputAuthority,
+  request?: { readonly deadline: number; readonly signal: AbortSignal | undefined },
 ): Promise<"alive" | "gone" | "unknown"> {
-  const signal = AbortSignal.timeout(context.policy.commandTimeoutMs);
+  // A check inside a call ends with its cancellation and budget; settlement, which
+  // outlives the call, keeps only its own bound.
+  const timeout = AbortSignal.timeout(
+    request === undefined
+      ? context.policy.commandTimeoutMs
+      : Math.max(1, Math.min(context.policy.commandTimeoutMs, request.deadline - Date.now())),
+  );
+  const signal =
+    request?.signal === undefined ? timeout : AbortSignal.any([timeout, request.signal]);
   try {
     if (authority !== undefined && typeof context.observeInput === "function") {
       const current = await context.observeInput(signal);
@@ -479,7 +488,9 @@ export async function runFramedCommand(
     if (Date.now() - askedAlive >= RUN_LIVENESS_MS) {
       askedAlive = Date.now();
       // eslint-disable-next-line no-await-in-loop -- liveness is sampled over time.
-      if ((await capturedPaneState(context, pane.id, authority)) === "gone") break;
+      if ((await capturedPaneState(context, pane.id, authority, { deadline, signal })) === "gone") {
+        break;
+      }
     }
     if (tail === undefined) {
       try {

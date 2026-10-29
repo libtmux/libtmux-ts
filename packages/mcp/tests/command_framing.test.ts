@@ -877,6 +877,48 @@ describe("command framing", () => {
     expect(settled).toBe(true);
   });
 
+  test("a cancel during the running pane check ends the call at once", async () => {
+    const controller = new AbortController();
+    const tail = new PaneTail("%1");
+    const buffers = fakeBuffers();
+    let id = "";
+    const pane = {
+      format: { session_id: "$1" },
+      id: "%1",
+      cmd: async () => {
+        id = dispatchedFrame(buffers.source()).id;
+        tail.append(`${id}_S\n`);
+      },
+    } as unknown as Pane;
+    let checks = 0;
+    let cancelledAt = 0;
+    const context = {
+      hub: { closed: false, tail: async () => tail },
+      policy: resolvePolicy({ LIBTMUX_MCP_COMMAND_TIMEOUT_MS: "5000" }),
+      // The first check meets a stalled tmux, which answers only once its signal aborts.
+      snapshot: async (signal: AbortSignal) => {
+        checks += 1;
+        if (checks > 1) return { panes: { first: () => pane } };
+        return new Promise((_resolve, reject) => {
+          signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+          setTimeout(() => {
+            cancelledAt = performance.now();
+            controller.abort();
+          }, 20);
+        });
+      },
+      tmux: buffers.tmux,
+    } as unknown as ToolContext;
+
+    const result = await runFramedCommand(context, pane, "sleep 30", 20_000, controller.signal);
+
+    expect(result.outcome).toBe("cancelled");
+    expect(cancelledAt).toBeGreaterThan(0);
+    expect(performance.now() - cancelledAt).toBeLessThan(1_000);
+    tail.append(`${id}_E 0 ${id}_D\n`);
+    await result.settled;
+  }, 15_000);
+
   test("retries retained settlement after a live-tail failure", async () => {
     const controller = new AbortController();
     const tail = new PaneTail("%91");
