@@ -188,16 +188,18 @@ describe("program runs", () => {
         expect(
           (await server.run(["sh", "-c", "echo $LTX"], { environment: { LTX: "x y" } })).output,
         ).toBe("x y");
-        // The status is the one `$?` gives: a signal's death is 128 plus its number,
-        // and a program's own exit 130 stays 130.
+        // A signal's death reads as the signal, as a child process's does. The sh between the
+        // program and tmux sees a program's own exit 130 the same way, and so does this.
         expect(await server.run(["sh", "-c", "kill -TERM $$"])).toMatchObject({
-          exitCode: 143,
-          signalCode: null,
+          exitCode: null,
+          signalCode: "SIGTERM",
+          success: false,
         });
         expect(await server.run(["sh", "-c", "exit 130"])).toMatchObject({
-          exitCode: 130,
-          signalCode: null,
+          exitCode: null,
+          signalCode: "SIGINT",
         });
+        // A status above 128 that names no signal is an exit status.
         expect((await server.run(["sh", "-c", "exit 200"])).exitCode).toBe(200);
         // The rendering keeps tabs and trailing spaces and drops colors.
         const rendered = await server.run(["printf", "a\tb  \n\x1b[31mred\x1b[0m\n"]);

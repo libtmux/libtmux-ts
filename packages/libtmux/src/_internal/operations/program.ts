@@ -238,7 +238,17 @@ async function readExit(
   if (dead !== "1" || command === PLACEHOLDER_COMMAND || (status === "" && signal === "")) {
     return undefined;
   }
+  // The wrapper exits with `$?`, which is 128 plus the number of a signal that ended the
+  // program; reported as that signal, as a child process's would be.
+  const killedBy = status === "" ? undefined : signalOf(Number(status) - 128);
+  if (killedBy !== undefined) return { exitCode: null, path, signalCode: killedBy };
   return { exitCode: status === "" ? null : Number(status), path, signalCode: signalName(signal) };
+}
+
+/** The name of signal `number` on this platform, if it has one. */
+function signalOf(number: number): string | undefined {
+  if (number < 1) return undefined;
+  return Object.entries(osConstants.signals).find(([, value]) => value === number)?.[0];
 }
 
 const START_FAILURES: Readonly<Record<ProgramStartFailure, (program: string) => string>> = {
