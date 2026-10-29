@@ -44,6 +44,101 @@ release is always `latest`, so `npm i libtmux` fetches it. Releases before
   the minimum and `Server.validateLayouts` rejects with `TypeError`; both
   refuse before anything is sent. Upgrade to tmux 3.8 to apply a JSON layout.
   (#111)
+- `Server.validateLayouts` on a socket with no server now bounds its check of
+  the tmux it would start by the call's `signal` and `timeoutMs`. (#123)
+
+#### Program runs
+
+- Add `Server.run(argv)`, which runs a program in a pane of its own and returns
+  its `output`, `exitCode`, `signalCode`, `success` and `timedOut`. `output`
+  holds what the program printed, with no command line or echo. (#123)
+- Add `Server.spawn(argv)`, which returns the running `Program` to drive through
+  `program.pane`, wait on with `wait()`, read with `output()` and end with
+  `kill()` or `await using`. `Program` is also the `libtmux/program` entry
+  point. (#123)
+- `run` and `spawn` require tmux 3.8, as the `program-run` capability, and raise
+  `VersionTooLowError` below it. (#123)
+- `environment`, `startDirectory`, `width`, `height` and `historyLimit` set up
+  the program's pane. Its `PATH` is this process's, unless `environment` sets
+  one, and `historyLimit` also bounds `output`. (#123)
+- `from: pane`, with `placement: "window"` or `"split"`, runs the program beside
+  that pane and leaves focus where it was. (#123)
+- `keep: true` leaves the ended pane on screen for a person to read. (#123)
+- `input` gives the program a stdin, from a string or bytes. (#123)
+- `separateStderr` returns a run's stderr apart as `stderr`, so `output` is
+  stdout alone. (#123)
+- `stream: true` on `spawn` adds `stream()`, which yields what the program
+  writes as it writes it. `maxStreamBytes` caps the copy, past which the stream
+  ends with the new `StreamLimitError`. (#123)
+- Add `ServerNotLocalError`: `input`, `separateStderr` and `stream: true` need
+  the tmux server on this machine, and are refused for one elsewhere. (#123)
+- Add `ProgramStartError`, which `run`, `wait()` and `stream()` reject with when
+  the program never ran: `argv[0]` not found or not executable, or a
+  `startDirectory` it cannot enter. `reason` says which, and `exitCode` is the
+  shell's 127 or 126. (#123)
+- `lostStart` says a run's output lost its start past `historyLimit`, and
+  `lostEnd` that tmux removed the pane before reading its end; a stream ends
+  with the new `OutputLostError` for the second. (#123)
+- A program a signal ended reports `signalCode`, with `exitCode` null. One that
+  exits 130 on its own reads as `"SIGINT"`, as that status means. (#123)
+- `signal` cancels a run, or a spawn's setup, with a `TmuxTransportError` whose
+  `delivery` says how far the program got. On `wait()` and `stream()` it stops
+  only that wait or stream, with `delivery` `replied`. (#123)
+- `orphanAfterMs` is the lease each run and spawn holds: should this process
+  die, tmux ends the program within it, a minute by default. `null` takes none.
+  (#123)
+- `run` and `spawn` start a tmux server on a socket with none, as `newSession`
+  does. Removing their own session stops a server with no other, unless
+  `exit-empty` is off. (#123)
+- A `Program`'s `wait()` and `output()` raise `TmuxServerRestartedError` once
+  its tmux server has restarted, and its `kill()` leaves the new server's panes
+  alone. (#123)
+- A run's session or window is named `libtmux-program-` and an id, and its pane
+  carries `@libtmux-lease` and `@libtmux-files` while they apply. (#123)
+
+#### Pane waits
+
+- Add `Pane.waitForExit()`, which waits for any pane's program to exit, whoever
+  started it, and returns its exit code or signal. (#123)
+- Add `Pane.waitForCommand()`, which waits for the next command a shell marks
+  as finished with OSC 133 and returns its status; `send` types the command
+  once the wait listens. (#123)
+- Add `Pane.waitForText(pattern)`, which resolves with the first line of the
+  pane's screen that a string or regular expression matches. (#123)
+- The pane waits require tmux 3.8, as the `pane-wait` capability. (#123)
+
+#### Transport
+
+- `maxInFlight` no longer counts an invocation whose last command waits, so a
+  live program holds no slot. (#123)
+
+### `@libtmux/mcp`
+
+- Add `run_program`, which runs `argv` in a pane of its own, removed before it
+  returns, and returns its `output`, `exitStatus` or `signal`, and `outcome`.
+  `outputComplete` is false when a timeout, a lost start or end, or a limit cut
+  the output. (#123)
+- `run_program` takes `fromPaneId` with `placement`, `keep`, `input`,
+  `separateStderr` and `inheritShell`, which carries the variables the pane's
+  idle shell exported. (#123)
+- `run_program` fails, with the reason, when its program cannot start:
+  `argv[0]` not found or not executable, or a `startDirectory` it cannot enter.
+  (#123)
+- Add `start_program`, `read_program` and `stop_program` for a program longer
+  than one wait. `read_program` returns its output after a cursor, with
+  `ended`, `outcome`, `lostEnd`, `outputCut` and `outputComplete`. (#123)
+- `lifetimeMs` on `start_program` bounds how long this server lets the program
+  run, and tmux ends it should the server die. (#123)
+- `start_program` beside `fromPaneId` keeps its window or split on screen after
+  the program ends, until `stop_program` or its lifetime; a program in a session
+  of its own loses its pane at its end. (#123)
+- Add `wait_for_exit`, which waits for the program in a pane this server did not
+  start and returns its exit status or signal. (#123)
+- `run_program`, `start_program` and `wait_for_exit` require tmux 3.8; an older
+  server answers each with a refusal that names the remedy. (#123)
+- `pane-program` is the process reach the capability rows of `run_program` and
+  `start_program` declare: each runs a program of the caller's choosing in a
+  pane. (#123)
 
 ## 0.1.0 (2026-10-25)
 
