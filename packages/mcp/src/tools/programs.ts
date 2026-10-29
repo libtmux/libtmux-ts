@@ -39,6 +39,8 @@ type EndedBy = "exited" | "gone" | "lifetime" | "stopped";
 
 interface Entry {
   readonly program: Program;
+  /** Whether it runs beside a person's pane, where its last screen stays until a stop or its lifetime. */
+  readonly beside: boolean;
   /** The readable text so far, as UTF-8, in arrival order. */
   readonly chunks: Buffer[];
   size: number;
@@ -137,8 +139,9 @@ async function pump(entry: Entry): Promise<void> {
     entry.endedBy ??= error instanceof ProgramStartError ? "exited" : "gone";
   }
   entry.endedAt ||= performance.now();
-  clearTimeout(entry.timer);
   wake(entry);
+  if (entry.beside) return;
+  clearTimeout(entry.timer);
   // Its text is held here, so the pane, its lease and its copy can go now.
   await entry.program.kill().catch(() => undefined);
 }
@@ -180,6 +183,8 @@ export function registerPrograms(mcp: ToolRegistrar, context: ToolContext): Star
     for (const [id, entry] of ended.slice(0, Math.max(0, ended.length - MAX_ENDED_PROGRAMS))) {
       entries.delete(id);
       clearTimeout(entry.timer);
+      // A pane kept beside a person's goes with the program it showed.
+      void entry.program.kill().catch(() => undefined);
     }
   }
 
@@ -317,6 +322,7 @@ export function registerPrograms(mcp: ToolRegistrar, context: ToolContext): Star
       }
       const id = `program-${randomUUID().slice(0, 8)}`;
       const entry: Entry = {
+        beside: fromPaneId !== undefined,
         chunks: [],
         endedAt: 0,
         endedBy: undefined,
@@ -349,8 +355,9 @@ export function registerPrograms(mcp: ToolRegistrar, context: ToolContext): Star
         "first read and pass back the one returned; a read that times out returns no text, " +
         "and the next read with the same cursor carries on. The text is the byte stream " +
         "with escape sequences removed, in write order; capture_pane on its paneId shows " +
-        "the screen while it runs. Output stays readable after the end until stop_program, " +
-        "or until enough programs have ended after it.",
+        "the screen while it runs, and after the end for one beside fromPaneId, whose pane " +
+        "stays until stop_program or its lifetime. Output stays readable after the end until " +
+        "stop_program, or until enough programs have ended after it.",
       inputSchema: {
         cursor: z
           .number()

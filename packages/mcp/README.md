@@ -543,8 +543,9 @@ try {
 ```
 
 - `start_program` returns a `programId` and the `paneId`, which `send_keys` and
-  `capture_pane` reach while the program runs; its pane is removed once it
-  exits. It takes `fromPaneId`, `placement`, `startDirectory`, `width` and
+  `capture_pane` reach while the program runs. Its pane is removed once it
+  exits, except a window or split beside `fromPaneId`, which stays on screen
+  until `stop_program` or its lifetime. It takes `fromPaneId`, `placement`, `startDirectory`, `width` and
   `height` as `run_program` does, but not `input`, `keep`, `inheritShell` or
   `separateStderr`;
   `PAGER` and `GIT_PAGER` are `cat`. This server reads each running program's

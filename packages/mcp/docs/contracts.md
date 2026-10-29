@@ -345,9 +345,11 @@ No later call owns cleanup:
   tmux ends the program and removes its pane once the lease runs out.
 - Closing this server refuses new starts, waits for those in flight, and ends
   every program it started.
-- The number running at once is capped. A program that exits, or that its
-  lifetime ends, loses its pane at once; its text stays readable from this
-  server's memory until `stop_program`, or until enough programs end after it.
+- The number running at once is capped. A program that exits in a session of
+  its own loses its pane at once; one beside `fromPaneId` keeps its window or
+  split on screen, for a person to read, until `stop_program` or its lifetime.
+  Its text stays readable from this server's memory until `stop_program`, or
+  until enough programs end after it, which removes a pane kept beside too.
 - The end, the lifetime and the lease signal the program's process group. A
   process that leaves it, through `setsid` or by daemonizing, is not followed,
   as in the library.

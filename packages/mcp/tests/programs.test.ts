@@ -434,3 +434,40 @@ testProgram(
   },
   60_000,
 );
+
+testProgram(
+  "a program beside a person's pane keeps its split on screen after it ends, until stopped",
+  async () => {
+    await withServer(async (fixture) => {
+      await withClient(fixture, async (client) => {
+        const call: Call = (request) => client.callTool(request);
+        const panes = async (): Promise<readonly string[]> =>
+          (await fixture.executeText(["list-panes", "-a", "-F", "#{pane_id}"])).stdout;
+        const created = structured<{ paneId: string }>(
+          await call({ arguments: { name: "watched" }, name: "create_session" }),
+        );
+        const argv = ["sh", "-c", "echo build failed; exit 2"];
+        const beside = structured<Started>(
+          await call({
+            arguments: { argv, fromPaneId: created.paneId, placement: "split" },
+            name: "start_program",
+          }),
+        );
+        const own = structured<Started>(await call({ arguments: { argv }, name: "start_program" }));
+        for (const programId of [beside.programId, own.programId]) {
+          expect((await readAll(call, programId, 5000)).at(-1)).toMatchObject({
+            ended: true,
+            exitStatus: 2,
+          });
+        }
+        // Past the end: the split beside a person stays for them to read; the program's own goes.
+        expect(await until(async () => !(await panes()).includes(own.paneId), 5000)).toBe(true);
+        expect(await panes()).toContain(beside.paneId);
+        await call({ arguments: { programId: beside.programId }, name: "stop_program" });
+        expect(await panes()).not.toContain(beside.paneId);
+        await call({ arguments: { programId: own.programId }, name: "stop_program" });
+      });
+    });
+  },
+  60_000,
+);
