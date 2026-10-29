@@ -354,9 +354,11 @@ export function registerPrograms(mcp: ToolRegistrar, context: ToolContext): Star
         "output or its end, and report whether it has ended and how. Omit cursor on the " +
         "first read and pass back the one returned; a read that times out returns no text, " +
         "and the next read with the same cursor carries on. The text is the byte stream " +
-        "with escape sequences removed, in write order; capture_pane on its paneId shows " +
-        "the screen while it runs, and after the end for one beside fromPaneId, whose pane " +
-        "stays until stop_program or its lifetime. Output stays readable after the end until " +
+        "with escape sequences removed, in write order, and a carriage return on its own " +
+        "starts a new line, so each state of a progress line is a line; capture_pane on " +
+        "its paneId shows the screen while it runs, and after the end for one beside " +
+        "fromPaneId, whose pane stays until stop_program or its lifetime. Output stays " +
+        "readable after the end until " +
         "stop_program, or until enough programs have ended after it.",
       inputSchema: {
         cursor: z

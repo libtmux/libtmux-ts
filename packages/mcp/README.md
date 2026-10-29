@@ -565,7 +565,10 @@ try {
   and returns a `cursor`. A read that times out returns no text; the next one
   with the same cursor carries on, past any wait ceiling.
 - The text is the byte stream with escape sequences removed, as
-  `capture_since` gives it. `ended` turns true once the program ended and
+  `capture_since` gives it, and a carriage return on its own starts a new
+  line: a progress bar that rewrites its line reads as a line for each state,
+  where `run_program` and `capture_pane` show only the screen's last.
+  `ended` turns true once the program ended and
   every byte was read, and `outcome` says how: `completed` with `exitStatus`
   or `signal`, `not_started` when it never ran, with the shell's 127 or 126,
   `expired` at its lifetime, `stopped` by `stop_program`, or
