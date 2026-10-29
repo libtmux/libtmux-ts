@@ -54,6 +54,19 @@ export async function followOutput(
 }
 
 /**
+ * Read what a spawned program printed, once it has ended.
+ *
+ * `output()` reads the pane as `run` does, scrollback included, and the ended
+ * pane stays for it until `await using` removes it.
+ */
+export async function readAfterExit(server: Server, argv: readonly string[]): Promise<string> {
+  await using program = await server.spawn(argv);
+  await program.wait({ timeoutMs: 10_000 });
+  const screen = await program.output();
+  return screen;
+}
+
+/**
  * Give a program a stdin.
  *
  * The input is written to a private file the program reads, so it passes

@@ -38,6 +38,12 @@ release is always `latest`, so `npm i libtmux` fetches it. Releases before
 
 ## Unreleased
 
+### Documentation
+
+- The README shows `Program.stream`, `Program.output` and `Program.kill`, and
+  the MCP README shows `run_program` and `wait_for_exit`, as recipes drawn
+  from examples the test suite runs. (#126)
+
 ## 0.1.1-alpha.1 (2026-10-29)
 
 A prerelease, published under the `alpha` dist-tag, so `npm i libtmux` still

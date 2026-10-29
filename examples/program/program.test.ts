@@ -11,6 +11,7 @@ import {
   followOutput,
   listFiles,
   prependLine,
+  readAfterExit,
   readJson,
   runBeside,
   runUnlessCancelled,
@@ -82,6 +83,21 @@ describe("program", () => {
         await expect(
           followOutput(server, ["seq", "1", "300000"], () => undefined),
         ).rejects.toBeInstanceOf(LibTmuxError);
+      });
+    },
+    60_000,
+  );
+
+  test.skipIf(!runsPrograms)(
+    "reads a spawned program's screen after it ends",
+    async () => {
+      await withServer(async (fixture) => {
+        const server = new Server({
+          environment: fixture.controllerEnvironment,
+          socketPath: fixture.socketPath,
+          tmuxBin: fixture.tmuxExecutable,
+        });
+        expect(await readAfterExit(server, ["sh", "-c", "echo one; echo two"])).toBe("one\ntwo");
       });
     },
     60_000,

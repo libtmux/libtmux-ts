@@ -205,12 +205,14 @@ export async function runWithInput(
   argv: readonly string[],
   input: string,
 ): Promise<CommandResult> {
-  return callTool<CommandResult>(client, "run_program", { argv, input });
+  const ran = await callTool<CommandResult>(client, "run_program", { argv, input });
+  return ran;
 }
 
 /**
  * Wait for a program somebody else started to exit, and learn how.
  */
 export async function waitForExit(client: Client, paneId: string): Promise<ExitResult> {
-  return callTool<ExitResult>(client, "wait_for_exit", { paneId });
+  const exit = await callTool<ExitResult>(client, "wait_for_exit", { paneId });
+  return exit;
 }

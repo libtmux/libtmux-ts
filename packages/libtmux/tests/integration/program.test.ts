@@ -595,8 +595,15 @@ describe("program runs", () => {
         try {
           expect(await cold.isAlive()).toBe(false);
           expect((await cold.run(["echo", "first"])).output).toBe("first");
-          // The run's session was the server's only one, so the server went with it.
-          expect(await cold.isAlive()).toBe(false);
+          // The run's session was the server's only one, so the server goes with it, on
+          // tmux's next pass through its loop rather than before the run returns.
+          expect(
+            await eventually(
+              () => cold.isAlive(),
+              (alive) => !alive,
+              5000,
+            ),
+          ).toBe(false);
           expect((await cold.run(["sort"], { input: "b\na\n" })).output).toBe("a\nb");
         } finally {
           if (await cold.isAlive()) await cold.kill();
