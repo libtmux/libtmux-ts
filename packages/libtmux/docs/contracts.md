@@ -478,7 +478,9 @@ bytes their own way.
 - The reader polls the copy every 25 ms for as long as it is read, one small
   read a poll for each stream, which needs no file watching. A capped copy runs
   `head -c` under `stdbuf -o0` where there is one, since GNU `head` holds its
-  writes to a file until it exits. `stream({ signal })` ends the stream, and
+  writes to a file until it exits. That `stdbuf` gets the run's own directory
+  as its `TMPDIR`: uutils' `stdbuf` leaves a directory there on every run.
+  `stream({ signal })` ends the stream, and
   the program runs on.
 
 ## Pane waits

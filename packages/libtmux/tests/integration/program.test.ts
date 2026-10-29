@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from "node:child_process";
-import { access, chmod, mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { access, chmod, mkdir, readdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -1421,6 +1421,38 @@ setInterval(() => undefined, 1000);`,
         let whole = "";
         for await (const chunk of fits.stream()) whole += chunk;
         expect(whole).toBe("12345");
+      });
+    },
+    40_000,
+  );
+
+  testProgram(
+    "a capped stream leaves nothing in the server's TMPDIR",
+    async () => {
+      await withServer(async (_server, directory, fixture) => {
+        // uutils' stdbuf makes a directory under TMPDIR on every run and never removes it.
+        // A pipe-pane job sees the server's own environment, so the server starts with it.
+        const scratch = join(directory, "tmpdir");
+        await mkdir(scratch);
+        const server = new Server({
+          configFile: "/dev/null",
+          environment: { ...fixture.controllerEnvironment, TMPDIR: scratch },
+          socketPath: join(directory, "capped"),
+          tmuxBin: fixture.tmuxExecutable,
+        });
+        try {
+          await server.newSession({ name: "keep" });
+          await using program = await server.spawn(["printf", "12345"], {
+            maxStreamBytes: 1024,
+            stream: true,
+          });
+          let text = "";
+          for await (const chunk of program.stream()) text += chunk;
+          expect(text).toBe("12345");
+          expect(await readdir(scratch)).toEqual([]);
+        } finally {
+          if (await server.isAlive()) await server.kill();
+        }
       });
     },
     40_000,

@@ -379,11 +379,13 @@ function startList(
       ? undefined
       : stream.limit + Math.max(...markSequences(mark).map((sequence) => sequence.length)) + 1;
   // GNU head holds its writes to a file until it exits; stdbuf, where there is one, lets
-  // them through as they come.
+  // them through as they come. uutils' stdbuf leaves a directory under TMPDIR on every
+  // run, so it is pointed at the run's own, which goes with the run.
   const copy =
-    room === undefined
+    room === undefined || files === undefined
       ? "cat"
-      : `if command -v stdbuf >/dev/null 2>&1; then stdbuf -o0 head -c ${String(room)}; ` +
+      : `if command -v stdbuf >/dev/null 2>&1; then ` +
+        `TMPDIR=${shellQuote(files.directory)} stdbuf -o0 head -c ${String(room)}; ` +
         `else head -c ${String(room)}; fi`;
   return [
     [
