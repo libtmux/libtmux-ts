@@ -4,6 +4,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { randomUUID } from "node:crypto";
 import { realpathSync } from "node:fs";
+import { constants as osConstants } from "node:os";
 import { isAbsolute } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -277,12 +278,25 @@ export async function main(): Promise<void> {
   const onEnd = (): void => {
     closed.resolve();
   };
+  // A signal shuts down as stdin's end does and exits with that signal's status;
+  // a second signal kills at once.
+  const signals = ["SIGHUP", "SIGINT", "SIGTERM"] as const;
+  const stopHandling = (): void => {
+    for (const signal of signals) process.off(signal, onSignal);
+  };
+  const onSignal = (signal: NodeJS.Signals): void => {
+    stopHandling();
+    process.exitCode = 128 + osConstants.signals[signal];
+    closed.resolve();
+  };
   process.stdin.once("end", onEnd);
+  for (const signal of signals) process.on(signal, onSignal);
   try {
     await mcp.connect(boundRequestIds(new StdioServerTransport()));
     if (!process.stdin.readableEnded && !process.stdin.destroyed) await closed.promise;
   } finally {
     process.stdin.off("end", onEnd);
+    stopHandling();
     await mcp.close();
   }
 }

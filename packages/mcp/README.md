@@ -64,8 +64,10 @@ $ bun add --exact @libtmux/mcp@0.1.1-alpha.1
 ```
 
 Closing the subprocess's stdin cancels pending waits and joins its control
-connections before exit. Existing tmux sessions and panes keep running. Backend
-cleanup failures produce a nonzero exit status.
+connections before exit, and SIGTERM, SIGINT or SIGHUP does the same, then
+exits with 128 plus the signal's number. Programs it started end with it.
+Existing tmux sessions and panes keep running. Backend cleanup failures produce
+a nonzero exit status.
 
 ### `claude mcp add`: tell Claude Code about it
 
