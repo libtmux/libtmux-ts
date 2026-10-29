@@ -294,6 +294,16 @@ describe("pane waits", () => {
           "for n in 1 2 3 4 5 6 7 8; do echo line$n; sleep 0.1; done; sleep 30",
         );
         expect(await counting.waitForText("line8", { timeoutMs: 10_000 })).toBe("line8");
+        // A line wider than the pane wraps on screen and still matches, and returns, whole.
+        const wide = `${"a".repeat(30)}${"b".repeat(30)}tail`;
+        const narrow = await server.newSession({
+          name: "narrow",
+          shellCommand: `printf '%s\\n' ${wide}; sleep 30`,
+          width: 20,
+        });
+        const wrapped = narrow.activePane;
+        if (wrapped === undefined) throw new Error("a new session has a pane");
+        expect(await wrapped.waitForText(/a+b+tail/u, { timeoutMs: 10_000 })).toBe(wide);
       });
     },
     40_000,

@@ -2758,7 +2758,9 @@ waitForText(pattern: string | RegExp, options?: ProgramWaitOptions): Promise<str
 ```
 
 Resolve with the first line of this pane's screen that `pattern` matches:
-a substring, or a regular expression tested against each line.
+a substring, or a regular expression tested against each line. A line the
+pane's width wrapped is one line here, matched and returned whole, so the
+result can be wider than the pane.
 
 The screen is read at once, then again each time tmux reports that the
 pane printed, at most every 50 ms, and once a second besides. Use it to
