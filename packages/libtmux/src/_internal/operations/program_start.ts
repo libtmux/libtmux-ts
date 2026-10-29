@@ -118,6 +118,17 @@ function shellQuote(value: string): string {
 
 /** Where the program runs, refusing a placement its options do not fit. */
 function requireSpawn(argv: readonly string[], spawn: SpawnOptions): ProgramPlacement {
+  // A caller without types can pass anything.
+  const kind = (value: unknown): string => (value === null ? "null" : typeof value);
+  if (!Array.isArray(argv)) throw new TypeError("argv must be an array of strings");
+  for (const [index, value] of argv.entries()) {
+    if (typeof value !== "string") {
+      throw new TypeError(`argv[${String(index)}] must be a string, not ${kind(value)}`);
+    }
+  }
+  if (spawn.startDirectory !== undefined && typeof spawn.startDirectory !== "string") {
+    throw new TypeError(`startDirectory must be a string, not ${kind(spawn.startDirectory)}`);
+  }
   const [program = ""] = argv;
   if (program === "") throw new TypeError("argv must name a program");
   // bash, which is /bin/sh on some systems, reads `exec -l` as an option to exec itself.

@@ -402,6 +402,23 @@ describe("program runs", () => {
         await expect(server.run(["true"], { environment: { "A=B": "x" } })).rejects.toBeInstanceOf(
           TypeError,
         );
+        // A caller without types can pass anything.
+        const loose = server as unknown as {
+          run(argv: unknown, options?: unknown): Promise<unknown>;
+          spawn(argv: unknown, options?: unknown): Promise<unknown>;
+        };
+        await expect(loose.run(["echo", 1])).rejects.toThrow(
+          new TypeError("argv[1] must be a string, not number"),
+        );
+        await expect(loose.spawn([null])).rejects.toThrow(
+          new TypeError("argv[0] must be a string, not null"),
+        );
+        await expect(loose.run("echo hi")).rejects.toThrow(
+          new TypeError("argv must be an array of strings"),
+        );
+        await expect(loose.run(["true"], { startDirectory: 5 })).rejects.toThrow(
+          new TypeError("startDirectory must be a string, not number"),
+        );
         expect(await programSessions(server)).toBe(0);
       });
     },
