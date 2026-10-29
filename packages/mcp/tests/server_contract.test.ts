@@ -467,14 +467,17 @@ test("a private directory is left behind when the pane is killed mid-run", async
             }),
           );
           const running = client.callTool({
-            arguments: { command: "sleep 4", paneId: created.paneId, timeoutMs: 6_000 },
+            arguments: { command: "sleep 30", paneId: created.paneId, timeoutMs: 15_000 },
             name: "run_shell_command",
           });
           await new Promise((resolve) => setTimeout(resolve, 500));
           await fixture.executeText(["kill-pane", "-t", created.paneId]);
+          const killed = performance.now();
 
           const result = structured<{ outcome: string }>(await running);
           expect(result.outcome).toBe("pane_died");
+          // Answered once the pane is seen gone, not at the timeout.
+          expect(performance.now() - killed).toBeLessThan(5_000);
         },
         { TMPDIR: scratchTmp },
       );

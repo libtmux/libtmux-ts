@@ -157,6 +157,8 @@ const SETTLEMENT_POLL_MS = 1_000;
 
 /** How often settlement confirms that a quiet pane still exists. */
 const SETTLEMENT_LIVENESS_MS = 5_000;
+/** How often a running command's pane is checked; a pane killed from outside sends nothing. */
+const RUN_LIVENESS_MS = 1_000;
 
 function observedPaneState(
   snapshot: Awaited<ReturnType<ToolContext["snapshot"]>>,
@@ -398,6 +400,7 @@ export async function runFramedCommand(
   let commandStarted = false;
   let scriptDirectory: string | undefined;
   let retypedInline = false;
+  let askedAlive = Date.now();
   let usedFallback = tail === undefined;
   const dispatchPane = beforeDispatch === undefined ? pane : await beforeDispatch();
   if (isCancelled(signal) || Date.now() >= deadline) {
@@ -471,6 +474,11 @@ export async function runFramedCommand(
       continue;
     }
     if (Date.now() >= deadline || isCancelled(signal)) break;
+    if (Date.now() - askedAlive >= RUN_LIVENESS_MS) {
+      askedAlive = Date.now();
+      // eslint-disable-next-line no-await-in-loop -- liveness is sampled over time.
+      if ((await capturedPaneState(context, pane.id, authority)) === "gone") break;
+    }
     if (tail === undefined) {
       try {
         // eslint-disable-next-line no-await-in-loop -- the poll follows its read.
