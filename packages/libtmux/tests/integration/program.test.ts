@@ -1427,6 +1427,105 @@ setInterval(() => undefined, 1000);`,
   );
 
   testProgram(
+    "a stream paused across a kill still delivers what was written before it",
+    async () => {
+      await withServer(async (server) => {
+        const program = await server.spawn(
+          ["sh", "-c", "echo one; sleep 0.2; echo two; sleep 0.2; echo three; exec sleep 30"],
+          { stream: true },
+        );
+        const stream = program.stream();
+        let text = String((await stream.next()).value);
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        await program.kill();
+        const ended = await (async () => {
+          for await (const chunk of stream) text += chunk;
+        })().catch((error: unknown) => error);
+        expect(text.replaceAll("\r", "")).toBe("one\ntwo\nthree\n");
+        expect(ended).toBeInstanceOf(LibTmuxError);
+      });
+    },
+    40_000,
+  );
+
+  testProgram(
+    "a stream its reader drops closes its copy once collected",
+    async () => {
+      if (typeof Bun === "undefined") return;
+      await withServer(async (_server, _directory, fixture) => {
+        const index = fileURLToPath(new URL("../../src/index.ts", import.meta.url));
+        // Bun raises when it collects a file left open; the dropped stream held one.
+        const script = `
+          import { readdirSync, readlinkSync } from "node:fs";
+          const { Server } = await import(${JSON.stringify(index)});
+          const server = new Server({ socketPath: ${JSON.stringify(fixture.socketPath)} });
+          await (async () => {
+            await using program = await server.spawn(["sh", "-c", "echo 1; exec sleep 30"], {
+              stream: true,
+            });
+            await program.stream().next();
+          })();
+          for (let round = 0; round < 5; round += 1) {
+            Bun.gc(true);
+            await new Promise((resolve) => setTimeout(resolve, 50));
+          }
+          const open = readdirSync("/proc/self/fd").filter((fd) => {
+            try { return readlinkSync("/proc/self/fd/" + fd).includes("ltx-program-"); } catch { return false; }
+          });
+          console.log("open copies:", open.length);
+        `;
+        const child = spawnSync("bun", ["-e", script], {
+          encoding: "utf8",
+          env: { ...process.env, ...fixture.controllerEnvironment },
+        });
+        expect(child.stderr).not.toContain("garbage collection");
+        expect(child.stdout).toContain("open copies: 0");
+        expect(child.status).toBe(0);
+      });
+    },
+    40_000,
+  );
+
+  testProgram(
+    "a stream its reader drops while its program runs closes its copy once collected",
+    async () => {
+      if (typeof Bun === "undefined") return;
+      await withServer(async (_server, _directory, fixture) => {
+        const index = fileURLToPath(new URL("../../src/index.ts", import.meta.url));
+        // The program outlives the dropped stream, so its exit cannot be what closes the copy.
+        const script = `
+          import { readdirSync, readlinkSync } from "node:fs";
+          const { Server } = await import(${JSON.stringify(index)});
+          const server = new Server({ socketPath: ${JSON.stringify(fixture.socketPath)} });
+          const program = await server.spawn(["sh", "-c", "echo 1; exec sleep 30"], {
+            stream: true,
+          });
+          await (async () => {
+            await program.stream().next();
+          })();
+          for (let round = 0; round < 5; round += 1) {
+            Bun.gc(true);
+            await new Promise((resolve) => setTimeout(resolve, 50));
+          }
+          const open = readdirSync("/proc/self/fd").filter((fd) => {
+            try { return readlinkSync("/proc/self/fd/" + fd).includes("ltx-program-"); } catch { return false; }
+          });
+          console.log("open copies:", open.length);
+          await program.kill();
+        `;
+        const child = spawnSync("bun", ["-e", script], {
+          encoding: "utf8",
+          env: { ...process.env, ...fixture.controllerEnvironment },
+        });
+        expect(child.stderr).not.toContain("garbage collection");
+        expect(child.stdout).toContain("open copies: 0");
+        expect(child.status).toBe(0);
+      });
+    },
+    40_000,
+  );
+
+  testProgram(
     "a capped stream leaves nothing in the server's TMPDIR",
     async () => {
       await withServer(async (_server, directory, fixture) => {
