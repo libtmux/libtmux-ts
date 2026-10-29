@@ -3,6 +3,7 @@ import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { link, lstat, readFile, unlink } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { isDeepStrictEqual } from "node:util";
 
 import { readDaemonIdentity, resolveControllerIdentity } from "../../src/_internal/test/testkit.js";
 import { closeChildWithin, waitForProcessExit } from "./converge.js";
@@ -71,6 +72,12 @@ async function terminateCapturedTmux(captured: CapturedTmuxCleanup): Promise<voi
   const stdoutText = Buffer.concat(stdout).toString("utf8");
   const stderrText = Buffer.concat(stderr).toString("utf8");
   if (closed.code !== 0 || stdoutText === `${mismatch}\n`) {
+    // The test still fails, but the daemon it owns must not outlive it: nothing
+    // else knows it, and a refused socket leaves no other way to reach it.
+    if (isDeepStrictEqual(await readDaemonIdentity(captured.daemon.pid), captured.daemon)) {
+      process.kill(captured.daemon.pid, "SIGKILL");
+      await waitForProcessExit(captured.daemon.pid);
+    }
     throw new Error(`test-owned tmux cleanup refused: ${stderrText || stdoutText}`);
   }
   await waitForProcessExit(captured.daemon.pid);
