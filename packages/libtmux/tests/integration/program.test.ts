@@ -659,6 +659,35 @@ describe("program runs", () => {
   );
 
   testProgram(
+    "a client whose locale is not UTF-8 reads tmux's answers whole",
+    async () => {
+      await withServer(async (_server, directory, fixture) => {
+        // tmux prints "_" for a tab or an "é" to a client it does not take for UTF-8.
+        const environment = Object.fromEntries(
+          Object.entries(fixture.controllerEnvironment).filter(
+            ([name]) => !["LANG", "LC_ALL", "LC_CTYPE", "TMUX"].includes(name),
+          ),
+        );
+        const plain = new Server({
+          configFile: "/dev/null",
+          environment,
+          socketPath: join(directory, "plain"),
+          tmuxBin: fixture.tmuxExecutable,
+        });
+        try {
+          await plain.newSession({ name: "café" });
+          expect((await plain.snapshot()).sessions.one({}).name).toBe("café");
+          const run = await plain.run(["sh", "-c", "echo hi; exit 3"]);
+          expect([run.output, run.exitCode]).toEqual(["hi", 3]);
+        } finally {
+          if (await plain.isAlive()) await plain.kill();
+        }
+      });
+    },
+    40_000,
+  );
+
+  testProgram(
     "separateStderr returns stderr apart from the terminal's output",
     async () => {
       await withServer(async (server) => {

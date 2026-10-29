@@ -530,6 +530,7 @@ describe("logical reference binding", () => {
     expect(Object.isFrozen(bound)).toBe(true);
     expect(fixture.transport.requests).toHaveLength(1);
     expect(flattenInvocation(fixture.transport.requests[0]!)).toEqual([
+      "-u",
       "-Lhandles",
       "-N",
       "run-shell",
@@ -1136,10 +1137,11 @@ describe("authenticated handle materialization", () => {
     ]);
 
     expect(fixture.transport.requests.map(flattenInvocation)).toEqual([
-      ["-Lhandles", "select-window", "-t", "$1:4"],
-      ["-Lhandles", "move-window", "-d", "-s", "$1:4", "-t", "$1:7"],
-      ["-Lhandles", "unlink-window", "-t", "$1:4"],
+      ["-u", "-Lhandles", "select-window", "-t", "$1:4"],
+      ["-u", "-Lhandles", "move-window", "-d", "-s", "$1:4", "-t", "$1:7"],
+      ["-u", "-Lhandles", "unlink-window", "-t", "$1:4"],
       [
+        "-u",
         "-Lhandles",
         "if-shell",
         "-F",
@@ -1149,7 +1151,7 @@ describe("authenticated handle materialization", () => {
         "'unlink-window' '-k' '-t' '$1:4'",
         expect.stringMatching(/^'libtmux-grouped-session-[0-9a-f]{32}'$/u),
       ],
-      ["-Lhandles", "swap-window", "-d", "-s", "$1:4", "-t", "$1:6"],
+      ["-u", "-Lhandles", "swap-window", "-d", "-s", "$1:4", "-t", "$1:6"],
     ]);
   });
 
