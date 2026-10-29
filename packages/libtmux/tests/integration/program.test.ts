@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { describe, expect, test } from "bun:test";
+import { processExists } from "../support/converge.js";
 import { tmuxReaches } from "../support/tmux_release.js";
 
 import { leaseTimer } from "../../src/_internal/operations/program_lease.js";
@@ -62,15 +63,6 @@ async function withServer(
     );
   } finally {
     if (done) await rm(parent, { force: true, recursive: true });
-  }
-}
-
-function running(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
   }
 }
 
@@ -533,9 +525,9 @@ describe("program runs", () => {
         }
         expect(shown).toBe("ready");
         const pid = await panePid(server, program.pane.id);
-        expect(running(pid)).toBe(true);
+        expect(processExists(pid)).toBe(true);
         await program.kill();
-        expect(running(pid)).toBe(false);
+        expect(processExists(pid)).toBe(false);
 
         const result = await server.run(stubborn, { timeoutMs: 2_000 });
         expect(result).toMatchObject({ output: "ready", timedOut: true });
@@ -942,7 +934,7 @@ describe("program runs", () => {
         }
         expect(
           await eventually(
-            async () => running(pid),
+            async () => processExists(pid),
             (alive) => !alive,
             5000,
           ),
@@ -980,7 +972,7 @@ describe("program runs", () => {
         }
         await server.cmd("set-option", ["-p", "-t", program.pane.id, "@libtmux-lease", "2"]);
         await new Promise((resolve) => setTimeout(resolve, 1000));
-        expect(running(await panePid(server, program.pane.id))).toBe(true);
+        expect(processExists(await panePid(server, program.pane.id))).toBe(true);
       });
     },
     40_000,
@@ -1014,14 +1006,14 @@ describe("program runs", () => {
         await writeFile(gate, "");
         await program.wait({ timeoutMs: 10_000 });
         const child = Number(await program.output());
-        expect(running(child)).toBe(true);
+        expect(processExists(child)).toBe(true);
         try {
           // Past the timer, which leaves nothing to see for a dead pane.
           const fired = queued + 5_000 - Date.now();
           await new Promise((resolve) => setTimeout(resolve, Math.max(0, fired)));
-          expect(running(child)).toBe(true);
+          expect(processExists(child)).toBe(true);
         } finally {
-          if (running(child)) process.kill(child, "SIGKILL");
+          if (processExists(child)) process.kill(child, "SIGKILL");
           await server.cmd("kill-session", ["-t", `=${program.sessionName}`]);
         }
       });
@@ -1067,7 +1059,7 @@ setInterval(() => undefined, 1000);`,
             5000,
           ),
         ).toBe(false);
-        expect(running(pid)).toBe(false);
+        expect(processExists(pid)).toBe(false);
         expect(
           await eventually(
             () => gone(files),
@@ -1193,12 +1185,12 @@ setInterval(() => undefined, 1000);`,
         await server.cmd("kill-session", ["-t", `=${program.sessionName}`]);
         expect(
           await eventually(
-            async () => running(child),
+            async () => processExists(child),
             (alive) => !alive,
             5000,
           ),
         ).toBe(false);
-        expect(running(sh)).toBe(false);
+        expect(processExists(sh)).toBe(false);
       });
     },
     40_000,
@@ -1273,7 +1265,7 @@ setInterval(() => undefined, 1000);`,
         expect(await windows()).toBe(2);
         await caller.kill();
         expect(await eventually(windows, (count) => count === 1, 5000)).toBe(1);
-        expect(running(pid)).toBe(false);
+        expect(processExists(pid)).toBe(false);
         expect(await server.hasSession("person")).toBe(true);
       });
     },
