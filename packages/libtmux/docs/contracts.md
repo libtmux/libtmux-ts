@@ -23,7 +23,7 @@ sessions stays on the one you resolved.
 ## Querying
 
 Most programs need equality and a relation: `one({ id })` to re-find something
-they already hold, `{ session: { is: { id } } }` to scope to it. Both consumers
+they already hold, `{ session: { is: { id } } }` to scope to it. Consumers
 in this repository use those and nothing else, and `.filter()` covers the rest
 of what a program that built the server itself wants.
 
@@ -416,7 +416,7 @@ raises rather than reporting an empty server. Record guards are rewritten to
 the ones each replayed call asks for, so a fixture is not tied to the run that
 made it.
 
-Four specialist subpaths keep their complete contracts out of the root:
+Specialist subpaths keep their complete contracts out of the root:
 `libtmux/engine` for custom execution engines, `libtmux/types` for the full
 operation and event type inventory, and `libtmux/field-types` for generated
 format-field, decoded-value, and handle-alias types.
