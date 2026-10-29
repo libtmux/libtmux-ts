@@ -484,10 +484,11 @@ describe("command framing", () => {
     const dispatched = sent[0] ?? "";
     expect(dispatched).not.toContain("__ltx_");
     expect(dispatched).not.toContain("printf '%b");
-    expect(dispatched.length).toBeLessThan(150);
     const { id, source } = dispatchedFrame(buffers.source());
     const dispatchedPath = /\. '([^']+)'/u.exec(dispatched)?.[1];
     if (dispatchedPath === undefined) throw new Error("expected a sourcing line");
+    // The path, there twice, is as long as TMPDIR makes it; the rest is the line's own.
+    expect(dispatched.replaceAll(dispatchedPath, "").length).toBeLessThan(100);
     expect(dispatchedPath.endsWith(`/${id}.sh`)).toBe(true);
 
     // The script sourced from that path is the framed command, plus a
