@@ -38,11 +38,74 @@ release is always `latest`, so `npm i libtmux` fetches it. Releases before
 
 ## Unreleased
 
+### `libtmux`
+
+- `TmuxObjectNotFoundError` takes a `message`, for an object no listing names.
+  (#129)
+
+#### Program runs
+
+- `Server.run` and `Server.spawn` work under `destroy-unattached on`, which
+  failed them with `respawn-pane failed: no server running`. Every session but
+  the program's own keeps the option. (#129)
+- `Server.run` and `Server.spawn` raise `TypeError` before tmux runs anything
+  for an `argv` element that is not a string, naming its index and type, and
+  for an `argv` that is not an array or a `startDirectory` that is not a
+  string. (#129)
+- `Server.spawn` with `maxStreamBytes` no longer leaves a directory in the tmux
+  server's `TMPDIR` where `stdbuf` is uutils', as on Ubuntu 26.04. (#129)
+- `Program.stream()` closes its copy of the output once a reader that dropped
+  it unfinished lets it be collected, even while the program runs, where Bun
+  raised `A FileHandle object was closed during garbage collection`. (#129)
+
+#### Pane waits
+
+- `Pane.waitForText`, `Pane.waitForExit`, `Pane.waitForCommand` and a
+  `Program`'s waits raise `ObjectNotFoundError` with `%N: the pane is gone` for
+  a pane that is gone, also when its server exits with it or dies during the
+  wait, which raised `TmuxCommandError`. (#129)
+
+#### Transport
+
+- Every command passes `-u`, so a process whose locale does not name UTF-8,
+  such as one started by cron, systemd or a container without `LANG`, reads
+  tmux's answers whole. A session named `café` read back as `caf_`, and `run`,
+  `spawn` and the waits failed on a pane that existed. (#129)
+
+### `@libtmux/mcp`
+
+- `read_program` reports `outcome`, `exitStatus` and `signal` on every read
+  once the program has ended, and its status line adds
+  `more output after cursor N` until `ended`. A loop that read until `outcome`
+  left `running` now stops with output still to read; loop on `ended` instead.
+  (#129)
+- `run_shell_command` answers `pane_died` within about a second of its pane
+  being killed, where it waited out its timeout. (#129)
+- `run_shell_command` removes its script's directory, which holds the
+  command's text, when it returns `pane_died`, or `timed_out` or `cancelled`
+  once the script has started; a pane that died left it behind. (#129)
+- The server shuts down on SIGTERM, SIGINT and SIGHUP as on the end of stdin,
+  ending the programs it started, and exits with 128 plus the signal's number.
+  (#129)
+- A server launched without a UTF-8 locale, as an MCP client with a bare
+  environment launches it, runs programs to their end. `run_program` failed,
+  finding its program's pane missing, and `start_program` reported `gone`.
+  (#129)
+- `start_program` no longer leaves a directory in the tmux server's `TMPDIR`
+  for each program where `stdbuf` is uutils'. (#129)
+
 ### Documentation
 
 - The README shows `Program.stream`, `Program.output` and `Program.kill`, and
   the MCP README shows `run_program` and `wait_for_exit`, as recipes drawn
   from examples the test suite runs. (#126)
+- Each wait's docs give its bound after an outside `kill-pane`: about a second
+  for a `Program`'s waits, about two for `Pane.waitForExit`,
+  `Pane.waitForCommand` and `wait_for_exit`. (#129)
+- `read_program`'s description and the MCP README say a carriage return on its
+  own starts a new line. (#129)
+- `Pane.waitForText`'s docs say a line the pane wrapped matches and returns
+  whole. (#129)
 
 ## 0.1.1-alpha.1 (2026-10-29)
 
