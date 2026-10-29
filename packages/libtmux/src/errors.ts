@@ -333,8 +333,8 @@ export class MultipleObjectsError extends LibTmuxError {
 /**
  * A tmux object named by id was not in the list tmux returned.
  *
- * Carries the listing command that was run, so the message can say what was
- * searched rather than only what was not found.
+ * Its message names the listing command that was run, or is the `message`
+ * given for an object no listing names.
  */
 export class TmuxObjectNotFoundError extends ObjectNotFoundError {
   static override readonly code: LibTmuxErrorCode = "TmuxObjectNotFoundError";
@@ -343,6 +343,8 @@ export class TmuxObjectNotFoundError extends ObjectNotFoundError {
     options: {
       readonly list_cmd?: string;
       readonly list_extra_args?: readonly string[];
+      /** Replaces the message built from the listing, for an object no listing names. */
+      readonly message?: string;
       readonly obj_id?: string;
       readonly obj_key?: string;
     } = {},
@@ -350,12 +352,13 @@ export class TmuxObjectNotFoundError extends ObjectNotFoundError {
     const { list_cmd, list_extra_args, obj_id, obj_key } = options;
     super({
       message:
-        list_cmd === undefined ||
+        options.message ??
+        (list_cmd === undefined ||
         list_extra_args === undefined ||
         obj_id === undefined ||
         obj_key === undefined
           ? "Could not find object"
-          : `Could not find ${obj_key}=${obj_id} for ${list_cmd} (${list_extra_args.map((value) => `'${value}'`).join(", ")})`,
+          : `Could not find ${obj_key}=${obj_id} for ${list_cmd} (${list_extra_args.map((value) => `'${value}'`).join(", ")})`),
     });
   }
 }

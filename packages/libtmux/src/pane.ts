@@ -415,7 +415,8 @@ export class Pane {
    * typing into it. Giving up leaves the pane as it was: a timeout throws
    * {@link WaitTimeoutError} and an abort throws {@link TmuxTransportError}
    * of kind `cancelled`. A pane whose program has exited without the text
-   * rejects with {@link LibTmuxError}.
+   * rejects with {@link LibTmuxError}, and a pane that is gone, or goes during
+   * the wait, with {@link ObjectNotFoundError}.
    *
    * Requires tmux 3.8 or newer.
    *
