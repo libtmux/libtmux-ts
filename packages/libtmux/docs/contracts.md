@@ -248,6 +248,11 @@ What a run does not do:
   as a dead pane, so its id exists before the program does.
 - `remain-on-exit` is set in the list that creates the session: set by a second
   invocation, it arrives after an instant program's pane is already gone.
+- `destroy-unattached` is turned off for that session in the same list. tmux
+  [checks it](https://github.com/tmux/tmux/blob/3.8/server-fn.c#L530) as each
+  client [goes](https://github.com/tmux/tmux/blob/3.8/server-client.c#L565), so
+  under `destroy-unattached on` the client that made the session would take it
+  with it. Every other session keeps the option.
 - The pane is respawned with `sh` and `argv` as its positional parameters, so
   `sh` does not parse them and runs `argv[0]` as a program name, `A=b`
   included, which `env` would read as an assignment.

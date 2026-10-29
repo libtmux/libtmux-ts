@@ -614,6 +614,34 @@ describe("program runs", () => {
   );
 
   testProgram(
+    "a run outlives destroy-unattached, which removes a detached session as its client goes",
+    async () => {
+      await withServer(async (_server, directory, fixture) => {
+        const configFile = join(directory, "destroy-unattached.conf");
+        await writeFile(configFile, "set -g destroy-unattached on\nset -g exit-empty off\n");
+        const strict = new Server({
+          configFile,
+          environment: fixture.controllerEnvironment,
+          socketPath: join(directory, "strict"),
+          tmuxBin: fixture.tmuxExecutable,
+        });
+        try {
+          expect((await strict.run(["echo", "hi"])).output).toBe("hi");
+          await using program = await strict.spawn(["sh", "-c", "sleep 0.5; echo later"]);
+          expect(await program.wait({ timeoutMs: 10_000 })).toMatchObject({ exitCode: 0 });
+          expect(await program.output()).toBe("later");
+          // The option still holds for every session but the program's own.
+          await strict.cmd("new-session", ["-d", "-s", "person"]);
+          expect(await strict.hasSession("person")).toBe(false);
+        } finally {
+          if (await strict.isAlive()) await strict.kill();
+        }
+      });
+    },
+    40_000,
+  );
+
+  testProgram(
     "separateStderr returns stderr apart from the terminal's output",
     async () => {
       await withServer(async (server) => {

@@ -209,6 +209,9 @@ async function createSession(
     // In the creating list: set by a second invocation, it arrives after an
     // instant program's pane is already gone.
     ["set-option", "-w", "-t", target, "remain-on-exit", "on"],
+    // destroy-unattached removes an unattached session as soon as the client
+    // that made it exits, before the program could start in it.
+    ["set-option", "-t", target, "destroy-unattached", "off"],
     ["set-option", "-w", "-t", target, "remain-on-exit-format", ""],
     [
       "set-option",
