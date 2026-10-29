@@ -544,7 +544,9 @@ export interface SpawnOptions {
    * many milliseconds after this process stops renewing a lease on it: after
    * it exits or dies without {@link Program.kill}. A live process renews the
    * lease every third of this period. At least 1000; 60000 by default. `null`
-   * takes no lease, for a program meant to outlive this process.
+   * takes no lease, for a program meant to outlive this process. Renewals run
+   * on the event loop, so a stall longer than this, such as a debugger paused
+   * at a breakpoint, ends the program too; raise it, or pass `null`, there.
    */
   readonly orphanAfterMs?: number | null;
   /**

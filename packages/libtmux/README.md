@@ -1099,6 +1099,9 @@ const service = await server.spawn(argv, {
   process.
 - A shorter lease ends an orphan sooner, but an event-loop stall longer than
   the lease ends a live program too, as though this process had died.
+- A debugger paused at a breakpoint is such a stall: its renewals stop with
+  everything else. Debugging past a minute, pass a longer `orphanAfterMs`, or
+  `null`, so the program is there when you resume.
 
 ## Type into a pane and wait
 
