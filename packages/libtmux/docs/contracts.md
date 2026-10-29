@@ -209,7 +209,7 @@ What each outcome looks like to a caller:
 
 | What happened                                                      | What the caller sees                                                                                                   |
 | ------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
-| The program ended                                                  | `exitCode` as `$?` reports it, or `signalCode` when a signal ended its `sh` too                                        |
+| The program ended                                                  | `exitCode`, or `signalCode` with `exitCode` null when a signal ended it                                                |
 | Its output's start scrolled past `historyLimit`                    | `lostStart`                                                                                                            |
 | tmux removed the pane before reading the end                       | `lostEnd`; `stream()` ends with `OutputLostError`                                                                      |
 | The stream copy reached `maxStreamBytes`                           | `stream()` ends with `StreamLimitError`; the program runs on                                                           |
@@ -231,8 +231,7 @@ What a run does not do:
 - `lostEnd` leaves the exit status exact; only the output's tail is unproven.
   Run again a program that can be repeated, or have it write its output to a
   file through `sh -c`.
-- A status above 128 is a signal's 128 plus its number or the program's own
-  exit, which `$?` cannot tell apart.
+- A program a signal ended reads `signalCode`, with `exitCode` null.
 - A program's alternate screen is gone once it leaves it, as in a terminal, so
   `output` holds only what the main screen kept.
 - `argv` and `environment` go to tmux in one command, which tmux caps at about
@@ -267,10 +266,11 @@ What a run does not do:
   resets, so the program keeps the default dispositions and the wrapper
   outlives it to report. It leaves HUP
   alone: a pane closed from outside hangs up the `sh`, and the kernel then
-  hangs up the program, as it would a shell's. The run exits with the status
-  the `sh` saw, as `$?` reports it: POSIX `sh` cannot tell a program's
-  `exit 130` from a SIGINT death, so the library does not guess. `signalCode` is set
-  only when a signal ended the `sh` itself.
+  hangs up the program, as it would a shell's. The `sh` exits with the status it
+  saw, and the library reads 128 plus a signal's number as that signal. POSIX
+  `sh` cannot tell a program's `exit 130` from a SIGINT death, so the first reads
+  as SIGINT too, which is what that status means by convention; a status above
+  128 that names no signal stays an exit status.
 - A start directory is entered by that `sh`, not by tmux's `-c`, which falls
   back to `$HOME` for one it cannot enter, and its `#` is never expanded.
 - The program's `PATH` is this process's: tmux gives a pane the `PATH` of the

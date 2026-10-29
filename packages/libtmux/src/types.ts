@@ -643,11 +643,12 @@ export interface CommandWaitOptions extends ProgramWaitOptions {
 /**
  * How a program ended: an exit status or the signal that ended it.
  *
- * For a program {@link Server.run} or {@link Server.spawn} started, the status
- * is the one its `sh` saw, as `$?` reports it: a program a signal ended reads
- * 128 plus the signal's number, and a program's own `exit 130` reads 130. A
- * signal is named only when one ended that `sh` too, as {@link Program.kill}'s
- * SIGKILL does. For any other pane, tmux reports the process's own end.
+ * One of the two is set, as for a Node child process: `exitCode` for a program
+ * that exited, `signalCode` for one a signal ended. A program
+ * {@link Server.run} or {@link Server.spawn} started runs under an `sh`, which
+ * cannot tell a signal's death from the program exiting with 128 plus that
+ * signal's number, so a program's own `exit 130` reads as `"SIGINT"`, as that
+ * status means by convention.
  */
 export interface ProgramExit {
   /** The exit status, or null when a signal ended the process. */
