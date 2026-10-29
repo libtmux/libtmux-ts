@@ -25,7 +25,9 @@ function readMatrix(): readonly string[] {
       .map((entry) => entry.trim().replaceAll('"', ""))
       .filter((entry) => entry !== "")
       // The master lane is a branch; the version it reports is a `next-X.Y` build.
-      .map((entry) => (entry === "master" ? "next-3.9" : entry)),
+      .map((entry) => (entry === "master" ? "next-3.9" : entry))
+      // A release with no tag upstream is built from its `release_` branch.
+      .map((entry) => entry.replace(/^release_/u, "")),
   );
 }
 

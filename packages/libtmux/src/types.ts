@@ -495,6 +495,195 @@ export interface RunShellOptions extends CommandOptions {
 }
 
 /**
+ * Where a program runs: a detached session of its own, a background window of
+ * the `from` pane's session, or a split beside the `from` pane, where a person
+ * sees it run.
+ */
+export type ProgramPlacement = "session" | "split" | "window";
+
+/**
+ * Where a program started by {@link Server.spawn} runs, and what it gets.
+ *
+ * The program gets a pane of its own and a real terminal. It runs on the
+ * machine the tmux server is on, with the tmux server's environment, except
+ * `PATH`: tmux gives a pane the `PATH` of the client that asked for it, which
+ * is this process's, or {@link ServerOptions.environment}'s when that is set. stderr shares the screen with stdout, and without
+ * `input` the terminal is its stdin, so a program that pages or prompts
+ * (`git log`, `sudo`) waits for keys as it would in a terminal.
+ */
+export interface SpawnOptions {
+  /**
+   * The pane to run beside: the program starts in its current directory, in
+   * its session, with that session's tmux environment. Variables the pane's
+   * shell exported are not inherited; only typing into that shell reaches them.
+   */
+  readonly from?: Pane;
+  /**
+   * `"session"`, the default without `from`, is a detached session of the
+   * program's own. With `from`, `"window"`, the default, is a background
+   * window of that pane's session, and `"split"` splits that pane, leaving
+   * focus where it was.
+   */
+  readonly placement?: ProgramPlacement;
+  /**
+   * Leave the pane in place once the program has ended, showing its output,
+   * for a person to read; it is theirs to close. A kept split closes at the
+   * next key pressed in it. {@link Program.kill} and `await using` still end
+   * a running program.
+   */
+  readonly keep?: boolean;
+  /**
+   * The program's stdin, as bytes or UTF-8 text. It is written to a private
+   * file the program reads, so it passes through no shell or tmux command,
+   * and the terminal stays the program's output. Needs the tmux server on
+   * this machine, as `stream` does.
+   */
+  readonly input?: string | Uint8Array;
+  /**
+   * Have tmux end the program, and remove its pane unless `keep` is set, this
+   * many milliseconds after this process stops renewing a lease on it: after
+   * it exits or dies without {@link Program.kill}. A live process renews the
+   * lease every third of this period. At least 1000; 60000 by default. `null`
+   * takes no lease, for a program meant to outlive this process. Renewals run
+   * on the event loop, so a stall longer than this, such as a debugger paused
+   * at a breakpoint, ends the program too; raise it, or pass `null`, there.
+   */
+  readonly orphanAfterMs?: number | null;
+  /**
+   * Directory the program starts in, taken as a literal path. Defaults to this
+   * process's current directory, or the `from` pane's. One that cannot be
+   * entered means the program never runs: see {@link ProgramStartError}.
+   */
+  readonly startDirectory?: string;
+  /**
+   * Variables added to the program's environment. They reach tmux as command
+   * arguments, which `ps` on this machine shows while the command runs; pass a
+   * secret through `input` instead. tmux replaces a `PATH` passed that way with
+   * its client's, so the wrapper sets this one itself before finding `argv[0]`.
+   */
+  readonly environment?: Readonly<Record<string, string>>;
+  /** Terminal width in columns, for `"session"`. Defaults to tmux's `default-size`. */
+  readonly width?: number;
+  /** Terminal height in rows, for `"session"`. Defaults to tmux's `default-size`. */
+  readonly height?: number;
+  /**
+   * Lines of scrollback kept for {@link Program.output}, for `"session"`, up to
+   * tmux's 2147483647. Defaults to 100000; older lines are dropped, and
+   * {@link ProgramResult.lostStart} says so. It bounds the output too: at most
+   * this many rows plus the screen's, each `width` columns, the newest kept.
+   */
+  readonly historyLimit?: number;
+  /**
+   * Copy everything the program writes, so {@link Program.stream} can return
+   * all of it. Needs the tmux server on this machine: the copy is a file in
+   * this process's temporary directory.
+   */
+  readonly stream?: boolean;
+  /**
+   * Stops setup: an abort before the program has started removes its pane and
+   * rejects with {@link TmuxTransportError} of kind `cancelled`, whose
+   * `delivery` is `not_started` if nothing was made and `indeterminate` if the
+   * program may have begun. Once {@link Server.spawn} has returned, the
+   * program is the caller's to end.
+   */
+  readonly signal?: AbortLike;
+  /**
+   * Stop the copy after this many bytes; {@link Program.stream} then yields
+   * them and throws {@link StreamLimitError}. The program runs on. No limit by
+   * default, and the temporary directory may be memory-backed.
+   */
+  readonly maxStreamBytes?: number;
+}
+
+/** How long {@link Server.run} lets a program run, and how to stop it early. */
+export interface RunOptions extends Omit<SpawnOptions, "maxStreamBytes" | "stream"> {
+  /**
+   * Send the program's stderr to a private file rather than the terminal, and
+   * return it as `stderr`, so `output` holds stdout alone. stderr is then no
+   * terminal, which some programs notice. Like `input`, it needs the tmux
+   * server on this machine.
+   */
+  readonly separateStderr?: boolean;
+  /**
+   * Stop the program after this many milliseconds and report what it printed
+   * with `timedOut` set. A positive timer-safe integer; no limit by default.
+   */
+  readonly timeoutMs?: number;
+  /**
+   * Stop the program when this fires; the call rejects with
+   * {@link TmuxTransportError} of kind `cancelled`, the signal's reason as its
+   * `cause`. Its `delivery` is `written` once the program had started, which
+   * may have done part of its work, and as for {@link SpawnOptions.signal} before.
+   */
+  readonly signal?: AbortLike;
+}
+
+/** Options for {@link Program.stream}. */
+export interface ProgramStreamOptions {
+  /** Ends the stream; the program runs on. */
+  readonly signal?: AbortLike;
+}
+
+/** Options for {@link Program.wait}. */
+export interface ProgramWaitOptions {
+  /** Stops the wait; the program runs on. */
+  readonly signal?: AbortLike;
+  /** Maximum time to wait. A positive timer-safe integer; no limit by default. */
+  readonly timeoutMs?: number;
+}
+
+/** Options for {@link Pane.waitForCommand}. */
+export interface CommandWaitOptions extends ProgramWaitOptions {
+  /**
+   * A command line to type into the shell, with Enter, once the wait is
+   * listening, so even a command that ends at once is seen. Without it, the
+   * wait is for the next command to finish, whoever typed it.
+   */
+  readonly send?: string;
+}
+
+/**
+ * How a program ended: an exit status or the signal that ended it.
+ *
+ * One of the two is set, as for a Node child process: `exitCode` for a program
+ * that exited, `signalCode` for one a signal ended. A program
+ * {@link Server.run} or {@link Server.spawn} started runs under an `sh`, which
+ * cannot tell a signal's death from the program exiting with 128 plus that
+ * signal's number, so a program's own `exit 130` reads as `"SIGINT"`, as that
+ * status means by convention.
+ */
+export interface ProgramExit {
+  /** The exit status, or null when a signal ended the process. */
+  readonly exitCode: number | null;
+  /** The signal that ended the process, such as `"SIGKILL"`, or null. */
+  readonly signalCode: string | null;
+}
+
+/** What {@link Server.run} reports once the program has ended or been stopped. */
+export interface ProgramResult extends ProgramExit {
+  /**
+   * What the program printed, as its terminal shows it, scrollback included:
+   * NUL and other control bytes are dropped and wrapped lines joined. For the
+   * bytes as written, use {@link Server.spawn} with `stream: true`.
+   */
+  readonly output: string;
+  /** What the program wrote to stderr, as written, when `separateStderr` was set. */
+  readonly stderr?: string;
+  /** Whether the program exited with status 0. */
+  readonly success: boolean;
+  /** Whether `timeoutMs` stopped the program; its exit fields are then null. */
+  readonly timedOut: boolean;
+  /** Whether `output` lacks its start, which scrolled past `historyLimit`. */
+  readonly lostStart: boolean;
+  /**
+   * Whether `output` may lack its end: tmux removed the pane before reading it,
+   * or a SIGKILL to the process group left the end unproven. A run that timed
+   * out is read before it ends, so this is false and `timedOut` says why.
+   */
+  readonly lostEnd: boolean;
+}
+
+/**
  * How the condition is decided: by running it, or by expanding it.
  *
  * By default tmux runs it with `/bin/sh` and reads the exit status. Asked to

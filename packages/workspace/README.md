@@ -20,7 +20,7 @@ than duplicating.**
 
 [![@libtmux/workspace](https://img.shields.io/npm/v/@libtmux/workspace?label=%40libtmux%2Fworkspace)](https://www.npmjs.com/package/@libtmux/workspace)
 [![typescript](https://github.com/libtmux/libtmux-ts/actions/workflows/typescript.yml/badge.svg)](https://github.com/libtmux/libtmux-ts/actions/workflows/typescript.yml)
-[![tmux](https://img.shields.io/badge/tmux-3.3a%E2%80%933.8-1bb91f)](../../.github/workflows/typescript.yml)
+[![tmux](https://img.shields.io/badge/tmux-3.3a%E2%80%933.8a-1bb91f)](../../.github/workflows/typescript.yml)
 [![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![libtmux.org](https://img.shields.io/badge/docs-libtmux.org-0b7285)](https://libtmux.org/en/ts/latest/workspace/)
 
@@ -44,22 +44,22 @@ Install the package with `libtmux`, which supplies the [`Server`][ref-server]
 you pass to every call:
 
 ```console
-$ bun add @libtmux/workspace libtmux
+$ bun add --exact @libtmux/workspace@0.1.1-alpha.1 libtmux@0.1.1-alpha.1
 ```
 
 <details>
 <summary>npm, pnpm, yarn</summary>
 
 ```console
-$ npm i @libtmux/workspace libtmux
+$ npm i --save-exact @libtmux/workspace@0.1.1-alpha.1 libtmux@0.1.1-alpha.1
 ```
 
 ```console
-$ pnpm add @libtmux/workspace libtmux
+$ pnpm add --save-exact @libtmux/workspace@0.1.1-alpha.1 libtmux@0.1.1-alpha.1
 ```
 
 ```console
-$ yarn add @libtmux/workspace libtmux
+$ yarn add --exact @libtmux/workspace@0.1.1-alpha.1 libtmux@0.1.1-alpha.1
 ```
 
 </details>
@@ -355,7 +355,7 @@ windows:
 Load it detached, on a socket of its own:
 
 ```console
-$ npx -y @libtmux/workspace-cli@0.1.0 load ./workspace.yaml \
+$ npx -y @libtmux/workspace-cli@0.1.1-alpha.1 load ./workspace.yaml \
     -L workspace-demo \
     -d
 ```

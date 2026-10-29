@@ -22,7 +22,9 @@ export type CapabilityId =
   | "control-mode"
   | "layout-json"
   | "layout-mirrored-main"
-  | "layout-without-checksum";
+  | "layout-without-checksum"
+  | "pane-wait"
+  | "program-run";
 
 export type WorkaroundId =
   | "break-pane-misnames-windows"
@@ -149,6 +151,32 @@ export const CAPABILITIES: readonly CapabilityRecord[] = [
     error: "errors.VersionTooLowError",
     apis: ["window.Window.selectLayout", "server.Server.validateLayouts"],
     commands: [{ command: "select-layout" }],
+  },
+  {
+    id: "program-run",
+    name: "Program runs",
+    summary:
+      "Run a program in a detached pane and learn of its exit from tmux; 3.7 through 3.7c keep a dead pane's pipe open.",
+    since: "3.8",
+    handling: "refuse",
+    error: "errors.VersionTooLowError",
+    apis: ["server.Server.spawn", "server.Server.run"],
+    commands: [
+      { command: "wait-for", flags: ["-E", "-F"] },
+      { command: "respawn-pane", flags: ["-k"] },
+      { command: "pipe-pane", flags: ["-O"] },
+    ],
+  },
+  {
+    id: "pane-wait",
+    name: "Pane waits",
+    summary:
+      "Wait for any pane's program to exit, or its shell's command to finish, through tmux's own events.",
+    since: "3.8",
+    handling: "refuse",
+    error: "errors.VersionTooLowError",
+    apis: ["pane.Pane.waitForExit", "pane.Pane.waitForCommand"],
+    commands: [{ command: "wait-for", flags: ["-E", "-F", "-v"] }],
   },
   {
     id: "clipboard-query",

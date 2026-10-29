@@ -1,6 +1,6 @@
 {
   "name": "libtmux",
-  "version": "0.1.0",
+  "version": "0.1.1-alpha.1",
   "description": "Typed, Bun-first TypeScript control of tmux: immutable snapshots, declarative queries, and a fully typed session, window, and pane API.",
   "keywords": [
     "automation",
@@ -108,6 +108,12 @@
       "bun": "./src/pane.ts",
       "import": "./dist/pane.js",
       "default": "./dist/pane.js"
+    },
+    "./program": {
+      "types": "./dist/program.d.ts",
+      "bun": "./src/program.ts",
+      "import": "./dist/program.js",
+      "default": "./dist/program.js"
     },
     "./client": {
       "types": "./dist/client.d.ts",

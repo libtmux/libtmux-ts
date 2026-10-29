@@ -68,6 +68,13 @@
         "libtmux": "workspace:*",
       },
     },
+    "examples/program": {
+      "name": "@example/program",
+      "version": "0.0.0",
+      "dependencies": {
+        "libtmux": "workspace:*",
+      },
+    },
     "examples/quickstart": {
       "name": "@example/quickstart",
       "version": "0.0.0",
@@ -92,7 +99,7 @@
     },
     "packages/libtmux": {
       "name": "libtmux",
-      "version": "0.1.0",
+      "version": "0.1.1-alpha.1",
       "devDependencies": {
         "@types/bun": "1.4.2",
         "@types/node": "22.20.5",
@@ -108,37 +115,37 @@
     },
     "packages/mcp": {
       "name": "@libtmux/mcp",
-      "version": "0.1.0",
+      "version": "0.1.1-alpha.1",
       "bin": {
         "libtmux-mcp": "dist/server.js",
       },
       "dependencies": {
         "@modelcontextprotocol/sdk": "1.32.1",
-        "libtmux": "0.1.0",
+        "libtmux": "0.1.1-alpha.1",
         "zod": "4.6.7",
       },
     },
     "packages/workspace": {
       "name": "@libtmux/workspace",
-      "version": "0.1.0",
+      "version": "0.1.1-alpha.1",
       "dependencies": {
         "zod": "4.6.7",
       },
       "devDependencies": {
-        "libtmux": "0.1.0",
+        "libtmux": "0.1.1-alpha.1",
       },
       "peerDependencies": {
-        "libtmux": "0.1.0",
+        "libtmux": "0.1.1-alpha.1",
       },
     },
     "packages/workspace-cli": {
       "name": "@libtmux/workspace-cli",
-      "version": "0.1.0",
+      "version": "0.1.1-alpha.1",
       "bin": {
         "tmux-workspace": "./dist/main.js",
       },
       "dependencies": {
-        "libtmux": "0.1.0",
+        "libtmux": "0.1.1-alpha.1",
       },
       "devDependencies": {
         "cli-truncate": "6.1.1",
@@ -149,6 +156,7 @@
       },
     },
   },
+  "trustedDependencies": [],
   "overrides": {
     "@types/node": "22.20.5",
   },
@@ -182,6 +190,8 @@
     "@example/mcp-agent": ["@example/mcp-agent@workspace:examples/mcp-agent"],
 
     "@example/observe": ["@example/observe@workspace:examples/observe"],
+
+    "@example/program": ["@example/program@workspace:examples/program"],
 
     "@example/quickstart": ["@example/quickstart@workspace:examples/quickstart"],
 

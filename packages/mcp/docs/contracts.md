@@ -118,7 +118,7 @@ These existing names are unchanged:
 
 | Group   | Unchanged names                                                                                                                                                                                                                                                                                                                                                                      |
 | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Read    | [`list_sessions`][tool-list_sessions], [`list_windows`][tool-list_windows], [`list_panes`][tool-list_panes], [`capture_pane`][tool-capture_pane], [`search_panes`][tool-search_panes], [`wait_for_text`][tool-wait_for_text], [`show_hooks`][tool-show_hooks], [`show_environment`][tool-show_environment]                                                                           |
+| Read    | [`list_sessions`][tool-list_sessions], [`list_windows`][tool-list_windows], [`list_panes`][tool-list_panes], [`capture_pane`][tool-capture_pane], [`search_panes`][tool-search_panes], [`wait_for_text`][tool-wait_for_text], [`wait_for_exit`][tool-wait_for_exit], [`show_hooks`][tool-show_hooks], [`show_environment`][tool-show_environment]                                    |
 | Input   | [`send_keys`][tool-send_keys], [`paste_text`][tool-paste_text], [`respawn_pane`][tool-respawn_pane]                                                                                                                                                                                                                                                                                  |
 | Arrange | [`rename_session`][tool-rename_session], [`rename_window`][tool-rename_window], [`resize_pane`][tool-resize_pane], [`resize_window`][tool-resize_window], [`select_pane`][tool-select_pane], [`select_window`][tool-select_window], [`select_layout`][tool-select_layout], [`swap_pane`][tool-swap_pane], [`move_window`][tool-move_window], [`set_pane_title`][tool-set_pane_title] |
 | End     | [`kill_pane`][tool-kill_pane], [`kill_window`][tool-kill_window], [`kill_session`][tool-kill_session]                                                                                                                                                                                                                                                                                |
@@ -243,6 +243,145 @@ not observed recipients or a delivery receipt.
 
 State can change after any snapshot; each `send_keys_batch` row takes its own
 check so an earlier row cannot authorize a later one.
+
+## [`run_program`][tool-run_program] program runs
+
+`run_program` creates a detached session whose only pane starts with a
+placeholder, then respawns that pane with an `sh` given `argv` as positional
+parameters, which it does not parse, so `argv[0]` is always run as a program
+name, `A=b` included, which `env` would read as an assignment. That `sh` runs
+the program and lingers 50 ms after it, because tmux can remove a pane before
+reading its last output, then exits with the status it saw. A program a signal
+ended reports `signal`, with `exitStatus` null. The library's
+[program runs contract](../../libtmux/docs/contracts.md#program-runs) has the
+detail.
+
+The session is an ordinary one named `libtmux-program-…`. `list_sessions` shows
+it, and another client can type into it or kill it; a kill fails the call.
+
+`fromPaneId` puts the program in a new background window of that pane's session
+instead, or with `placement: "split"` in a split of that pane made without
+moving focus. It starts in the pane's current directory with the session's tmux
+environment, and only its own window or split is removed. It types nothing into
+the pane, so the caller and attended-pane protections that guard pane input do
+not apply.
+
+`inheritShell` types one line into the pane. It runs `env -0` into a file in a
+fresh 0700 directory through `run_shell_command`'s framing, with every one of
+its checks, then turns the dump into a file of `export NAME='value'` lines that
+the program's own `sh` sources and deletes before it starts; the dump is
+deleted once read. Values never pass through a tmux command or `argv`. A list
+of names carries only those variables. Names a POSIX shell cannot export are
+skipped, and so are the shell's own `OLDPWD`, `PWD`, `SHLVL` and `_`, and
+`TMUX_PANE`, which names the shell's pane, where the program has its own. The typed command starts with a space, so a shell that ignores such
+lines keeps it out of its history. A pane whose
+shell runs on another host than this server, under `ssh` or in a container,
+writes the dump where this server cannot read it, and the call refuses before
+starting anything.
+
+`input` goes to the program as its stdin from a private file the library
+writes; it is never typed. `keep` leaves the dead pane for a person and hands
+it to them: nothing removes it later.
+
+`startDirectory` is taken literally: the program's own `sh` enters it, so no `#`
+is expanded. One it cannot enter, or an `argv[0]` not found or not executable,
+fails the call with the reason before the program starts; `read_program`
+reports the same as `not_started`, with the shell's 127 or 126. The tool has no environment parameter:
+variables go in `argv` through `env`, where whatever inspects `argv` sees them,
+`ps` and the pane's start command included, so a secret does not belong there.
+It sets `PAGER` and `GIT_PAGER` to `cat` itself, so `git log` and `man` print
+instead of waiting in a pager.
+
+The respawn and a `wait-for -E pane-died` waiter go to tmux as one command list,
+which tmux runs without handling any other event in between, so the waiter is
+registered before the program can exit. The pane state is still read every second, because tmux fires no
+event for a pane killed from outside.
+
+The output is `capture-pane` of the program's own pane, scrollback included and
+wrapped lines joined; stderr shares the terminal with stdout. Scrollback past
+the session's history limit is dropped, and `outputComplete` reports it.
+
+The pane is removed before the call returns, on every path, unless `keep` is
+set. A program still running at the effective timeout gets SIGTERM and, two
+seconds later, SIGKILL, sent to its process group on the tmux server's machine,
+so one that ignores SIGHUP still ends; it is reported `timed_out`, with
+`outputComplete` false, and a retry starts a new run. Should this server die
+mid-run, the run holds the library's default lease, which this server renews,
+and once renewals stop, a tmux timer SIGKILLs the program and removes its pane.
+
+It needs tmux 3.8 or newer: earlier releases have no `wait-for -E`, and
+through 3.7c a remain-on-exit pane keeps its pipe open after the program exits.
+The library's
+[program runs contract](../../libtmux/docs/contracts.md#program-runs) links
+the tmux source for both.
+
+## [`start_program`][tool-start_program], [`read_program`][tool-read_program] and [`stop_program`][tool-stop_program]
+
+`start_program` starts `argv` the way `run_program` does, through the library's
+`Server.spawn` with a stream copy, and returns at once. This server copies the
+output into memory as it is written, through the same escape-sequence filter as
+`capture_since`, and `read_program` hands out bytes after a cursor. A read waits
+for new output or the end, up to the wait ceiling, so a program of any length
+is read whole over several calls.
+
+`ended` is true only once the program has ended and every byte it wrote has been
+returned. tmux holds a dying pane until its pipe has drained, so what tmux read
+reaches the copy. An end tmux never read, which the library's end mark detects,
+sets `lostEnd`; the copy reaching its limit, while the program runs on, sets
+`outputCut`. `outputComplete` is true only once `ended` is and nothing is
+missing: either flag makes it false, as does a stop or the lifetime ending the
+program before its output was read to the end. `outcome` is decided
+by how the program ended before its status is read: `expired` for one its
+lifetime ended and `stopped` for one `stop_program` ended, whose SIGTERM can
+also leave a status.
+
+No later call owns cleanup:
+
+- Each program has a lifetime, `lifetimeMs` on `start_program`, capped by the
+  server and reported as `effectiveLifetimeMs`. When it runs out this server
+  ends the program, SIGTERM and then SIGKILL, and removes its pane, regardless
+  of other calls.
+- The program holds a lease that this server renews. Should this server die,
+  tmux ends the program and removes its pane once the lease runs out.
+- Closing this server refuses new starts, waits for those in flight, and ends
+  every program it started.
+- The number running at once is capped. A program that exits in a session of
+  its own loses its pane at once; one beside `fromPaneId` keeps its window or
+  split on screen, for a person to read, until `stop_program` or its lifetime.
+  Its text stays readable from this server's memory until `stop_program`, or
+  until enough programs end after it, which removes a pane kept beside too.
+- The end, the lifetime and the lease signal the program's process group. A
+  process that leaves it, through `setsid` or by daemonizing, is not followed,
+  as in the library.
+
+`stop_program` ends one at once and forgets its id. The `paneId`
+`start_program` returns is an ordinary pane, so `send_keys` reaches the program
+with the usual pane-input checks.
+
+## [`wait_for_exit`][tool-wait_for_exit]
+
+`wait_for_exit` waits on a pane this server did not start through the library's
+`Pane.waitForExit`: it registers tmux `wait-for -E` waiters for `pane-exited`
+and `pane-died`, the two exclusive exit events, before it reads the pane, so an
+exit between the two still wakes it, and a pane already dead answers at once. A pane that
+closes takes its status with it, and the event's payload carries that status.
+`kill-pane` fires no event; the pane is read every second, and a removed one
+answers `gone` within about two seconds: one to notice, and one for the event a
+closing pane fires to arrive. It needs tmux 3.8 or newer.
+
+### How each tool reports an end
+
+| Tool            | `outcome`                                                           | `exitStatus`                          | `signal`                                 |
+| --------------- | ------------------------------------------------------------------- | ------------------------------------- | ---------------------------------------- |
+| `run_program`   | `completed`, `timed_out`                                            | The exit status, null for a signal    | The signal that ended the program        |
+| `read_program`  | `running`, `completed`, `not_started`, `expired`, `stopped`, `gone` | As in `run_program`, once `completed` | As in `run_program`                      |
+| `wait_for_exit` | `completed`, `timed_out`, `gone`, `cancelled`                       | The exit status, null for a signal    | The signal that ended the pane's process |
+
+A cancelled `run_program` or `read_program` request ends with the request;
+`wait_for_exit` answers `cancelled`. All three report a signal as `signal` with
+`exitStatus` null. `run_program` and `read_program` run the program under an
+`sh`, which cannot tell a signal's death from the program exiting with 128 plus
+its number, so a program's own `exit 130` reads as SIGINT.
 
 ## [`run_shell_command`][tool-run_shell_command] framing and checks
 
@@ -386,7 +525,9 @@ effective tool names, and a socket record with selector, selection provenance,
 server state, configuration provenance, and namespace boundary.
 
 Its boundary record states that socket selection is process-wide, resources are
-static, and host-command execution is absent.
+static, and host-command execution is absent: this server starts no process
+itself. `run_shell_command` and `run_program` still run arbitrary programs in
+tmux panes, with the tmux user's authority.
 
 A client can read this once to explain the surface it received without probing
 tmux or reconstructing launch arguments.
@@ -431,9 +572,11 @@ and whether it can amplify future pane input.
 Every tool also uses the same conservative MCP annotations: non-read-only,
 potentially destructive, non-idempotent, and open-world.
 
-Process reach is one of `none`, `configured-process`, `pane-input`, or
-`pane-command`; no public tool has `host-command` reach. Effects are drawn from
-`observe`, `change`, and `delete`.
+Process reach is one of `none`, `configured-process`, `pane-input`,
+`pane-command`, or `pane-program`; no public tool has `host-command` reach.
+`pane-program` runs a client-supplied program with the tmux user's full
+authority, the same authority `run_shell_command` has; what differs is that it
+takes argv, which no shell parses, and creates the pane it runs in.
 
 Output classes distinguish tmux metadata, terminal content, process environment,
 and configured commands.
@@ -484,7 +627,8 @@ when that matters.
 
 There are no dynamic topology resources, subscriptions, prompts, background
 jobs, generic option or environment mutation, public buffer management, or
-host-command tools.
+host-command tools: programs run only inside tmux panes, through
+`run_shell_command` and `run_program`.
 
 The typed surface covers the bounded tmux operations an agent needs without
 creating a second scripting language beside tmux itself.
@@ -516,6 +660,7 @@ creating a second scripting language beside tmux itself.
 [tool-resize_pane]: https://libtmux.org/en/ts/latest/mcp/tools/resize_pane/
 [tool-resize_window]: https://libtmux.org/en/ts/latest/mcp/tools/resize_window/
 [tool-respawn_pane]: https://libtmux.org/en/ts/latest/mcp/tools/respawn_pane/
+[tool-run_program]: https://libtmux.org/en/ts/latest/mcp/tools/run_program/
 [tool-run_shell_command]: https://libtmux.org/en/ts/latest/mcp/tools/run_shell_command/
 [tool-search_panes]: https://libtmux.org/en/ts/latest/mcp/tools/search_panes/
 [tool-select_layout]: https://libtmux.org/en/ts/latest/mcp/tools/select_layout/
@@ -533,4 +678,8 @@ creating a second scripting language beside tmux itself.
 [tool-snapshot_pane]: https://libtmux.org/en/ts/latest/mcp/tools/snapshot_pane/
 [tool-split_window]: https://libtmux.org/en/ts/latest/mcp/tools/split_window/
 [tool-swap_pane]: https://libtmux.org/en/ts/latest/mcp/tools/swap_pane/
+[tool-read_program]: https://libtmux.org/en/ts/latest/mcp/tools/read_program/
+[tool-start_program]: https://libtmux.org/en/ts/latest/mcp/tools/start_program/
+[tool-stop_program]: https://libtmux.org/en/ts/latest/mcp/tools/stop_program/
+[tool-wait_for_exit]: https://libtmux.org/en/ts/latest/mcp/tools/wait_for_exit/
 [tool-wait_for_text]: https://libtmux.org/en/ts/latest/mcp/tools/wait_for_text/

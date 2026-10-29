@@ -7,7 +7,12 @@
  */
 
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
-import { compileBoundedRegex } from "libtmux";
+import {
+  compileBoundedRegex,
+  ObjectNotFoundError,
+  TmuxTransportError,
+  WaitTimeoutError,
+} from "libtmux";
 import { setTimeout as delay } from "node:timers/promises";
 import { z } from "zod";
 
@@ -15,7 +20,12 @@ import { readServerAuthority } from "../caller.js";
 import { requireLiveCursor, type ToolContext } from "../context.js";
 import { captureGridBounded } from "../grid_capture.js";
 import { liveEcho, withoutEchoes, type PaneServerIdentity } from "../pane_echo.js";
-import { effectiveResultLines, effectiveWaitMs, MAX_RESULT_BYTES } from "../policy.js";
+import {
+  DEFAULT_BLOCKING_WAIT_MS,
+  effectiveResultLines,
+  effectiveWaitMs,
+  MAX_RESULT_BYTES,
+} from "../policy.js";
 import { type ToolRegistrar } from "../register.js";
 import { boundText, fail, ok, renderBoundedText } from "../results.js";
 import { paneCursorSchema, paneIdSchema, requestTextArray } from "../schemas.js";
@@ -603,5 +613,97 @@ export function registerWait(mcp: ToolRegistrar, context: ToolContext): void {
       title: "Wait for output",
     },
     (args, extra) => run(extra.signal, args),
+  );
+
+  mcp.registerTool(
+    "wait_for_exit",
+    {
+      description:
+        "Wait until the program in a pane exits and return its exit status or signal. Use " +
+        "it for a pane you did not start, such as a person's build or a server someone " +
+        "launched; for run_program and start_program, their own results report the exit. " +
+        "A pane that closes on exit still reports its status; a pane killed from outside " +
+        "during the wait has none and answers gone, within about two seconds, and a pane id " +
+        "that is already gone is not found. A pane at a " +
+        "shell prompt exits only when the shell does: for a command typed into it, use " +
+        "run_shell_command or wait_for_text. Requires tmux 3.8 or newer.",
+      inputSchema: {
+        paneId: paneIdSchema,
+        timeoutMs: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe(
+            `How long to wait for the exit: ${String(DEFAULT_BLOCKING_WAIT_MS / 1000)} seconds ` +
+              "when omitted, clamped by the server ceiling; the result reports what was used, " +
+              "and timed_out leaves the program running.",
+          ),
+      },
+      outputSchema: {
+        effectiveTimeoutMs: z.number().int().describe("The timeout enforced."),
+        exitStatus: z
+          .number()
+          .int()
+          .nullable()
+          .describe(
+            "The exit status, as tmux read it from the pane's process: null when a signal " +
+              "ended it, with signal set, or when it has not exited.",
+          ),
+        outcome: z
+          .enum(["completed", "timed_out", "gone", "cancelled"])
+          .describe(
+            "completed: the program ended; exitStatus holds its status, or is null with " +
+              "signal set. timed_out: it still runs; call again to keep waiting. gone: the " +
+              "pane was removed without an exit status. cancelled: the request was cancelled.",
+          ),
+        signal: z
+          .string()
+          .nullable()
+          .describe('The signal that ended the program, such as "SIGTERM"; otherwise null.'),
+      },
+      title: "Wait for a pane's program to exit",
+    },
+    async ({ paneId, timeoutMs }, extra) => {
+      const pane = requirePane(await context.snapshot(), paneId);
+      if (isFailure(pane)) return pane;
+      const effectiveTimeoutMs = effectiveWaitMs(context.policy, timeoutMs);
+      const answer = (
+        outcome: "cancelled" | "completed" | "gone" | "timed_out",
+        exitStatus: number | null,
+        signal: string | null,
+        headline: string,
+      ): CallToolResult => ok({ effectiveTimeoutMs, exitStatus, outcome, signal }, `[${headline}]`);
+      try {
+        const exit = await pane.waitForExit({
+          signal: extra.signal,
+          timeoutMs: effectiveTimeoutMs,
+        });
+        return answer(
+          "completed",
+          exit.exitCode,
+          exit.signalCode,
+          exit.signalCode === null
+            ? `exit ${String(exit.exitCode)}`
+            : `ended by ${exit.signalCode}`,
+        );
+      } catch (error) {
+        if (error instanceof WaitTimeoutError) {
+          return answer(
+            "timed_out",
+            null,
+            null,
+            `still running after ${String(effectiveTimeoutMs)}ms`,
+          );
+        }
+        if (error instanceof ObjectNotFoundError) {
+          return answer("gone", null, null, `${paneId} was removed without an exit status`);
+        }
+        if (error instanceof TmuxTransportError && error.kind === "cancelled") {
+          return answer("cancelled", null, null, "request cancelled; the program still runs");
+        }
+        throw error;
+      }
+    },
   );
 }

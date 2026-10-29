@@ -16,7 +16,7 @@ testControl(
       await fixture.executeText(["set-option", "-g", "default-command", "sh"]);
       await withClient(fixture, async (client) => {
         const tools = await client.listTools();
-        expect(tools.tools).toHaveLength(45);
+        expect(tools.tools).toHaveLength(50);
         expect((await client.listResources()).resources.map(({ uri }) => uri)).toEqual([
           "tmux://capabilities",
         ]);

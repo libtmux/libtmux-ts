@@ -4,14 +4,9 @@ import type { TmuxVersion } from "../../types.js";
 import type { RuntimeContext } from "../runtime/context.js";
 import { parseTmuxVersion, tmuxVersionAtLeast } from "../runtime/tmux_version.js";
 import { capabilitySince } from "../support/capabilities.js";
-import {
-  checkDaemonVersion,
-  executableProbe,
-  executableVersion,
-  requireCoreVersion,
-} from "../support/versions.js";
+import { checkDaemonVersion } from "../support/versions.js";
 import { connectionArguments } from "./request.js";
-import { isColdEndpoint } from "./command.js";
+import { executableTmuxVersion, isColdEndpoint } from "./command.js";
 
 const classicNames = [
   "even-horizontal",
@@ -84,12 +79,7 @@ export async function validateLayouts(
     );
   } catch (error) {
     if (!isColdEndpoint(error)) throw error;
-    const own = executableVersion(
-      await runtime.transport.execute(executableProbe({ ...endpoint, globalArgs: [] })),
-      runtime.connection.executable,
-    );
-    requireCoreVersion(own);
-    version = parseTmuxVersion(own);
+    version = await executableTmuxVersion(runtime, options);
   }
   assertLayouts(needsVersion, version);
 }
