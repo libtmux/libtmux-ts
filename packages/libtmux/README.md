@@ -234,8 +234,8 @@ resolves locally, and it never changes.
 
 ### [`Server.snapshot`][ref-server-snapshot]: read the whole server once
 
-`snapshot()` is the only call that talks to tmux. It acquires the server in one
-round of commands and returns a [`ServerSnapshot`][ref-serversnapshot] whose
+`snapshot()` acquires the server in one round of commands and returns a
+[`ServerSnapshot`][ref-serversnapshot] whose
 properties are [`Selection`][ref-selection]s of sessions, windows, panes and
 clients:
 

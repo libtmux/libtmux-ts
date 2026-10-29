@@ -149,8 +149,8 @@ An agent driving a terminal needs somewhere durable to run commands, a way to
 wait for output without a call per poll, and an answer it can act on when the
 wait fails.
 
-tmux's control mode gives all three. One connection per watched session carries
-both commands and notifications, so a wait costs nothing while nothing happens.
+tmux keeps the session alive. One control-mode connection per watched session
+carries notifications; commands use the library's command engine.
 
 - **A command's output is never its echo.**
   [`run_shell_command`][tool-run_shell_command] frames what it sends so its
@@ -261,8 +261,8 @@ sets. An existing, explicitly selected, or otherwise unknown server gets
 `LIBTMUX_TOOLSETS` names the sets to grant, comma-separated. An explicitly empty
 value selects none.
 
-For an agent that can inspect and run pane commands but cannot rearrange or end
-topology:
+For an agent that can inspect, create sessions, windows and panes, and run pane
+commands, while excluding the `manage` and `teardown` tools:
 
 ```console
 $ LIBTMUX_TOOLSETS=inspect,execute npx -y @libtmux/mcp@0.1.0
@@ -329,9 +329,11 @@ libtmux-mcp 0.1.0 serving new libtmux-mcp, toolsets execute,inspect,manage,teard
 
 ## The tools
 
-Every tool returns typed `structuredContent` alongside its text and carries the
-same conservative MCP annotations, so a host that auto-approves on annotations
-alone approves none of them.
+Successful tool results carry typed `structuredContent` alongside text. Tool
+errors carry text and `isError: true`, without `structuredContent`.
+
+Tools carry the same conservative MCP annotations, so a host that auto-approves
+on annotations alone approves none of them.
 
 What tells one tool from another is its capability row in
 [`tmux://capabilities`][res-capabilities] and its toolset, in the table under
@@ -441,7 +443,7 @@ Four tools put input into panes:
 | [`send_keys_batch`][tool-send_keys_batch]     | Sends typed key operations in one bounded call          |
 | [`paste_text`][tool-paste_text]               | Sends text with nothing read as a key name              |
 
-Three tools wait:
+Three tools coordinate waits:
 
 | Tool                                        | Does                                            |
 | ------------------------------------------- | ----------------------------------------------- |
