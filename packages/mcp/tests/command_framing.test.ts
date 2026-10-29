@@ -2,9 +2,9 @@ import { spawnSync } from "node:child_process";
 import { existsSync, rmSync, writeFileSync } from "node:fs";
 import { mkdir, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
-import { describe, expect, spyOn, test } from "bun:test";
+import { afterEach, describe, expect, spyOn, test } from "bun:test";
 
 import { TmuxTransportError, type Pane, type ServerSnapshot } from "libtmux";
 
@@ -74,6 +74,13 @@ describe("command framing", () => {
     return { id, source };
   }
 
+  // A shell's trailer removes the directory a script was saved into; these fakes run none.
+  const staged = new Set<string>();
+  afterEach(async () => {
+    await Promise.all([...staged].map((path) => rm(path, { force: true, recursive: true })));
+    staged.clear();
+  });
+
   /**
    * A fake of the three-command server-side delivery `deliverFramedScript`
    * uses (`loadBuffer`/`saveBuffer`/`deleteBuffer`), plus `runShell` for its
@@ -107,7 +114,9 @@ describe("command framing", () => {
           ranShell.push(command);
           return [];
         },
-        saveBuffer: async () => undefined,
+        saveBuffer: async (_name, path) => {
+          staged.add(dirname(path));
+        },
       },
     };
   }
@@ -585,7 +594,8 @@ describe("command framing", () => {
     // Not "ltx-" (no dash after "ltx"): another test's own `mkdtemp("ltx-")`
     // check on the real, shared `os.tmpdir()` reads a fresh "ltx-" prefixed
     // top-level entry as its own, and this must not be mistaken for one.
-    const quotedRoot = join(tmpdir(), `ltxquote-${randomId()}`, "it's a dir");
+    const quotedParent = join(tmpdir(), `ltxquote-${randomId()}`);
+    const quotedRoot = join(quotedParent, "it's a dir");
     await mkdir(quotedRoot, { recursive: true });
     const originalTmpdir = process.env.TMPDIR;
     process.env.TMPDIR = quotedRoot;
@@ -646,7 +656,7 @@ describe("command framing", () => {
     } finally {
       if (originalTmpdir === undefined) delete process.env.TMPDIR;
       else process.env.TMPDIR = originalTmpdir;
-      await rm(quotedRoot, { force: true, recursive: true });
+      await rm(quotedParent, { force: true, recursive: true });
     }
   });
 

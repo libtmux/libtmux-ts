@@ -1,4 +1,7 @@
-import { expect, test } from "bun:test";
+import { rm } from "node:fs/promises";
+import { dirname } from "node:path";
+
+import { afterEach, expect, test } from "bun:test";
 
 import type { Pane, ServerSnapshot } from "libtmux";
 
@@ -43,6 +46,13 @@ function frameId(source: string): string {
   );
 }
 
+// A shell's trailer removes the directory a script was saved into; these fakes run none.
+const staged = new Set<string>();
+afterEach(async () => {
+  await Promise.all([...staged].map((path) => rm(path, { force: true, recursive: true })));
+  staged.clear();
+});
+
 /**
  * A fake of the server-side delivery `deliverFramedScript` uses. The framed
  * script now travels through `loadBuffer`, not through the pane's
@@ -69,7 +79,9 @@ function fakeBuffers(): {
         captured = typeof data === "string" ? data : Buffer.from(data).toString("utf8");
       },
       runShell: async () => [],
-      saveBuffer: async () => undefined,
+      saveBuffer: async (_name, path) => {
+        staged.add(dirname(path));
+      },
     },
   };
 }
