@@ -364,8 +364,9 @@ export class Pane {
    * {@link WaitTimeoutError} and an abort throws {@link TmuxTransportError} of
    * kind `cancelled`; with neither it waits as long as the program runs. A
    * pane killed from outside, which fires no event, raises
-   * {@link ObjectNotFoundError} within about two seconds: one to notice, and
-   * one for the event a closing pane fires to arrive.
+   * {@link ObjectNotFoundError} within about two seconds of the kill. A read every
+   * second notices the pane gone, and the wait gives the event a closing pane
+   * fires up to a second to arrive.
    *
    * Requires tmux 3.8 or newer.
    *

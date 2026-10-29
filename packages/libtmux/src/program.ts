@@ -58,9 +58,8 @@ export class Program implements AsyncDisposable {
    * Giving up leaves the program running: a timeout throws
    * {@link WaitTimeoutError} and an abort throws {@link TmuxTransportError}
    * of kind `cancelled`; with neither it waits as long as the program runs. A
-   * program whose pane is killed from outside raises
-   * {@link ObjectNotFoundError} at the next read of its pane, within about a
-   * second.
+   * pane killed from outside fires no event, so the wait reads its pane every
+   * second and raises {@link ObjectNotFoundError} within about a second of the kill.
    *
    * ```ts
    * await using program = await server.spawn(["sh", "-c", "exit 3"]);

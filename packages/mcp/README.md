@@ -658,8 +658,9 @@ const exit = await callTool<ExitResult>(client, "wait_for_exit", { paneId });
 - Use it for a pane you did not start, such as a person's build. For a program
   you run, `run_program` already reports the exit.
 - A pane that closes on exit still reports its status: tmux carries it in the
-  event. A pane killed from outside has none and answers `gone` within about
-  two seconds.
+  event. A pane killed from outside has none and answers `gone` within about two
+  seconds of the kill: up to one to notice, and up to one for the event a
+  closing pane fires to arrive.
 - `timed_out` means the program still runs; call again to keep waiting.
 - Needs tmux 3.8 or newer.
 

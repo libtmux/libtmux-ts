@@ -346,7 +346,8 @@ bytes their own way.
 - A death counts only once tmux has the exit status: `pane_dead` turns 1 when
   the pty closes, which can come first.
 - The wait still reads the pane every second, because tmux fires no event for a
-  pane killed from outside.
+  pane killed from outside, so it raises `ObjectNotFoundError` within about a second
+  of such a kill.
 - The list ends in that wait, so it holds no slot of `maxInFlight` for the
   program's life; each live program costs one tmux client, its exit watch. With
   50 programs on 3.8a, each client held about 4 MiB, while the tmux server grew
@@ -501,8 +502,10 @@ pane, whoever started it, through tmux 3.8's events.
 - `-v` prints the payload of every event the waiter checked, matching or not,
   each as its keys in sorted order, so a key that does not sort after the one
   before it starts the next event, and the match is the last.
-- `kill-pane` fires neither event, so the wait reads the pane every second and
-  raises `ObjectNotFoundError` once it is gone.
+- `kill-pane` fires neither event, so the waits read the pane every second.
+  Once it is gone, `waitForExit` and `waitForCommand` give the event a closing
+  pane fires up to a second to arrive, then raise `ObjectNotFoundError`, within
+  about two seconds of the kill; `waitForText` raises at that read.
 - A command's end is `pane-command-finished`, which tmux fires on an OSC 133 `D`
   mark with the status in `command_status`; a mark without a status reports 0,
   and one tmux cannot read as 0 to 255 reports 255

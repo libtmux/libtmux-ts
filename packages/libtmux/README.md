@@ -1262,7 +1262,9 @@ const { exitCode } = await pane.waitForExit({ timeoutMs: 30_000 });
 - It resolves when tmux reports the pane's program exiting, with the status a
   closing pane takes with it, or at once for a pane `remain-on-exit` kept.
 - A pane killed from outside fires no event, and the wait raises
-  `ObjectNotFoundError` within about two seconds.
+  `ObjectNotFoundError` within about two seconds of the kill. A read every second
+  notices the pane gone, and the event a closing pane fires gets up to a second
+  to arrive.
 - Requires tmux 3.8 or newer.
 
 ## Watch tmux change

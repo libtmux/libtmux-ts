@@ -2712,8 +2712,9 @@ Giving up leaves the program running: a timeout throws
 `WaitTimeoutError` and an abort throws `TmuxTransportError` of
 kind `cancelled`; with neither it waits as long as the program runs. A
 pane killed from outside, which fires no event, raises
-`ObjectNotFoundError` within about two seconds: one to notice, and
-one for the event a closing pane fires to arrive.
+`ObjectNotFoundError` within about two seconds of the kill. A read every
+second notices the pane gone, and the wait gives the event a closing pane
+fires up to a second to arrive.
 
 Requires tmux 3.8 or newer.
 
@@ -3208,9 +3209,8 @@ with `ProgramStartError`, and its stream ends with it.
 Giving up leaves the program running: a timeout throws
 `WaitTimeoutError` and an abort throws `TmuxTransportError`
 of kind `cancelled`; with neither it waits as long as the program runs. A
-program whose pane is killed from outside raises
-`ObjectNotFoundError` at the next read of its pane, within about a
-second.
+pane killed from outside fires no event, so the wait reads its pane every
+second and raises `ObjectNotFoundError` within about a second of the kill.
 
 ```ts
 await using program = await server.spawn(["sh", "-c", "exit 3"]);
