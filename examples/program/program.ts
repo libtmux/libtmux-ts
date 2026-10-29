@@ -62,7 +62,8 @@ export async function followOutput(
 export async function readAfterExit(server: Server, argv: readonly string[]): Promise<string> {
   await using program = await server.spawn(argv);
   await program.wait({ timeoutMs: 10_000 });
-  return program.output();
+  const screen = await program.output();
+  return screen;
 }
 
 /**
