@@ -325,7 +325,7 @@ Read next: [Install](packages/workspace-cli/README.md#install) ·
 
 ### [examples](examples) — runnable, and run
 
-Four programs covering acquisition, control-mode watching, the act-then-wait
+Programs covering acquisition, control-mode watching, the act-then-wait
 loop an agent needs, and building a workspace. Each is executed by the
 integration suite, so the code there is the code that runs.
 
