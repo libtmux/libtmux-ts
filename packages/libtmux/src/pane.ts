@@ -3,9 +3,12 @@ import type {
   CaptureOptions,
   ChooseTreeOptions,
   CmdOptions,
+  CommandWaitOptions,
   JoinOptions,
   MenuItem,
   PopupOptions,
+  ProgramExit,
+  ProgramWaitOptions,
   ResizeOptions,
   RespawnOptions,
   SendKeysOptions,
@@ -34,6 +37,11 @@ import {
 } from "./_internal/operations/mutations.js";
 import { setHook, showHooks, unsetHook } from "./_internal/operations/hooks.js";
 import { capturePane, clearHistory, pipePane, sendKeys } from "./_internal/operations/pane_io.js";
+import {
+  waitForPaneCommand,
+  waitForPaneExit,
+  waitForPaneText,
+} from "./_internal/operations/pane_wait.js";
 import {
   setOption,
   showOptions,
@@ -343,6 +351,81 @@ export class Pane {
    */
   capture(options?: CaptureOptions): Promise<readonly string[]> {
     return capturePane(runtimeForHandle(this), this.id, options);
+  }
+
+  /**
+   * Resolve with how this pane's program ended, whoever started it.
+   *
+   * At once for a pane already dead under `remain-on-exit`; otherwise when
+   * tmux reports the exit, with the status a closing pane takes with it.
+   * A signal that ended the pane's process shows as `signalCode` with `exitCode`
+   * null.
+   * Giving up leaves the program running: a timeout throws
+   * {@link WaitTimeoutError} and an abort throws {@link TmuxTransportError} of
+   * kind `cancelled`; with neither it waits as long as the program runs. A
+   * pane killed from outside, which fires no event, raises
+   * {@link ObjectNotFoundError} within about two seconds: one to notice, and
+   * one for the event a closing pane fires to arrive.
+   *
+   * Requires tmux 3.8 or newer.
+   *
+   * ```ts
+   * const build = await window.split({ shellCommand: "sleep 1; exit 3" });
+   * const exit = await build.waitForExit({ timeoutMs: 10_000 });
+   * exit.exitCode; // 3
+   * ```
+   */
+  waitForExit(options?: ProgramWaitOptions): Promise<ProgramExit> {
+    return waitForPaneExit(runtimeForHandle(this), this.id, options);
+  }
+
+  /**
+   * Resolve with the exit status of the next command this pane's shell
+   * finishes.
+   *
+   * Needs a shell that marks each command's end with OSC 133 (`ESC ] 133 ; D ;
+   * status`) from its prompt; tmux turns the mark into a
+   * `pane-command-finished` event. `send` types a command line once the wait
+   * is listening, so a command that ends at once is not missed. A shell's
+   * first prompt marks an end too, before any command ran, so a wait armed
+   * while the shell starts can resolve with 0. A shell without the marks never
+   * resolves this: give it a `timeoutMs`, whose {@link WaitTimeoutError} names
+   * the marks as the likely cause. A pane whose program has exited
+   * rejects with {@link LibTmuxError}. The mark carries a status alone; what
+   * the command printed is on the pane, for {@link Pane.capture}.
+   *
+   * Requires tmux 3.8 or newer.
+   *
+   * ```ts
+   * const status = await pane.waitForCommand({ send: "make test", timeoutMs: 600_000 });
+   * status; // 0 when the tests passed
+   * ```
+   */
+  waitForCommand(options?: CommandWaitOptions): Promise<number> {
+    return waitForPaneCommand(runtimeForHandle(this), this.id, options);
+  }
+
+  /**
+   * Resolve with the first line of this pane's screen that `pattern` matches:
+   * a substring, or a regular expression tested against each line.
+   *
+   * The screen is read at once, then again each time tmux reports that the
+   * pane printed, at most every 50 ms, and once a second besides. Use it to
+   * wait for a prompt, or for a full-screen program's first screen before
+   * typing into it. Giving up leaves the pane as it was: a timeout throws
+   * {@link WaitTimeoutError} and an abort throws {@link TmuxTransportError}
+   * of kind `cancelled`. A pane whose program has exited without the text
+   * rejects with {@link LibTmuxError}.
+   *
+   * Requires tmux 3.8 or newer.
+   *
+   * ```ts
+   * await using top = await server.spawn(["sh", "-c", "echo ready; exec cat"]);
+   * await top.pane.waitForText("ready", { timeoutMs: 10_000 }); // "ready"
+   * ```
+   */
+  waitForText(pattern: string | RegExp, options?: ProgramWaitOptions): Promise<string> {
+    return waitForPaneText(runtimeForHandle(this), this.id, pattern, options);
   }
 
   /**

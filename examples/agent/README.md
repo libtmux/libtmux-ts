@@ -17,8 +17,9 @@ $ bun install
 $ bun test examples/agent
 ```
 
-The test drives both functions against a real tmux server the suite starts on a
-socket of its own. Requires tmux 3.3a or newer.
+The test drives each function against a real tmux server the suite starts on a
+socket of its own. Requires tmux 3.3a or newer; `runMarked` and `waitForExit`
+need 3.8, and their tests are skipped below it.
 
 ## What it shows
 
@@ -26,9 +27,13 @@ One control observer carries notifications while commands use the server's
 engine. Keeping that observer open makes event-driven waits persistent without
 turning command output into a control-mode protocol.
 
-Waiting for a marker is the part worth copying. A pane echoes what is typed
-into it, so waiting for text that also appears in the command you sent matches
-your own keystrokes rather than the output.
+A pane echoes what is typed into it, so a wait for text that also appears in
+the command you sent matches your own keystrokes; the marker the command prints
+appears in its output alone.
+
+`runMarked` needs no marker: a shell whose prompt writes an OSC 133 `D` mark
+tells tmux when each command ends and how. `waitForExit` waits for a pane's
+program to exit, whoever started it.
 
 ## Where to go next
 

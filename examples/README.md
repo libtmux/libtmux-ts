@@ -63,6 +63,7 @@ driving your session.
 | [`capture/`](capture/README.md)       | You are moving text out of a pane, or into one                        |
 | [`watch/`](watch/README.md)           | Something else is driving tmux and you need to react to it            |
 | [`agent/`](agent/README.md)           | You are running something in a pane and need to know when it finished |
+| [`program/`](program/README.md)       | You want a program's output and exit status, with nothing typed       |
 | [`workspace/`](workspace/README.md)   | You want a session built from a layout you declared                   |
 | [`mcp-agent/`](mcp-agent/README.md)   | The thing driving tmux is a model, over the Model Context Protocol    |
 | [`engine/`](engine/README.md)         | tmux is not where the library assumes — ssh, a container, a daemon    |

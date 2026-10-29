@@ -156,6 +156,10 @@ export type LibTmuxErrorCode =
   | "NoMatchError"
   | "ObjectNotFoundError"
   | "QueryValidationError"
+  | "OutputLostError"
+  | "ProgramStartError"
+  | "ServerNotLocalError"
+  | "StreamLimitError"
   | "TmuxCommandError"
   | "TmuxObjectNotFoundError"
   | "TmuxServerRestartedError"
@@ -425,6 +429,53 @@ export class VersionTooLowError extends LibTmuxError {
  */
 export class WaitTimeoutError extends LibTmuxError {
   static override readonly code: LibTmuxErrorCode = "WaitTimeoutError";
+}
+
+/**
+ * A program's stream copy reached `maxStreamBytes` and stopped. Everything up
+ * to the limit was yielded first; the program runs on, uncopied.
+ */
+export class StreamLimitError extends LibTmuxError {
+  static override readonly code: LibTmuxErrorCode = "StreamLimitError";
+}
+
+/**
+ * A program's output ended without the run's end mark: tmux removed the pane
+ * before reading its last output, or something killed its process group.
+ * What arrived was yielded first.
+ */
+export class OutputLostError extends LibTmuxError {
+  static override readonly code: LibTmuxErrorCode = "OutputLostError";
+}
+
+/** Why a program never ran. */
+export type ProgramStartFailure = "not-found" | "not-executable" | "start-directory";
+
+/**
+ * A program never ran: `argv[0]` was not found on its `PATH` or is not an
+ * executable file, or its `startDirectory` could not be entered. `exitCode`
+ * is the status a shell reports for the same failure, 127 or 126.
+ */
+export class ProgramStartError extends LibTmuxError {
+  static override readonly code: LibTmuxErrorCode = "ProgramStartError";
+  readonly reason: ProgramStartFailure;
+  readonly exitCode: 126 | 127;
+
+  constructor(message: string, reason: ProgramStartFailure) {
+    super(message);
+    this.reason = reason;
+    this.exitCode = reason === "not-found" ? 127 : 126;
+  }
+}
+
+/**
+ * An option needs a tmux server that shares this process's temporary
+ * directory, and a file its shell wrote there never arrived: the server is on
+ * another machine, in a container, or under another user. The program was not
+ * started, and its pane was removed.
+ */
+export class ServerNotLocalError extends LibTmuxError {
+  static override readonly code: LibTmuxErrorCode = "ServerNotLocalError";
 }
 
 /** A selection that required exactly one match found none. */

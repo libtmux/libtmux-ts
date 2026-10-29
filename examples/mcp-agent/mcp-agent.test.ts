@@ -2,12 +2,15 @@ import { describe, expect, test } from "bun:test";
 
 import { Server } from "../../packages/libtmux/src/server.js";
 import { runWithCleanup } from "../../packages/libtmux/src/_internal/test/testkit.js";
-import { withServer } from "../test-support/with-server.js";
+import { runsPrograms, withServer } from "../test-support/with-server.js";
 import {
   buildWorkspace as buildMcpWorkspace,
   connectAgent,
+  followProgram,
   runAndCheck,
+  runWithInput,
   waitFor,
+  waitForExit,
   watch as watchPane,
 } from "./mcp-agent.js";
 
@@ -48,4 +51,53 @@ describe("mcp-agent", () => {
       );
     });
   }, 90_000);
+
+  test.skipIf(!runsPrograms)(
+    "the mcp example follows a program across calls, gives one a stdin, and waits on a pane",
+    async () => {
+      await withServer(async (fixture) => {
+        const server = new Server({
+          environment: fixture.controllerEnvironment,
+          socketPath: fixture.socketPath,
+          tmuxBin: fixture.tmuxExecutable,
+        });
+        const client = await connectAgent(server);
+        await runWithCleanup(
+          async () => {
+            const followed = await followProgram(client, [
+              "sh",
+              "-c",
+              "echo building; sleep 1; echo built; exit 3",
+            ]);
+            expect(followed).toEqual({
+              exitStatus: 3,
+              outcome: "completed",
+              outputComplete: true,
+              text: "building\nbuilt\n",
+            });
+
+            expect((await runWithInput(client, ["sort"], "pear\napple\n")).output).toBe(
+              "apple\npear",
+            );
+
+            const [paneId = ""] = await server.cmd("new-session", [
+              "-d",
+              "-P",
+              "-F",
+              "#{pane_id}",
+              "-s",
+              "theirs",
+              "sleep 1; exit 6",
+            ]);
+            expect(await waitForExit(client, paneId)).toMatchObject({
+              exitStatus: 6,
+              outcome: "completed",
+            });
+          },
+          () => client.close(),
+        );
+      });
+    },
+    60_000,
+  );
 });

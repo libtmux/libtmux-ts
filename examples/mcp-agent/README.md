@@ -19,7 +19,8 @@ $ bun test examples/mcp-agent
 
 The test connects a real MCP client to `@libtmux/mcp` over an in-memory
 transport, against a real tmux server the suite starts on a socket of its own.
-Requires tmux 3.3a or newer.
+Requires tmux 3.3a or newer; the program and exit helpers need 3.8, and their
+test is skipped below it.
 
 ## What it shows
 
@@ -34,6 +35,11 @@ topology, types commands, and waits for output.
 Its exported helpers cover the full workflow: create a multi-window workspace,
 run a framed command, wait for output produced elsewhere, and continue reading
 from an opaque cursor without recapturing the screen.
+
+`followProgram` starts a program longer than one wait and reads it to its end
+through `read_program`'s cursor, stopping it however the read ends.
+`runWithInput` hands `run_program` a stdin, and `waitForExit` waits for a
+program somebody else started.
 
 No subprocess and no socket of its own: the client and server share memory, so
 this is the cheapest way to see the tool surface end to end.

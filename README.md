@@ -51,22 +51,22 @@ then query it like data.
 ## Quickstart
 
 ```console
-$ bun add libtmux
+$ bun add --exact libtmux@0.1.1-alpha.1
 ```
 
 <details>
 <summary>npm, pnpm, yarn</summary>
 
 ```console
-$ npm i libtmux
+$ npm i --save-exact libtmux@0.1.1-alpha.1
 ```
 
 ```console
-$ pnpm add libtmux
+$ pnpm add --save-exact libtmux@0.1.1-alpha.1
 ```
 
 ```console
-$ yarn add libtmux
+$ yarn add --exact libtmux@0.1.1-alpha.1
 ```
 
 </details>
@@ -172,7 +172,7 @@ immutable snapshot of tmux.
 [npm](https://www.npmjs.com/package/libtmux)
 
 ```console
-$ bun add libtmux
+$ bun add --exact libtmux@0.1.1-alpha.1
 ```
 
 ```ts
@@ -208,7 +208,7 @@ With no configuration it starts its own tmux server on the `libtmux-mcp`
 socket:
 
 ```console
-$ npx -y @libtmux/mcp@0.1.0
+$ npx -y @libtmux/mcp@0.1.1-alpha.1
 ```
 
 Add it to any MCP client — this is the whole configuration:
@@ -218,7 +218,7 @@ Add it to any MCP client — this is the whole configuration:
   "mcpServers": {
     "tmux": {
       "command": "npx",
-      "args": ["-y", "@libtmux/mcp@0.1.0"],
+      "args": ["-y", "@libtmux/mcp@0.1.1-alpha.1"],
       "env": { "LIBTMUX_SOCKET": "agent" }
     }
   }
@@ -230,7 +230,7 @@ Add it to any MCP client — this is the whole configuration:
 
 ```console
 $ claude mcp add tmux --env LIBTMUX_SOCKET=agent -- \
-    npx -y @libtmux/mcp@0.1.0
+    npx -y @libtmux/mcp@0.1.1-alpha.1
 ```
 
 </details>
@@ -262,7 +262,7 @@ Describe a session; apply it. Applying twice converges rather than duplicating.
 [npm](https://www.npmjs.com/package/@libtmux/workspace)
 
 ```console
-$ bun add @libtmux/workspace libtmux
+$ bun add --exact @libtmux/workspace@0.1.1-alpha.1 libtmux@0.1.1-alpha.1
 ```
 
 ```ts
@@ -306,7 +306,7 @@ windows:
 Load it detached, on a socket of its own:
 
 ```console
-$ npx -y @libtmux/workspace-cli@0.1.0 load ./workspace.yaml \
+$ npx -y @libtmux/workspace-cli@0.1.1-alpha.1 load ./workspace.yaml \
     -L workspace-cli-demo \
     -d
 ```
@@ -358,7 +358,7 @@ $ bun packages/libtmux/scripts/bench-modes.ts
 ## What this project promises
 
 - **The library ships zero runtime dependencies.** [A test](packages/libtmux/tests/unit/package_contract.test.ts) holds it. `@libtmux/mcp` and `@libtmux/workspace` declare their own.
-- **Real tmux, every commit.** [CI](.github/workflows/typescript.yml) runs the suite against every tmux release from 3.3a to 3.8 — no mocks stand in for a server.
+- **Real tmux, every commit.** [CI](.github/workflows/typescript.yml) runs the suite against every tmux release from 3.3a to 3.8a — no mocks stand in for a server.
 - **Documentation is a gate.** Every public symbol carries a compiled example, [the API reference](packages/libtmux/docs/api.md) is generated from the source that implements it, and every link, install command and recipe on this page is checked on each run.
 - **Softly tracks Python [libtmux](https://github.com/tmux-python/libtmux).** Names and shapes follow 0.62.0 where TypeScript agrees with them; each departure is a decision a gate holds to the code.
 

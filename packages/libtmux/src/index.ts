@@ -1,5 +1,6 @@
 export { Client } from "./client.js";
 export { Pane, type PanePlans } from "./pane.js";
+export { Program } from "./program.js";
 export { Server, type DaemonIdentity, type ServerOptions } from "./server.js";
 export { Session, type SessionPlans } from "./session.js";
 export { Window, type WindowPlans } from "./window.js";
@@ -26,6 +27,7 @@ export type {
   CmdOptions,
   ConnectedServer,
   ChooseTreeOptions,
+  CommandWaitOptions,
   EnvironmentScope,
   EnvironmentValue,
   HookScope,
@@ -38,9 +40,15 @@ export type {
   NewSessionOptions,
   NewWindowOptions,
   PopupOptions,
+  ProgramExit,
+  ProgramPlacement,
+  ProgramResult,
+  ProgramStreamOptions,
+  ProgramWaitOptions,
   RespawnOptions,
   ResizeOptions,
   ResizeWindowOptions,
+  RunOptions,
   RunShellOptions,
   SaveBufferOptions,
   SendKeysOptions,
@@ -53,6 +61,7 @@ export type {
   SplitOptions,
   SplitPercentage,
   SplitSize,
+  SpawnOptions,
   TmuxClientDetachedEvent,
   TmuxClientSessionChangedEvent,
   TmuxEvent,
@@ -91,6 +100,11 @@ export {
   TmuxServerRestartedError,
   TmuxTransportError,
   type TmuxTransportErrorKind,
+  OutputLostError,
+  ProgramStartError,
+  type ProgramStartFailure,
+  ServerNotLocalError,
+  StreamLimitError,
   VersionTooLowError,
   WaitTimeoutError,
 } from "./errors.js";

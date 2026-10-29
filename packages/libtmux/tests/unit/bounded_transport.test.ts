@@ -305,6 +305,25 @@ describe("bounded transport", () => {
     await Promise.all([holding, queued]);
   });
 
+  test("exempts an invocation that ends in a wait, as a program's start does", async () => {
+    const inner = gate();
+    const bounded = new BoundedTransport(inner, 1);
+    const holding = bounded.execute(
+      requestFor({ commands: [["respawn-pane"], ["wait-for", "-E", "pane-died"]] }),
+    );
+    await flush();
+    const queued = bounded.execute(requestFor());
+    await flush();
+
+    // The start list waits for the program's whole life; counting it would
+    // starve every other call, and at a ceiling of one deadlock its own setup.
+    expect(inner.started()).toBe(2);
+
+    inner.release();
+    inner.release();
+    await Promise.all([holding, queued]);
+  });
+
   test("still counts an invocation that only partly waits", async () => {
     const inner = gate();
     const bounded = new BoundedTransport(inner, 1);
@@ -315,8 +334,7 @@ describe("bounded transport", () => {
     const queued = bounded.execute(requestFor());
     await flush();
 
-    // The exemption is for an invocation that does nothing but wait. One
-    // carrying real work alongside it is work, and is bounded.
+    // Work after the wait runs whenever the wait ends, so it is bounded.
     expect(inner.started()).toBe(1);
 
     inner.release();

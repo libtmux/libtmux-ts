@@ -15,7 +15,7 @@ Typed, Bun-first TypeScript control of [tmux](https://github.com/tmux/tmux).
 
 [![libtmux](https://img.shields.io/npm/v/libtmux?label=libtmux)](https://www.npmjs.com/package/libtmux)
 [![typescript](https://github.com/libtmux/libtmux-ts/actions/workflows/typescript.yml/badge.svg)](https://github.com/libtmux/libtmux-ts/actions/workflows/typescript.yml)
-[![tmux](https://img.shields.io/badge/tmux-3.3a%E2%80%933.8-1bb91f)](../../.github/workflows/typescript.yml)
+[![tmux](https://img.shields.io/badge/tmux-3.3a%E2%80%933.8a-1bb91f)](../../.github/workflows/typescript.yml)
 [![dependencies](https://img.shields.io/badge/dependencies-0-1bb91f)](tests/unit/package_contract.test.ts)
 [![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![libtmux.org](https://img.shields.io/badge/docs-libtmux.org-0b7285)](https://libtmux.org/en/ts/)
@@ -35,7 +35,7 @@ package: see [Packages](#packages).
 Add it to your project:
 
 ```console
-$ bun add libtmux
+$ bun add --exact libtmux@0.1.1-alpha.1
 ```
 
 Requires tmux 3.3a or newer, Node 22+ or Bun 1.3.14+, and TypeScript 5.7+ —
@@ -55,6 +55,7 @@ and CI coverage for it is highly limited.
 [Find sessions, windows, and panes](#find-sessions-windows-and-panes) ·
 [Change sessions, windows, and panes](#change-sessions-windows-and-panes) ·
 [Run several commands at once](#run-several-commands-at-once) ·
+[Run a program and read its output](#run-a-program-and-read-its-output) ·
 [Type into a pane and wait](#type-into-a-pane-and-wait) ·
 [Watch tmux change](#watch-tmux-change) ·
 [Choosing how work is arranged](#choosing-how-work-is-arranged) ·
@@ -168,10 +169,20 @@ server.
   - [`Server.batch`: plan, then run](#serverbatch-plan-then-run)
   - [`Server.pipeline`: raw arguments, one result each](#serverpipeline-raw-arguments-one-result-each)
   - [`Server.newSession`: build a workspace](#servernewsession-build-a-workspace)
+- [Run a program and read its output](#run-a-program-and-read-its-output)
+  - [`Server.run`: one call, only the output](#serverrun-one-call-only-the-output)
+  - [`Server.spawn`: drive it, then wait](#serverspawn-drive-it-then-wait)
+  - [`input`: give it a stdin](#input-give-it-a-stdin)
+  - [`separateStderr`: keep stderr apart](#separatestderr-keep-stderr-apart)
+  - [`signal`: cancel a run](#signal-cancel-a-run)
+  - [`placement` and `keep`: run it where a person sees it](#placement-and-keep-run-it-where-a-person-sees-it)
+  - [`orphanAfterMs`: end it with this process](#orphanafterms-end-it-with-this-process)
 - [Type into a pane and wait](#type-into-a-pane-and-wait)
   - [`Pane.sendKeys`: type, then read what it said](#panesendkeys-type-then-read-what-it-said)
   - [`Server.watch`: wait for a pane to print something](#serverwatch-wait-for-a-pane-to-print-something)
   - [`Server.connect`: act, then wait, with an observer](#serverconnect-act-then-wait-with-an-observer)
+  - [`Pane.waitForCommand`: a command's status from the shell's marks](#panewaitforcommand-a-commands-status-from-the-shells-marks)
+  - [`Pane.waitForExit`: wait for a pane you did not start](#panewaitforexit-wait-for-a-pane-you-did-not-start)
 - [Watch tmux change](#watch-tmux-change)
   - [`Server.watch`: hear changes as they happen](#serverwatch-hear-changes-as-they-happen)
   - [`pauseAfterSeconds`: pace a busy pane](#pauseafterseconds-pace-a-busy-pane)
@@ -926,7 +937,177 @@ await logs.selectLayout("even-horizontal");
 shell.name; // "shell"
 ```
 
+## Run a program and read its output
+
+Use `run` when the result is all you need, and `spawn` when the program needs
+keys, a live stream of its output, or a lifetime of your choosing. The recipes
+after the first are literal excerpts of
+[`examples/program/program.ts`](../../examples/program/program.ts), which the
+integration suite runs against a real tmux server.
+
+### [`Server.run`][ref-server-run]: one call, only the output
+
+```ts
+const result = await server.run(["git", "--version"], { timeoutMs: 10_000 });
+
+result.success; // true
+result.output.startsWith("git version"); // true
+```
+
+- By default the program runs in a detached session of its own, removed before
+  the call returns, and tmux removes it should this process die first. Nothing
+  is typed, so `output` holds no command line or echo, and `argv` reaches the
+  program unexpanded: `["echo", "$HOME"]` prints `$HOME`.
+- A server left with no session exits, unless its `exit-empty` option is off,
+  and the next run starts it again. A session of your own keeps it up;
+  [Benchmarks](docs/benchmarks.md#running-a-program) has what each costs.
+- `output` is the terminal's rendering, scrollback included: NUL and other
+  control bytes are dropped and wrapped lines joined. `lostStart` says the
+  start scrolled past `historyLimit`, and `lostEnd` that tmux closed the pane
+  before reading the end; the exit status is exact either way.
+- `historyLimit` bounds `output`: at most that many rows of scrollback plus the
+  screen, each as wide as the pane, the newest kept. The default, 100000 rows
+  of 80 columns, holds at most about 8 MB of ASCII; pass a lower one to bound a
+  run's output.
+- A program that never ran, because `argv[0]` was not found or is not
+  executable, or `startDirectory` could not be entered, rejects with
+  [`ProgramStartError`][ref-programstarterror]. Its `reason` says which, and
+  its `exitCode` is the 127 or 126 a shell would report; a program's own exit
+  127 is still its `exitCode`, and so is a script's whose `#!` interpreter is
+  missing, since `exec` meets that past the check.
+- `timeoutMs` ends the program and reports `timedOut` with what it printed so
+  far; `signal` ends it and rejects.
+- `{ from: pane }` runs it in a background window of that pane's session, in
+  the pane's directory and with the session's tmux environment. What the pane's
+  shell exported stays in that shell: [`Pane.sendKeys`][ref-pane-sendkeys] is
+  the way into it.
+- The program runs on the tmux server's machine, which need not be this one;
+  only `input`, `separateStderr` and `stream: true` need it here.
+- Needs tmux 3.8 or newer. [Details](docs/contracts.md#program-runs).
+
+### [`Server.spawn`][ref-server-spawn]: drive it, then wait
+
+<!-- runs: examples/program/program.ts -->
+
+```ts
+await using vim = await server.spawn(["vim", "-Nu", "NONE", "-i", "NONE", "-n", file]);
+await vim.pane.waitForText(/\S/u, { timeoutMs: 10_000 });
+await vim.pane.sendKeys(`ggO${line}`, { enter: false });
+await vim.pane.sendKeys("Escape", { enter: false });
+await vim.pane.sendKeys(":wq");
+const { exitCode } = await vim.wait({ timeoutMs: 10_000 });
+```
+
+- `spawn` returns a [`Program`][ref-program] once the program has started. A
+  full-screen program may still be setting up its terminal then, and can
+  discard what was typed before, so the keys wait for vim's first screen.
+  [`Pane.waitForText`][ref-pane-waitfortext] reads the screen each time tmux
+  says the pane printed, and resolves with the first line that matches.
+- Each running program holds one tmux client, its exit watch, until it ends.
+- `await using` ends the program and removes its pane however the scope
+  leaves; without it, call [`kill()`][ref-program-kill] in a `finally`, which
+  is safe after the program has ended. A `wait` that gives up throws
+  `WaitTimeoutError` and leaves the program running, where `run` ends it and
+  reports `timedOut`.
+- With `{ stream: true }`, [`program.stream()`][ref-program-stream] yields what
+  the program writes, as UTF-8 text, until it exits, and ends with
+  `OutputLostError` if tmux closed the pane before reading the end.
+  `maxStreamBytes` caps the copy; the stream then throws
+  [`StreamLimitError`][ref-streamlimiterror] after what it kept, and the
+  program runs on. The copy is read every 25 ms.
+
+### [`input`][ref-spawnoptions]: give it a stdin
+
+<!-- runs: examples/program/program.ts -->
+
+```ts
+const result = await server.run(["sort"], { input });
+```
+
+- `input` is a string or bytes, written to a private file the program reads,
+  so it passes through no shell quoting and no tmux command.
+- The terminal stays the program's output, so `output` reads as before.
+- It needs the tmux server on this machine; one elsewhere is refused with
+  `ServerNotLocalError` before the program starts.
+
+### [`separateStderr`][ref-runoptions]: keep stderr apart
+
+<!-- runs: examples/program/program.ts -->
+
+```ts
+const result = await server.run(argv, { separateStderr: true });
+```
+
+- stderr goes to a private file rather than the terminal and comes back as
+  `stderr`, as written, so `output` holds stdout alone.
+- stderr is then no terminal, which a program that colors its errors notices.
+- Like `input`, it needs the tmux server on this machine.
+
+### [`signal`][ref-runoptions]: cancel a run
+
+<!-- runs: examples/program/program.ts -->
+
+```ts
+const outcome = await server.run(argv, { signal }).catch((error: unknown) => {
+  if (!(error instanceof TmuxTransportError) || error.kind !== "cancelled") throw error;
+  return { cancelled: error.delivery };
+});
+```
+
+- An abort ends the program and removes its pane, and the call rejects with
+  [`TmuxTransportError`][ref-tmuxtransporterror] of kind `cancelled`.
+- `delivery` says how far it got: `not_started` when nothing ran,
+  `indeterminate` when setup was cut short and the program may have begun, and
+  `written` once it had started.
+- `spawn` takes `signal` too, for setup alone; once it returns, the program is
+  yours to end. A cancelled `wait()` or `stream()` leaves the program running,
+  with `delivery` `replied`.
+
+### [`placement` and `keep`][ref-spawnoptions]: run it where a person sees it
+
+<!-- runs: examples/program/program.ts -->
+
+```ts
+const result = await server.run(argv, { from: pane, keep: true, placement: "split" });
+```
+
+- `placement: "split"` splits `pane` without moving focus, so a person sees
+  the program run. `"window"`, the default with `from`, is a background window
+  of that pane's session.
+- `keep: true` leaves the pane, dead and showing the output, once the program
+  ends. A kept split closes at the next key pressed in it.
+- Either way the program runs in the pane's directory with the session's tmux
+  environment; the pane's own shell is not involved.
+
+### [`orphanAfterMs`][ref-spawnoptions]: end it with this process
+
+<!-- runs: examples/program/program.ts -->
+
+```ts
+const service = await server.spawn(argv, {
+  maxStreamBytes: 1_048_576,
+  orphanAfterMs: 10_000,
+  stream: true,
+});
+```
+
+- This process renews a lease on the program every third of `orphanAfterMs`.
+  Should it exit or die without `kill()`, tmux ends the program and removes
+  its pane within that time.
+- Every `run` and `spawn` holds one, a minute long unless set.
+  `orphanAfterMs: null` takes none, for a program meant to outlive this
+  process.
+- A shorter lease ends an orphan sooner, but an event-loop stall longer than
+  the lease ends a live program too, as though this process had died.
+- A debugger paused at a breakpoint is such a stall: its renewals stop with
+  everything else. Debugging past a minute, pass a longer `orphanAfterMs`, or
+  `null`, so the program is there when you resume.
+
 ## Type into a pane and wait
+
+The last three recipes are literal excerpts of
+[`examples/agent/agent.ts`](../../examples/agent/agent.ts), which the
+integration suite runs against a real tmux server.
 
 ### [`Pane.sendKeys`][ref-pane-sendkeys]: type, then read what it said
 
@@ -977,9 +1158,6 @@ The loop an agent runs. `connect()` pairs commands through the server engine
 with notifications from a persistent observer. Subscribe before sending so a
 marker printed in between is still seen.
 
-This recipe is a literal excerpt of [`examples/agent/agent.ts`](../../examples/agent/agent.ts),
-which the integration suite runs against a real tmux server:
-
 <!-- runs: examples/agent/agent.ts -->
 
 ```ts
@@ -1000,6 +1178,41 @@ await pane.sendKeys(command);
 
 const event = await printed;
 ```
+
+### [`Pane.waitForCommand`][ref-pane-waitforcommand]: a command's status from the shell's marks
+
+A shell whose prompt writes an OSC 133 `D` mark with the last status tells tmux
+when a command ends and how, with no marker printed for the wait to read back.
+
+<!-- runs: examples/agent/agent.ts -->
+
+```ts
+const status = await pane.waitForCommand({ send: command, timeoutMs: 30_000 });
+```
+
+- `send` types the command once the wait is listening, so one that ends at
+  once is not missed. Without it, the wait is for whatever command finishes
+  next, a person's included.
+- A shell's first prompt marks an end too, so wait for it before sending to a
+  shell that is still starting.
+- A shell without the marks never resolves the wait; give it a `timeoutMs`.
+- The mark carries a status alone. What the command printed is on the pane,
+  for [`Pane.capture`][ref-pane-capture].
+- Requires tmux 3.8 or newer. [Details](docs/contracts.md#pane-waits).
+
+### [`Pane.waitForExit`][ref-pane-waitforexit]: wait for a pane you did not start
+
+<!-- runs: examples/agent/agent.ts -->
+
+```ts
+const { exitCode } = await pane.waitForExit({ timeoutMs: 30_000 });
+```
+
+- It resolves when tmux reports the pane's program exiting, with the status a
+  closing pane takes with it, or at once for a pane `remain-on-exit` kept.
+- A pane killed from outside fires no event, and the wait raises
+  `ObjectNotFoundError` within about two seconds.
+- Requires tmux 3.8 or newer.
 
 ## Watch tmux change
 
@@ -1179,6 +1392,8 @@ bounded.tmuxBin;
   gets one raises [`TmuxTransportError`][ref-tmuxtransporterror] with `delivery`
   of `"not_started"`, the one status a mutation may retry blindly.
 - `signal` cancels the wait as it cancels the command.
+- An invocation that ends in a wait, such as `wait-for` or a running program's
+  start, takes no slot: it holds a client for as long as the wait.
   [More](docs/contracts.md#concurrency-and-engines).
 
 ### [`TmuxEngine`][ref-tmuxengine]: put tmux behind SSH, a container, or a daemon
@@ -1710,6 +1925,7 @@ sends anything, and the rest of the package keeps working there.
 
 | Feature                                                                          | Needs           | Below that                             |
 | -------------------------------------------------------------------------------- | --------------- | -------------------------------------- |
+| [`run`][ref-server-run], [`spawn`][ref-server-spawn]; MCP `run_program`          | 3.8             | refused before any session is made     |
 | `watch`, `connect`, `withConnection`; the MCP server's live streams              | 3.7             | refused before any client attaches     |
 | `deleteBuffer`, a buffer rename, MCP `paste_text`                                | 3.4             | refused, no buffer touched             |
 | [`runShell`][ref-server-runshell] returning the command's output                 | 3.5             | refused; `cmd("run-shell", …)` runs it |
@@ -1789,7 +2005,7 @@ An MCP client launches it from this configuration:
   "mcpServers": {
     "tmux": {
       "command": "npx",
-      "args": ["-y", "@libtmux/mcp@0.1.0"],
+      "args": ["-y", "@libtmux/mcp@0.1.1-alpha.1"],
       "env": { "LIBTMUX_SOCKET": "agent" }
     }
   }
@@ -1803,7 +2019,7 @@ Describes a session as tmuxp-shaped data and applies it. Reference:
 [npm](https://www.npmjs.com/package/@libtmux/workspace).
 
 ```console
-$ bun add @libtmux/workspace libtmux
+$ bun add --exact @libtmux/workspace@0.1.1-alpha.1 libtmux@0.1.1-alpha.1
 ```
 
 A workspace is one call to [`applyWorkspace`][wsref-applyworkspace], shown in
@@ -1831,7 +2047,7 @@ windows:
 Load it detached, on a socket of its own with [`load`][cli-load]:
 
 ```console
-$ npx -y @libtmux/workspace-cli@0.1.0 load ./workspace.yaml \
+$ npx -y @libtmux/workspace-cli@0.1.1-alpha.1 load ./workspace.yaml \
     -L workspace-cli-demo \
     -d
 ```
@@ -1842,7 +2058,7 @@ The root export carries the everyday handle, query, operation, error, and
 constant surface. Each model is also its own subpath:
 
 - `libtmux/server`, `libtmux/session`, `libtmux/window`, `libtmux/pane`,
-  `libtmux/client` and `libtmux/selection`.
+  `libtmux/program`, `libtmux/client` and `libtmux/selection`.
 - `libtmux/formats`, `libtmux/constants`, `libtmux/common` and
   `libtmux/errors`, as supporting subpaths.
 - `libtmux/testing`, to [record and replay](#test-your-own-code) a server's
@@ -1951,6 +2167,9 @@ MIT
 [ref-pane-pipeto]: https://libtmux.org/en/ts/latest/reference/pane-pane-pipeto/
 [ref-pane-resize]: https://libtmux.org/en/ts/latest/reference/pane-pane-resize/
 [ref-pane-sendkeys]: https://libtmux.org/en/ts/latest/reference/pane-pane-sendkeys/
+[ref-pane-waitforcommand]: https://libtmux.org/en/ts/latest/reference/pane-pane-waitforcommand/
+[ref-pane-waitforexit]: https://libtmux.org/en/ts/latest/reference/pane-pane-waitforexit/
+[ref-pane-waitfortext]: https://libtmux.org/en/ts/latest/reference/pane-pane-waitfortext/
 [ref-pane-split]: https://libtmux.org/en/ts/latest/reference/pane-pane-split/
 [ref-pane-unzoom]: https://libtmux.org/en/ts/latest/reference/pane-pane-unzoom/
 [ref-pane-zoom]: https://libtmux.org/en/ts/latest/reference/pane-pane-zoom/
@@ -1980,6 +2199,13 @@ MIT
 [ref-server-panes]: https://libtmux.org/en/ts/latest/reference/server-server-panes/
 [ref-server-pipeline]: https://libtmux.org/en/ts/latest/reference/server-server-pipeline/
 [ref-server-raiseifdead]: https://libtmux.org/en/ts/latest/reference/server-server-raiseifdead/
+[ref-server-run]: https://libtmux.org/en/ts/latest/reference/server-server-run/
+[ref-server-spawn]: https://libtmux.org/en/ts/latest/reference/server-server-spawn/
+[ref-program]: https://libtmux.org/en/ts/latest/reference/program-program/
+[ref-program-kill]: https://libtmux.org/en/ts/latest/reference/program-program-kill/
+[ref-program-stream]: https://libtmux.org/en/ts/latest/reference/program-program-stream/
+[ref-runoptions]: https://libtmux.org/en/ts/latest/reference/types-runoptions/
+[ref-spawnoptions]: https://libtmux.org/en/ts/latest/reference/types-spawnoptions/
 [ref-server-runshell]: https://libtmux.org/en/ts/latest/reference/server-server-runshell/
 [ref-server-savebuffer]: https://libtmux.org/en/ts/latest/reference/server-server-savebuffer/
 [ref-server-sessions]: https://libtmux.org/en/ts/latest/reference/server-server-sessions/
@@ -2016,6 +2242,8 @@ MIT
 [ref-tmuxserverrestartederror]: https://libtmux.org/en/ts/latest/reference/errors-tmuxserverrestartederror/
 [ref-tmuxtransporterror]: https://libtmux.org/en/ts/latest/reference/errors-tmuxtransporterror/
 [ref-versiontoolowerror]: https://libtmux.org/en/ts/latest/reference/errors-versiontoolowerror/
+[ref-streamlimiterror]: https://libtmux.org/en/ts/latest/reference/errors-streamlimiterror/
+[ref-programstarterror]: https://libtmux.org/en/ts/latest/reference/errors-programstarterror/
 [ref-waittimeouterror]: https://libtmux.org/en/ts/latest/reference/errors-waittimeouterror/
 [ref-watchoptions]: https://libtmux.org/en/ts/latest/reference/types-watchoptions/
 [ref-window]: https://libtmux.org/en/ts/latest/reference/window-window/

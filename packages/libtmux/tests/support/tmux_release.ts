@@ -2,6 +2,8 @@ import { spawnSync } from "node:child_process";
 
 import { describe, test } from "bun:test";
 
+import { releaseAtLeast } from "../../src/_internal/runtime/tmux_version.js";
+
 /** The release of the `tmux` on PATH, as `tmux -V` writes it (`tmux 3.3a`, or `tmux-3.3a 3.3a`). */
 function detect(): string | undefined {
   const done = spawnSync(process.env.LIBTMUX_TMUX_BIN ?? "tmux", ["-V"]);
@@ -23,6 +25,11 @@ export function tmuxAtLeast(release: string): boolean {
   if (have[0] !== want[0]) return have[0] > want[0];
   if (have[1] !== want[1]) return have[1] > want[1];
   return have[2] >= want[2];
+}
+
+/** Whether the tmux on PATH reaches `release` as the library ranks it: a candidate is below its release. */
+export function tmuxReaches(release: string): boolean {
+  return tmuxRelease !== undefined && releaseAtLeast(tmuxRelease, release);
 }
 
 /** Library-managed control mode needs tmux 3.7; the refusal below it is tested in `optional_features.test.ts`. */

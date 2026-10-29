@@ -20,6 +20,7 @@ import { assertSafeRouteValue } from "./route.js";
 import { registerCapture } from "./tools/capture.js";
 import { registerDiscovery } from "./tools/discovery.js";
 import { registerInput } from "./tools/input.js";
+import { registerPrograms } from "./tools/programs.js";
 import { registerLayout } from "./tools/layout.js";
 import { registerLifecycle } from "./tools/lifecycle.js";
 import { registerSearch } from "./tools/search.js";
@@ -81,6 +82,7 @@ export function createTmuxMcpServer(
   registerCapture(catalog, context);
   registerSearch(catalog, context);
   registerInput(catalog, context);
+  const programs = registerPrograms(catalog, context);
   registerLifecycle(catalog, context);
   registerLayout(catalog, context);
   registerSettings(catalog, context);
@@ -146,6 +148,7 @@ export function createTmuxMcpServer(
   const closeBackend = (): Promise<void> => {
     backendClose ??= (async () => {
       try {
+        await programs.close();
         await disposeResources();
       } finally {
         await context.close();

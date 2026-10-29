@@ -76,6 +76,10 @@ const EXCUSED = new Map<string, string>([
     "the shared world binds `window` to `pane`'s own window, so this joins a pane into the window it is already in",
   ],
   [
+    "Pane.waitForCommand",
+    "needs a shell that marks each command's end with OSC 133, which the shared world's shell does not; examples/agent runs one",
+  ],
+  [
     "Pane.displayPopup",
     "blocks waiting for a keypress once a client is attached, unlike chooseTree and chooseBuffer's documented no-op",
   ],

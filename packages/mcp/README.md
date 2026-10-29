@@ -20,7 +20,7 @@
 
 [![@libtmux/mcp](https://img.shields.io/npm/v/@libtmux/mcp?label=%40libtmux%2Fmcp)](https://www.npmjs.com/package/@libtmux/mcp)
 [![typescript](https://github.com/libtmux/libtmux-ts/actions/workflows/typescript.yml/badge.svg)](https://github.com/libtmux/libtmux-ts/actions/workflows/typescript.yml)
-[![tmux](https://img.shields.io/badge/tmux-3.3a%E2%80%933.8-1bb91f)](../../.github/workflows/typescript.yml)
+[![tmux](https://img.shields.io/badge/tmux-3.3a%E2%80%933.8a-1bb91f)](../../.github/workflows/typescript.yml)
 [![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![libtmux.org](https://img.shields.io/badge/docs-libtmux.org-0b7285)](https://libtmux.org/en/ts/latest/mcp/)
 
@@ -53,14 +53,14 @@ nothing needs installing ahead of time or keeping running.
 ### `npx`: start the server
 
 ```console
-$ npx -y @libtmux/mcp@0.1.0
+$ npx -y @libtmux/mcp@0.1.1-alpha.1
 ```
 
 With no socket or config variable set, the server starts a tmux server of its
 own on a socket named `libtmux-mcp`. To pin the package in a project instead:
 
 ```console
-$ bun add --exact @libtmux/mcp@0.1.0
+$ bun add --exact @libtmux/mcp@0.1.1-alpha.1
 ```
 
 Closing the subprocess's stdin cancels pending waits and joins its control
@@ -71,7 +71,7 @@ cleanup failures produce a nonzero exit status.
 
 ```console
 $ claude mcp add tmux --env LIBTMUX_SOCKET=agent -- \
-    npx -y @libtmux/mcp@0.1.0
+    npx -y @libtmux/mcp@0.1.1-alpha.1
 ```
 
 ### `mcpServers`: tell any other client about it
@@ -81,7 +81,7 @@ $ claude mcp add tmux --env LIBTMUX_SOCKET=agent -- \
   "mcpServers": {
     "tmux": {
       "command": "npx",
-      "args": ["-y", "@libtmux/mcp@0.1.0"],
+      "args": ["-y", "@libtmux/mcp@0.1.1-alpha.1"],
       "env": { "LIBTMUX_SOCKET": "agent" }
     }
   }
@@ -202,8 +202,8 @@ line on stderr says `serving existing`, and the toolsets default to
 `inspect,manage,execute`:
 
 ```console
-$ LIBTMUX_SOCKET=agent npx -y @libtmux/mcp@0.1.0
-libtmux-mcp 0.1.0 serving existing agent, toolsets execute,inspect,manage, 0 named inclusions, 0 exclusions
+$ LIBTMUX_SOCKET=agent npx -y @libtmux/mcp@0.1.1-alpha.1
+libtmux-mcp 0.1.1-alpha.1 serving existing agent, toolsets execute,inspect,manage, 0 named inclusions, 0 exclusions
 ```
 
 ### Let it start a server of its own
@@ -245,12 +245,12 @@ Tools belong to four unordered sets: `inspect`, `manage`, `execute`, and
 `teardown`. The sets decide what a client is offered, and every offered tool
 runs with the tmux user's authority.
 
-| Toolset    | Tools                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `inspect`  | [`call_read_tools_batch`][tool-call_read_tools_batch], [`capture_pane`][tool-capture_pane], [`capture_since`][tool-capture_since], [`find_pane_by_position`][tool-find_pane_by_position], [`get_pane_info`][tool-get_pane_info], [`get_server_info`][tool-get_server_info], [`get_session_info`][tool-get_session_info], [`get_tmux_variables`][tool-get_tmux_variables], [`get_window_info`][tool-get_window_info], [`list_panes`][tool-list_panes], [`list_sessions`][tool-list_sessions], [`list_windows`][tool-list_windows], [`search_panes`][tool-search_panes], [`show_environment`][tool-show_environment], [`show_hooks`][tool-show_hooks], [`show_option`][tool-show_option], [`snapshot_pane`][tool-snapshot_pane], [`wait_for_text`][tool-wait_for_text] |
-| `manage`   | [`move_window`][tool-move_window], [`rename_session`][tool-rename_session], [`rename_window`][tool-rename_window], [`resize_pane`][tool-resize_pane], [`resize_window`][tool-resize_window], [`select_layout`][tool-select_layout], [`select_pane`][tool-select_pane], [`select_window`][tool-select_window], [`set_history_limit`][tool-set_history_limit], [`set_mouse_enabled`][tool-set_mouse_enabled], [`set_pane_title`][tool-set_pane_title], [`signal_channel`][tool-signal_channel], [`swap_pane`][tool-swap_pane], [`wait_for_channel`][tool-wait_for_channel]                                                                                                                                                                                             |
-| `execute`  | [`create_session`][tool-create_session], [`create_window`][tool-create_window], [`paste_text`][tool-paste_text], [`respawn_pane`][tool-respawn_pane], [`run_shell_command`][tool-run_shell_command], [`send_keys`][tool-send_keys], [`send_keys_batch`][tool-send_keys_batch], [`set_synchronize_panes`][tool-set_synchronize_panes], [`split_window`][tool-split_window]                                                                                                                                                                                                                                                                                                                                                                                            |
-| `teardown` | [`clear_pane_scrollback`][tool-clear_pane_scrollback], [`kill_pane`][tool-kill_pane], [`kill_session`][tool-kill_session], [`kill_window`][tool-kill_window]                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| Toolset    | Tools                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `inspect`  | [`call_read_tools_batch`][tool-call_read_tools_batch], [`capture_pane`][tool-capture_pane], [`capture_since`][tool-capture_since], [`find_pane_by_position`][tool-find_pane_by_position], [`get_pane_info`][tool-get_pane_info], [`get_server_info`][tool-get_server_info], [`get_session_info`][tool-get_session_info], [`get_tmux_variables`][tool-get_tmux_variables], [`get_window_info`][tool-get_window_info], [`list_panes`][tool-list_panes], [`list_sessions`][tool-list_sessions], [`list_windows`][tool-list_windows], [`read_program`][tool-read_program], [`search_panes`][tool-search_panes], [`show_environment`][tool-show_environment], [`show_hooks`][tool-show_hooks], [`show_option`][tool-show_option], [`snapshot_pane`][tool-snapshot_pane], [`wait_for_exit`][tool-wait_for_exit], [`wait_for_text`][tool-wait_for_text] |
+| `manage`   | [`move_window`][tool-move_window], [`rename_session`][tool-rename_session], [`rename_window`][tool-rename_window], [`resize_pane`][tool-resize_pane], [`resize_window`][tool-resize_window], [`select_layout`][tool-select_layout], [`select_pane`][tool-select_pane], [`select_window`][tool-select_window], [`set_history_limit`][tool-set_history_limit], [`set_mouse_enabled`][tool-set_mouse_enabled], [`set_pane_title`][tool-set_pane_title], [`signal_channel`][tool-signal_channel], [`swap_pane`][tool-swap_pane], [`wait_for_channel`][tool-wait_for_channel]                                                                                                                                                                                                                                                                         |
+| `execute`  | [`create_session`][tool-create_session], [`create_window`][tool-create_window], [`paste_text`][tool-paste_text], [`respawn_pane`][tool-respawn_pane], [`run_program`][tool-run_program], [`run_shell_command`][tool-run_shell_command], [`send_keys`][tool-send_keys], [`send_keys_batch`][tool-send_keys_batch], [`set_synchronize_panes`][tool-set_synchronize_panes], [`split_window`][tool-split_window], [`start_program`][tool-start_program], [`stop_program`][tool-stop_program]                                                                                                                                                                                                                                                                                                                                                         |
+| `teardown` | [`clear_pane_scrollback`][tool-clear_pane_scrollback], [`kill_pane`][tool-kill_pane], [`kill_session`][tool-kill_session], [`kill_window`][tool-kill_window]                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 
 ### [`LIBTMUX_TOOLSETS`][topic-toolsets-and-startup-provenance]: choose the toolsets
 
@@ -265,7 +265,7 @@ For an agent that can inspect and run pane commands but cannot rearrange or end
 topology:
 
 ```console
-$ LIBTMUX_TOOLSETS=inspect,execute npx -y @libtmux/mcp@0.1.0
+$ LIBTMUX_TOOLSETS=inspect,execute npx -y @libtmux/mcp@0.1.1-alpha.1
 ```
 
 - Unknown names, empty list entries, and the retired `LIBTMUX_SAFETY` variable
@@ -280,7 +280,7 @@ $ LIBTMUX_TOOLSETS=inspect,execute npx -y @libtmux/mcp@0.1.0
 inclusions makes a smaller purpose-built surface:
 
 ```console
-$ LIBTMUX_TOOLSETS= LIBTMUX_TOOLS=list_sessions,capture_pane npx -y @libtmux/mcp@0.1.0
+$ LIBTMUX_TOOLSETS= LIBTMUX_TOOLS=list_sessions,capture_pane npx -y @libtmux/mcp@0.1.1-alpha.1
 ```
 
 - Exclusions always win, including inside
@@ -324,7 +324,7 @@ On a fresh default socket, that diagnostic is:
 
 ```console
 $ libtmux-mcp
-libtmux-mcp 0.1.0 serving new libtmux-mcp, toolsets execute,inspect,manage,teardown, 0 named inclusions, 0 exclusions
+libtmux-mcp 0.1.1-alpha.1 serving new libtmux-mcp, toolsets execute,inspect,manage,teardown, 0 named inclusions, 0 exclusions
 ```
 
 ## The tools
@@ -432,22 +432,146 @@ call_read_tools_batch  operations=[{tool: 'list_sessions'}, {tool: 'list_panes'}
 
 ## Run commands and wait
 
-Four tools put input into panes:
+These tools run programs or put input into panes:
 
-| Tool                                          | Does                                                    |
-| --------------------------------------------- | ------------------------------------------------------- |
-| [`run_shell_command`][tool-run_shell_command] | Runs a shell command, waits for it, reports exit status |
-| [`send_keys`][tool-send_keys]                 | Sends keystrokes: TUIs, `C-c`, partial lines            |
-| [`send_keys_batch`][tool-send_keys_batch]     | Sends typed key operations in one bounded call          |
-| [`paste_text`][tool-paste_text]               | Sends text with nothing read as a key name              |
+| Tool                                          | Does                                                         |
+| --------------------------------------------- | ------------------------------------------------------------ |
+| [`run_program`][tool-run_program]             | Runs a program in a pane of its own, returns only its output |
+| [`start_program`][tool-start_program]         | Starts a program that outlives one call; returns at once     |
+| [`read_program`][tool-read_program]           | Reads a started program's new output and reports its exit    |
+| [`stop_program`][tool-stop_program]           | Ends a started program and removes its pane                  |
+| [`run_shell_command`][tool-run_shell_command] | Runs a shell command, waits for it, reports exit status      |
+| [`send_keys`][tool-send_keys]                 | Sends keystrokes: TUIs, `C-c`, partial lines                 |
+| [`send_keys_batch`][tool-send_keys_batch]     | Sends typed key operations in one bounded call               |
+| [`paste_text`][tool-paste_text]               | Sends text with nothing read as a key name                   |
 
-Three tools wait:
+These tools wait:
 
 | Tool                                        | Does                                            |
 | ------------------------------------------- | ----------------------------------------------- |
+| [`wait_for_exit`][tool-wait_for_exit]       | Blocks until a pane's program exits             |
 | [`wait_for_text`][tool-wait_for_text]       | Blocks until a pane prints something            |
 | [`wait_for_channel`][tool-wait_for_channel] | Blocks until a tmux channel is signalled        |
 | [`signal_channel`][tool-signal_channel]     | Signals a tmux channel for another waiting task |
+
+### [`run_program`][tool-run_program]: run a program and get only its output
+
+`run_program` starts `argv` in a pane of its own, a fresh detached session by
+default, waits for it, and returns `exitStatus`, `outcome`, and what the
+program wrote, with no command line or echo.
+
+```text
+run_program  argv=["git","status","--short"]  timeoutMs=20000
+```
+
+- `argv` runs as given: no shell parses it, so `$HOME` and `*` reach the program
+  unexpanded. Pipes and redirections need `["sh", "-c", "…"]`; variables go
+  first, `["env", "CI=1", "make"]`. Use `run_shell_command` when the command
+  needs an existing pane's shell, its directory, environment, or activated
+  tools.
+- `fromPaneId` starts it in that pane's directory and session, with the
+  session's tmux environment: in a background window, or with
+  `placement: "split"` in a split beside the pane, where a person watching sees
+  it run. Focus stays where it was.
+- `inheritShell: true` adds the variables that pane's shell exported, and a
+  list such as `["PATH", "VIRTUAL_ENV"]` adds only those. It types one framed
+  `env` into the shell first, so the shell must be an idle POSIX one, as
+  `run_shell_command` requires.
+- `keep: true` leaves the pane, dead and showing the output, for a person to
+  read and close. Set it only when a person asked to see the run.
+- `input` is the program's stdin, read from a private file the pane never shows.
+  Without it the program has only the terminal, and one that prompts waits
+  until the timeout.
+- `separateStderr: true` returns what the program writes to stderr as
+  `stderr`, so `output` is stdout alone; stderr is then no terminal. It needs
+  the tmux server on this machine, as `input` does.
+- The program finds commands on this server's `PATH`, since tmux gives a pane
+  the `PATH` of the client that asked for it, and gets `PAGER=cat`
+  and `GIT_PAGER=cat`. One not found or not executable, or a `startDirectory`
+  it cannot enter, fails the call before anything runs, with the reason; a
+  program's own exit 127 is its `exitStatus`.
+- `timeoutMs` defaults to 30 seconds and is capped by `LIBTMUX_MCP_WAIT_MAX_MS`.
+  Unlike `run_shell_command`'s, it ends the program: one still running gets
+  SIGTERM, then SIGKILL, and is reported `timed_out`.
+- The pane is removed before the call returns, unless `keep` is set. Should
+  this server die mid-run, tmux ends the program and removes its pane within a
+  minute: the server holds a lease on it that only a live server renews.
+- The output is the terminal's rendering, stderr included, scrollback too.
+  `outputComplete` is false when scrollback, `maxLines` or the result's byte
+  limit cut it, when `lostEnd` says tmux closed the pane before reading the
+  end, or when the timeout ended the program.
+- Needs tmux 3.8 or newer; earlier servers answer with a refusal that points
+  at `run_shell_command`.
+- [Program runs](docs/contracts.md#run_program-program-runs).
+
+### [`start_program`][tool-start_program], [`read_program`][tool-read_program] and [`stop_program`][tool-stop_program]: a program that outlives one call
+
+`run_program` holds one call open until the program ends, which a wait ceiling
+cuts short. A build or a server that runs longer is started, read as it
+writes, and stopped.
+
+This is a literal excerpt of
+[`examples/mcp-agent/mcp-agent.ts`](../../examples/mcp-agent/mcp-agent.ts),
+which the integration suite runs against a real tmux server; `callTool` there
+returns a result's `structuredContent`:
+
+<!-- runs: examples/mcp-agent/mcp-agent.ts -->
+
+```ts
+interface Read {
+  readonly cursor: number;
+  readonly exitStatus: number | null;
+  readonly ended: boolean;
+  readonly outcome: string;
+  readonly outputComplete: boolean;
+  readonly text: string;
+}
+const { programId } = await callTool<{ programId: string }>(client, "start_program", { argv });
+let text = "";
+let read: Read;
+try {
+  read = await callTool<Read>(client, "read_program", { programId });
+  text = read.text;
+  while (!read.ended) {
+    read = await callTool<Read>(client, "read_program", { cursor: read.cursor, programId });
+    text += read.text;
+  }
+} finally {
+  // A failed stop must not hide a failed read; the lifetime ends the program either way.
+  await callTool(client, "stop_program", { programId }).catch(() => undefined);
+}
+```
+
+- `start_program` returns a `programId` and the `paneId`, which `send_keys` and
+  `capture_pane` reach while the program runs. Its pane is removed once it
+  exits, except a window or split beside `fromPaneId`, which stays on screen
+  until `stop_program` or its lifetime. It takes `fromPaneId`, `placement`, `startDirectory`, `width` and
+  `height` as `run_program` does, but not `input`, `keep`, `inheritShell` or
+  `separateStderr`;
+  `PAGER` and `GIT_PAGER` are `cat`. This server reads each running program's
+  output from a file it polls.
+- Each `read_program` waits up to its `timeoutMs` for new output or the exit
+  and returns a `cursor`. A read that times out returns no text; the next one
+  with the same cursor carries on, past any wait ceiling.
+- The text is the byte stream with escape sequences removed, as
+  `capture_since` gives it. `ended` turns true once the program ended and
+  every byte was read, and `outcome` says how: `completed` with `exitStatus`
+  or `signal`, `not_started` when it never ran, with the shell's 127 or 126,
+  `expired` at its lifetime, `stopped` by `stop_program`, or
+  `gone`. A program a signal ended reports `signal`, with `exitStatus` null.
+- `outputCut` turns true once the copy reaches its limit, while the program
+  runs on, and `lostEnd` when tmux closed the pane before reading the end.
+- A program's lifetime is `lifetimeMs` on `start_program`, capped by the server
+  and reported as `effectiveLifetimeMs`. When it runs out, this server ends the
+  program and removes its pane, even if no later call arrives; should this
+  server die or restart, tmux does within 30 seconds, through a lease only a
+  live server renews.
+- Sixteen programs run at once at most, and a start past that is refused.
+  The sixteen most recently ended stay readable until `stop_program` forgets
+  one. Each copy stops at 4 MiB, so this server holds at most 128 MiB of
+  program output.
+- The program's process group is what ends; a process that daemonizes out of
+  it is not followed.
 
 ### [`run_shell_command`][tool-run_shell_command]: run a command and get its exit status
 
@@ -497,6 +621,24 @@ synchronized input is on.
 ```text
 paste_text  paneId=%1  text='C-c is not a key here'  enter=true
 ```
+
+### [`wait_for_exit`][tool-wait_for_exit]: wait for a program you did not start
+
+`wait_for_exit` blocks until the program in a pane exits, listening for tmux's
+own exit events, and returns `exitStatus` or `signal`. It reads the pane once a
+second only to notice a kill, which fires no event.
+
+```text
+wait_for_exit  paneId=%3  timeoutMs=20000
+```
+
+- Use it for a pane you did not start, such as a person's build. For a program
+  you run, `run_program` already reports the exit.
+- A pane that closes on exit still reports its status: tmux carries it in the
+  event. A pane killed from outside has none and answers `gone` within about
+  two seconds.
+- `timed_out` means the program still runs; call again to keep waiting.
+- Needs tmux 3.8 or newer.
 
 ### [`wait_for_text`][tool-wait_for_text]: wait for output you did not send
 
@@ -644,7 +786,7 @@ set_history_limit  lines=10000
 explicitly selected server does not get by default. Name it to opt in:
 
 ```console
-$ LIBTMUX_SOCKET=agent LIBTMUX_TOOLSETS=inspect,teardown npx -y @libtmux/mcp@0.1.0
+$ LIBTMUX_SOCKET=agent LIBTMUX_TOOLSETS=inspect,teardown npx -y @libtmux/mcp@0.1.1-alpha.1
 ```
 
 - These tools refuse to end the pane hosting the MCP process unless `force`
@@ -656,7 +798,7 @@ $ LIBTMUX_SOCKET=agent LIBTMUX_TOOLSETS=inspect,teardown npx -y @libtmux/mcp@0.1
 
 ## Choosing the right tool
 
-The four mistakes that cost an agent a turn, and what to do instead.
+The mistakes that cost an agent a turn, and what to do instead.
 
 **Do not poll.** A [`send_keys`][tool-send_keys] then
 [`capture_pane`][tool-capture_pane] loop spends a call per read and still cannot
@@ -668,6 +810,19 @@ run_shell_command  paneId=%1  command='cargo build'
 
 That waits through tmux's notifications and comes back with `exitStatus`,
 `outcome`, and the output — one call.
+
+**When only the output matters, use [`run_program`][tool-run_program].** It
+starts the command in a pane of its own and returns only what it printed,
+where a typed command shares its pane with the prompt, the echo, and anyone
+else typing there. Keep `run_shell_command` for a command that needs that
+pane's shell. Its timeout ends the program and is capped by
+`LIBTMUX_MCP_WAIT_MAX_MS`. A build longer than that goes to
+[`start_program`][tool-start_program] and is read with
+[`read_program`][tool-read_program] until it exits.
+
+```text
+run_program  argv=["git","diff","--stat"]
+```
 
 **Do not wait for text you sent.** The pane echoes it.
 [`wait_for_text`][tool-wait_for_text] discounts your own typing only briefly, so
@@ -721,8 +876,11 @@ Each advertised tool carries `_meta["com.git-pull.libtmux-mcp/capability"]`. The
 row declares its process reach, effects, possible outputs, input literalization,
 and whether it can amplify future pane input.
 
-- Process reach is one of `none`, `configured-process`, `pane-input`, or
-  `pane-command`. No public tool has `host-command` reach.
+- Process reach is one of `none`, `configured-process`, `pane-input`,
+  `pane-command`, or `pane-program`. No public tool has `host-command` reach,
+  meaning this server starts no process itself; `pane-command` and
+  `pane-program` still run arbitrary programs on the tmux server's machine, with
+  your user's authority.
 - Effects are `observe`, `change`, and `delete`. Output classes distinguish tmux
   metadata, terminal content, process environment, and configured commands.
 - [Capability disclosure](docs/contracts.md#capability-disclosure).
@@ -773,8 +931,9 @@ const mcp = createTmuxMcpServer(serverFromEnvironment());
   [`set_synchronize_panes`][tool-set_synchronize_panes] are the bounded changes.
 - **Buffer management.** There is no public buffer CRUD; use
   [`paste_text`][tool-paste_text] for literal input.
-- **Host-command tools.** No public tool has `host-command` reach; see `_meta`
-  under [Resources](#resources).
+- **Host-command tools.** No public tool starts a process from this server;
+  `run_shell_command` and `run_program` run programs inside tmux panes, with the
+  tmux user's authority. See `_meta` under [Resources](#resources).
 - **A sandbox.** Selecting tools shapes the interface; every tool runs with the
   tmux user's authority. See the [security boundary](../../SECURITY.md).
 
@@ -784,9 +943,11 @@ const mcp = createTmuxMcpServer(serverFromEnvironment());
   newer.
 - **Older tmux.** A server older than 3.3a is refused with a result that names
   the fix: upgrade tmux and restart the server, or pin the previous release.
-- **Features above the floor.** Live streaming (`LIBTMUX_MCP_LIVE`) needs tmux
-  3.7 and `paste_text` needs 3.4. On an older tmux, `paste_text` refuses with
-  the version it needs, `wait_for_text` and captures read the pane, and
+- **Features above the floor.** `run_program`, `start_program` and
+  `wait_for_exit` need tmux 3.8, live streaming (`LIBTMUX_MCP_LIVE`) 3.7, and
+  `paste_text` 3.4. On an older tmux, `run_program` and `start_program` refuse
+  and point at `run_shell_command`, `wait_for_exit` and `paste_text` refuse with
+  the version they need, `wait_for_text` and captures read the pane, and
   `run_shell_command` reads the pane and types its script instead of staging it.
 - **Version check.** [`get_server_info`][tool-get_server_info] reports the
   running `version` and the `minimumVersion`.
@@ -858,6 +1019,7 @@ const mcp = createTmuxMcpServer(serverFromEnvironment());
 [tool-resize_pane]: https://libtmux.org/en/ts/latest/mcp/tools/resize_pane/
 [tool-resize_window]: https://libtmux.org/en/ts/latest/mcp/tools/resize_window/
 [tool-respawn_pane]: https://libtmux.org/en/ts/latest/mcp/tools/respawn_pane/
+[tool-run_program]: https://libtmux.org/en/ts/latest/mcp/tools/run_program/
 [tool-run_shell_command]: https://libtmux.org/en/ts/latest/mcp/tools/run_shell_command/
 [tool-search_panes]: https://libtmux.org/en/ts/latest/mcp/tools/search_panes/
 [tool-select_layout]: https://libtmux.org/en/ts/latest/mcp/tools/select_layout/
@@ -877,6 +1039,10 @@ const mcp = createTmuxMcpServer(serverFromEnvironment());
 [tool-split_window]: https://libtmux.org/en/ts/latest/mcp/tools/split_window/
 [tool-swap_pane]: https://libtmux.org/en/ts/latest/mcp/tools/swap_pane/
 [tool-wait_for_channel]: https://libtmux.org/en/ts/latest/mcp/tools/wait_for_channel/
+[tool-read_program]: https://libtmux.org/en/ts/latest/mcp/tools/read_program/
+[tool-start_program]: https://libtmux.org/en/ts/latest/mcp/tools/start_program/
+[tool-stop_program]: https://libtmux.org/en/ts/latest/mcp/tools/stop_program/
+[tool-wait_for_exit]: https://libtmux.org/en/ts/latest/mcp/tools/wait_for_exit/
 [tool-wait_for_text]: https://libtmux.org/en/ts/latest/mcp/tools/wait_for_text/
 [tools-index]: https://libtmux.org/en/ts/latest/mcp/tools/
 [topic-commands-waits-and-cursors]: https://libtmux.org/en/ts/latest/mcp/topics/#commands-waits-and-cursors
