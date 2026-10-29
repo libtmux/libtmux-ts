@@ -778,6 +778,10 @@ the parsed fields. Versions rank `next-X.Y` below `X.Y-rc`, below `X.Y`, below
 `X.Ya`, so a development build or candidate has not yet reached the release it
 names, and a form tmux does not print is refused.
 
+tmux release candidates are not supported: a feature can require one only until
+its release ships, and a candidate such as `X.Y-rcN` ranks below `X.Y`. See
+[Release candidates](https://libtmux.org/en/tmux/guides/tmux-support/#release-candidates).
+
 A daemon, or an executable that would start one, older than tmux 3.3a is
 refused before anything is sent to it, with `VersionTooLowError` and a
 `delivery` of `not_started`. A version libtmux does not recognize, such as bare

@@ -1914,6 +1914,10 @@ The package supports tmux 3.3a and newer, and the format registry withholds
 newer fields from an older server, so each version is asked only for the fields
 it has.
 
+tmux release candidates are not supported: a feature can require one only
+until its release ships, and a candidate such as `X.Y-rcN` ranks below `X.Y`.
+See [Release candidates](https://libtmux.org/en/tmux/guides/tmux-support/#release-candidates).
+
 ### [`Server.version`][ref-server-version] and [`versionAtLeast`][ref-server-versionatleast]: gate your own code
 
 Ask the server rather than parsing `#{version}` yourself. The version is probed
