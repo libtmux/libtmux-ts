@@ -100,14 +100,18 @@ async function withProgram(
   );
 }
 
+/** A child run from a script connects nothing first, so its exit also waits for runtime start-up. */
+const UNCONNECTED_EXIT_MS = 10_000;
+
 async function boundedExit(
   exited: Promise<{ code: number | null; signal: NodeJS.Signals | null }>,
+  boundMs = 1_000,
 ): Promise<{ code: number | null; signal: NodeJS.Signals | null } | "timed out"> {
   const abort = new AbortController();
   try {
     return await Promise.race([
       exited,
-      delay(deadlineMs(1_000), "timed out" as const, { signal: abort.signal }),
+      delay(deadlineMs(boundMs), "timed out" as const, { signal: abort.signal }),
     ]);
   } finally {
     abort.abort();
@@ -224,7 +228,10 @@ for (const runtime of ["bun", "node"] as const) {
           runtime,
           async ({ endInput, exited, stderr }) => {
             if (name !== "protocol close during connect") endInput();
-            expect(await boundedExit(exited), stderr()).toEqual({ code: 0, signal: null });
+            expect(await boundedExit(exited, UNCONNECTED_EXIT_MS), stderr()).toEqual({
+              code: 0,
+              signal: null,
+            });
           },
           script,
         );
@@ -267,7 +274,10 @@ for (const runtime of ["bun", "node"] as const) {
           runtime,
           async ({ endInput, exited, stderr }) => {
             endInput();
-            expect(await boundedExit(exited), stderr()).toEqual({ code: 1, signal: null });
+            expect(await boundedExit(exited, UNCONNECTED_EXIT_MS), stderr()).toEqual({
+              code: 1,
+              signal: null,
+            });
             expect(stderr()).toContain(message);
           },
           script,
