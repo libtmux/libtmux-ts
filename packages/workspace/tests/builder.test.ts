@@ -3,7 +3,7 @@
 import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 
 import {
   runWithCleanup,
@@ -132,6 +132,20 @@ windows:
 `;
 
 describe("workspace builder", () => {
+  const markerDirectories: string[] = [];
+  afterEach(async () => {
+    await Promise.all(
+      markerDirectories.splice(0).map((path) => rm(path, { force: true, recursive: true })),
+    );
+  });
+
+  /** A file a pane's command writes to, in a directory removed after the test. */
+  async function markerPath(name: string): Promise<string> {
+    const directory = await makeTestDirectory("ltx-ws-marker-");
+    markerDirectories.push(directory);
+    return join(directory, name);
+  }
+
   test("parses and normalizes a tmuxp-shaped workspace", () => {
     const workspace = parseWorkspaceYaml(WORKSPACE);
     const implicit = parseWorkspace({
@@ -568,7 +582,7 @@ windows:
   test("types a shell command literally when its text names a tmux key", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);
-      const marker = join(await makeTestDirectory("ltx-ws-marker-"), "literal");
+      const marker = await markerPath("literal");
       const workspace = parseWorkspaceYaml(
         [
           "session_name: literal",
@@ -590,7 +604,7 @@ windows:
   test("runs window commands in an implicit pane", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);
-      const marker = join(await makeTestDirectory("ltx-ws-marker-"), "implicit");
+      const marker = await markerPath("implicit");
       const workspace = parseWorkspaceYaml(
         [
           "session_name: implicit",
@@ -610,7 +624,7 @@ windows:
   test("delivers create-only commands once when layout fails afterward", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);
-      const marker = join(await makeTestDirectory("ltx-ws-marker-"), "ran");
+      const marker = await markerPath("ran");
       const workspace = (layout: string) =>
         parseWorkspaceYaml(
           [
@@ -640,7 +654,7 @@ windows:
   test("resends a pane's commands when asked to", async () => {
     await withServer(async (fixture) => {
       const server = serverFor(fixture);
-      const marker = join(await makeTestDirectory("ltx-ws-marker-"), "ran");
+      const marker = await markerPath("ran");
       const workspace = parseWorkspaceYaml(
         [
           "session_name: twice",
