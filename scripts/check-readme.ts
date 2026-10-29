@@ -63,6 +63,11 @@ const PARAMETERS: Readonly<Record<string, readonly string[]>> = {
     'import type { Client as ClientHandle } from "@modelcontextprotocol/sdk/client/index.js";',
     "declare const client: ClientHandle;",
     "declare const argv: readonly string[];",
+    "declare const input: string;",
+    "declare const paneId: string;",
+    // The example's result shapes, which it exports and an excerpt cannot.
+    "interface CommandResult { readonly exitStatus: number | null; readonly outcome: string; readonly output: string }",
+    "interface ExitResult { readonly exitStatus: number | null; readonly outcome: string; readonly signal: string | null }",
     // The example's own helper: a tool result's structured half.
     "declare function callTool<T>(client: ClientHandle, name: string, args: Record<string, unknown>): Promise<T>;",
   ],

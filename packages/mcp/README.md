@@ -464,6 +464,15 @@ program wrote, with no command line or echo.
 run_program  argv=["git","status","--short"]  timeoutMs=20000
 ```
 
+From a client, as [`examples/mcp-agent`](../../examples/mcp-agent/mcp-agent.ts)
+calls it with a stdin:
+
+<!-- runs: examples/mcp-agent/mcp-agent.ts -->
+
+```ts
+const ran = await callTool<CommandResult>(client, "run_program", { argv, input });
+```
+
 - `argv` runs as given: no shell parses it, so `$HOME` and `*` reach the program
   unexpanded. Pipes and redirections need `["sh", "-c", "…"]`; variables go
   first, `["env", "CI=1", "make"]`. Use `run_shell_command` when the command
@@ -630,6 +639,15 @@ second only to notice a kill, which fires no event.
 
 ```text
 wait_for_exit  paneId=%3  timeoutMs=20000
+```
+
+From a client, as [`examples/mcp-agent`](../../examples/mcp-agent/mcp-agent.ts)
+calls it:
+
+<!-- runs: examples/mcp-agent/mcp-agent.ts -->
+
+```ts
+const exit = await callTool<ExitResult>(client, "wait_for_exit", { paneId });
 ```
 
 - Use it for a pane you did not start, such as a person's build. For a program
