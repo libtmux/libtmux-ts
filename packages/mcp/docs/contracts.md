@@ -251,8 +251,8 @@ placeholder, then respawns that pane with an `sh` given `argv` as positional
 parameters, which it does not parse, so `argv[0]` is always run as a program
 name, `A=b` included, which `env` would read as an assignment. That `sh` runs
 the program and lingers 50 ms after it, because tmux can remove a pane before
-reading its last output, then exits with the status it saw, as `$?` reports it,
-so a program a signal ended reads 128 plus the signal's number. The library's
+reading its last output, then exits with the status it saw. A program a signal
+ended reports `signal`, with `exitStatus` null. The library's
 [program runs contract](../../libtmux/docs/contracts.md#program-runs) has the
 detail.
 
@@ -369,16 +369,17 @@ closing pane fires to arrive. It needs tmux 3.8 or newer.
 
 ### How each tool reports an end
 
-| Tool            | `outcome`                                                           | `exitStatus`                                            | `signal`                                         |
-| --------------- | ------------------------------------------------------------------- | ------------------------------------------------------- | ------------------------------------------------ |
-| `run_program`   | `completed`, `timed_out`                                            | As `$?` reports it, 128 plus a signal's number too      | Set when the signal ended the program's `sh` too |
-| `read_program`  | `running`, `completed`, `not_started`, `expired`, `stopped`, `gone` | As in `run_program`, once `completed`                   | As in `run_program`                              |
-| `wait_for_exit` | `completed`, `timed_out`, `gone`, `cancelled`                       | tmux's reading of the pane's process, null for a signal | The signal that ended the pane's process         |
+| Tool            | `outcome`                                                           | `exitStatus`                          | `signal`                                 |
+| --------------- | ------------------------------------------------------------------- | ------------------------------------- | ---------------------------------------- |
+| `run_program`   | `completed`, `timed_out`                                            | The exit status, null for a signal    | The signal that ended the program        |
+| `read_program`  | `running`, `completed`, `not_started`, `expired`, `stopped`, `gone` | As in `run_program`, once `completed` | As in `run_program`                      |
+| `wait_for_exit` | `completed`, `timed_out`, `gone`, `cancelled`                       | The exit status, null for a signal    | The signal that ended the pane's process |
 
 A cancelled `run_program` or `read_program` request ends with the request;
-`wait_for_exit` answers `cancelled`. `run_program` and `read_program` wrap the
-program in an `sh` of their own, which is why a signal shows there as `$?` does,
-and `wait_for_exit` reads a process no wrapper stands in front of.
+`wait_for_exit` answers `cancelled`. All three report a signal as `signal` with
+`exitStatus` null. `run_program` and `read_program` run the program under an
+`sh`, which cannot tell a signal's death from the program exiting with 128 plus
+its number, so a program's own `exit 130` reads as SIGINT.
 
 ## [`run_shell_command`][tool-run_shell_command] framing and checks
 

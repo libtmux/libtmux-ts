@@ -557,9 +557,7 @@ try {
   every byte was read, and `outcome` says how: `completed` with `exitStatus`
   or `signal`, `not_started` when it never ran, with the shell's 127 or 126,
   `expired` at its lifetime, `stopped` by `stop_program`, or
-  `gone`. As in `run_program`, a status above 128
-  may be a signal's, and `signal` is set only when the signal ended the
-  program's `sh` too.
+  `gone`. A program a signal ended reports `signal`, with `exitStatus` null.
 - `outputCut` turns true once the copy reaches its limit, while the program
   runs on, and `lostEnd` when tmux closed the pane before reading the end.
 - A program's lifetime is `lifetimeMs` on `start_program`, capped by the server

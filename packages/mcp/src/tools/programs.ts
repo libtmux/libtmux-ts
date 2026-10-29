@@ -380,10 +380,8 @@ export function registerPrograms(mcp: ToolRegistrar, context: ToolContext): Star
           .int()
           .nullable()
           .describe(
-            "The status as $? reports it once it completed on its own, or 127 or 126 when " +
-              "not_started; otherwise null. Above 128 it is either a signal's 128 plus its " +
-              "number or the program's own exit, where wait_for_exit reports a signal as " +
-              "signal with exitStatus null.",
+            "The exit status once it completed, or 127 or 126 when not_started; null for " +
+              "a program a signal ended (see signal) or one still running.",
           ),
         lostEnd: z
           .boolean()
@@ -412,8 +410,8 @@ export function registerPrograms(mcp: ToolRegistrar, context: ToolContext): Star
           .string()
           .nullable()
           .describe(
-            'The signal that ended the program and its sh, such as "SIGKILL"; otherwise null. ' +
-              "A program a signal ended alone reports 128 plus its number in exitStatus.",
+            'The signal that ended the program, such as "SIGTERM"; otherwise null. A ' +
+              "program that exits 130 on its own reads as SIGINT, as that status means.",
           ),
         text: z.string().describe("What it printed after cursor."),
       },

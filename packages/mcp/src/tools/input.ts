@@ -780,10 +780,8 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
           .int()
           .nullable()
           .describe(
-            "The status as $? reports it: above 128 it is either a signal's 128 plus its " +
-              "number or the program's own exit. Null when a signal ended its sh too (see " +
-              "signal) or the timeout ended it (outcome timed_out). wait_for_exit reports a " +
-              "signal as signal with exitStatus null instead.",
+            "The exit status; null when a signal ended the program (see signal) or the " +
+              "timeout ended it (outcome timed_out).",
           ),
         omittedBytes: z.number().int().describe("Output bytes omitted by the result ceiling."),
         outcome: z
@@ -824,8 +822,8 @@ export function registerInput(mcp: ToolRegistrar, context: ToolContext): void {
           .string()
           .nullable()
           .describe(
-            'The signal that ended the program and its sh, such as "SIGKILL"; otherwise ' +
-              "null. A program a signal ended alone exits 128 plus its number, as $? says.",
+            'The signal that ended the program, such as "SIGTERM"; otherwise null. A ' +
+              "program that exits 130 on its own reads as SIGINT, as that status means.",
           ),
         stderr: z
           .string()

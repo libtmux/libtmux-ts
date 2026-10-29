@@ -648,8 +648,7 @@ export function registerWait(mcp: ToolRegistrar, context: ToolContext): void {
           .nullable()
           .describe(
             "The exit status, as tmux read it from the pane's process: null when a signal " +
-              "ended it, with signal set, or when it has not exited. run_program's exitStatus " +
-              "shows a signal as 128 plus its number instead.",
+              "ended it, with signal set, or when it has not exited.",
           ),
         outcome: z
           .enum(["completed", "timed_out", "gone", "cancelled"])
