@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { rm } from "node:fs/promises";
 
 import * as errors from "../../src/errors.js";
 import { makeTestDirectory } from "../../src/_internal/test/testkit.js";
@@ -113,39 +114,43 @@ describe("error identity", () => {
    */
   test("survives a consumer bundling with identifier minification", async () => {
     const directory = await makeTestDirectory("ltx-minify-");
-    const entry = `${directory}/entry.ts`;
-    const bundle = `${directory}/bundle.js`;
-    const source = new URL("../../src/errors.ts", import.meta.url).pathname;
-    // Constructed instances, not the static declaration: a bundler leaves a
-    // string literal alone wherever it sits, so reading the declaration back
-    // would pass even where the constructor derives its identifier from
-    // `new.target.name`. What a consumer reads is `error.name`.
-    const cases = ERROR_CLASSES.map(([name]) => [name, argumentsFor(name)]);
-    await Bun.write(
-      entry,
-      `import * as errors from ${JSON.stringify(source)};\n` +
-        `const out = {};\n` +
-        `for (const [name, args] of ${JSON.stringify(cases)}) {\n` +
-        `  const error = new errors[name](...args);\n` +
-        `  out[name] = [error.name, error.code];\n` +
-        `}\n` +
-        `console.log(JSON.stringify(out));\n`,
-    );
-    const built = await Bun.build({
-      entrypoints: [entry],
-      minify: true,
-      target: "bun",
-      outdir: directory,
-      naming: "bundle.js",
-    });
-    expect(built.success).toBe(true);
+    try {
+      const entry = `${directory}/entry.ts`;
+      const bundle = `${directory}/bundle.js`;
+      const source = new URL("../../src/errors.ts", import.meta.url).pathname;
+      // Constructed instances, not the static declaration: a bundler leaves a
+      // string literal alone wherever it sits, so reading the declaration back
+      // would pass even where the constructor derives its identifier from
+      // `new.target.name`. What a consumer reads is `error.name`.
+      const cases = ERROR_CLASSES.map(([name]) => [name, argumentsFor(name)]);
+      await Bun.write(
+        entry,
+        `import * as errors from ${JSON.stringify(source)};\n` +
+          `const out = {};\n` +
+          `for (const [name, args] of ${JSON.stringify(cases)}) {\n` +
+          `  const error = new errors[name](...args);\n` +
+          `  out[name] = [error.name, error.code];\n` +
+          `}\n` +
+          `console.log(JSON.stringify(out));\n`,
+      );
+      const built = await Bun.build({
+        entrypoints: [entry],
+        minify: true,
+        target: "bun",
+        outdir: directory,
+        naming: "bundle.js",
+      });
+      expect(built.success).toBe(true);
 
-    const run = Bun.spawnSync({ cmd: [process.execPath, bundle] });
-    expect(run.exitCode, run.stderr.toString()).toBe(0);
-    const reported: Record<string, [string, string]> = JSON.parse(run.stdout.toString());
+      const run = Bun.spawnSync({ cmd: [process.execPath, bundle] });
+      expect(run.exitCode, run.stderr.toString()).toBe(0);
+      const reported: Record<string, [string, string]> = JSON.parse(run.stdout.toString());
 
-    for (const [name] of ERROR_CLASSES) {
-      expect(reported[name], `${name} after --minify`).toEqual([name, name]);
+      for (const [name] of ERROR_CLASSES) {
+        expect(reported[name], `${name} after --minify`).toEqual([name, name]);
+      }
+    } finally {
+      await rm(directory, { force: true, recursive: true });
     }
   }, 30_000);
 });
