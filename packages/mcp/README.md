@@ -568,6 +568,9 @@ try {
   or `signal`, `not_started` when it never ran, with the shell's 127 or 126,
   `expired` at its lifetime, `stopped` by `stop_program`, or
   `gone`. A program a signal ended reports `signal`, with `exitStatus` null.
+- Every read after the end reports `outcome` and the status, so an output too
+  long for one result says how the program ended on its first page, and its
+  status line reads `more output after cursor N` until `ended` turns true.
 - `outputCut` turns true once the copy reaches its limit, while the program
   runs on, and `lostEnd` when tmux closed the pane before reading the end.
 - A program's lifetime is `lifetimeMs` on `start_program`, capped by the server

@@ -333,7 +333,9 @@ missing: either flag makes it false, as does a stop or the lifetime ending the
 program before its output was read to the end. `outcome` is decided
 by how the program ended before its status is read: `expired` for one its
 lifetime ended and `stopped` for one `stop_program` ended, whose SIGTERM can
-also leave a status.
+also leave a status. It, `exitStatus` and `signal` come with every read once
+the copy has ended, a page that stops short of the end included, so `running`
+means the program still runs.
 
 No later call owns cleanup:
 
