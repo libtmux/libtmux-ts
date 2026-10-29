@@ -308,13 +308,12 @@ function framedScriptName(id: string): string {
  *
  * The trailing `rm -rf` removes the file and its directory together, and
  * runs only once the sourced group exits — appended outside `frame()`'s own
- * subshell, not inside it — so a command that outlives this call's deadline
- * keeps its directory until the run genuinely finishes. A directory orphaned
- * by a hard crash outlives this server, bounded the same way libtmux-go's
- * is: by the OS's own temp-directory hygiene, not by anything this process
- * can guarantee once it no longer exists to run a defer. The pane dying mid-run
- * leaves the same residue for the same reason: the trailer never runs because
- * nothing ever sources it.
+ * subshell, not inside it. A call that returns first, once the shell holds the
+ * script open, or that finds the pane gone, removes the directory itself: a
+ * pane that dies never runs the trailer. A directory orphaned by a hard crash
+ * outlives this server, bounded the same way libtmux-go's is: by the OS's own
+ * temp-directory hygiene, not by anything this process can guarantee once it
+ * no longer exists to run a defer.
  */
 async function deliverFramedScript(
   context: ToolContext,
@@ -400,6 +399,8 @@ export async function runFramedCommand(
   let commandStarted = false;
   let scriptDirectory: string | undefined;
   let retypedInline = false;
+  // Whether the shell has started the script, and so holds it open.
+  let started = false;
   let askedAlive = Date.now();
   let usedFallback = tail === undefined;
   const dispatchPane = beforeDispatch === undefined ? pane : await beforeDispatch();
@@ -439,6 +440,7 @@ export async function runFramedCommand(
         tail = undefined;
       }
     }
+    started ||= stream.includes(`${id}_S`);
     const found = parseFramedOutput(stream, id);
     if (found !== undefined) {
       return {
@@ -504,7 +506,13 @@ export async function runFramedCommand(
   }
   const cancelled = isCancelled(signal);
   if (!commandStarted) return beforeStartResult(budget, cancelled ? "cancelled" : "timed_out");
+  const removeScript = async (): Promise<void> => {
+    if (scriptDirectory !== undefined) {
+      await rm(scriptDirectory, { force: true, recursive: true }).catch(() => undefined);
+    }
+  };
   if (cancelled) {
+    if (started) await removeScript();
     return {
       commandStarted: true,
       effectiveTimeoutMs: budget,
@@ -535,6 +543,7 @@ export async function runFramedCommand(
   // reporting timed_out for it says the command may yet finish.
   const state = await capturedPaneState(context, pane.id, authority);
   const alive = state !== "gone";
+  if (started || startAt >= 0 || !alive) await removeScript();
   return {
     commandStarted: true,
     effectiveTimeoutMs: budget,
