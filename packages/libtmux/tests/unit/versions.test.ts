@@ -195,7 +195,7 @@ describe("core version floor", () => {
     expect(releaseAtLeast("3.10", "3.9")).toBe(true);
   });
 
-  test("lets 3.8-rc2 and next-3.8 reach 3.7 and keeps next-3.7 and 3.7-rc2 below it", () => {
+  test("lets a later candidate and `next-X.Y` reach 3.7 and keeps a 3.7 candidate and `next-3.7` below it", () => {
     expect(releaseAtLeast("3.8-rc2", "3.7")).toBe(true);
     expect(releaseAtLeast("next-3.8", "3.7")).toBe(true);
     expect(releaseAtLeast("next-3.7", "3.7")).toBe(false);

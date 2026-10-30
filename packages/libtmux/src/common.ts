@@ -251,8 +251,9 @@ export const MINIMUM_TMUX: "3.3a" = MINIMUM;
  * Refuse a version report below {@link MINIMUM_TMUX}.
  *
  * Reports rank as tmux ranks them: `3.3` is below `3.3a`, and a development
- * build ranks below the release it names, so `next-3.4` passes and `3.3a-rc`
- * does not. A report libtmux cannot place, such as `master`, is refused.
+ * build ranks below the release it names, so `next-3.4` passes and a 3.3
+ * candidate does not. A report libtmux cannot place, such as `master`, is
+ * refused.
  *
  * ```ts
  * assertSupportedTmux("3.3a");

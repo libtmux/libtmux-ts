@@ -94,10 +94,10 @@ describe("tmux versions", () => {
   });
 
   /**
-   * tmux ships a candidate as `3.8-rc`, and the version probe runs before the
+   * tmux ships a candidate as `X.Y-rc`, and the version probe runs before the
    * first command, so a candidate has to parse. It ranks below the release it
    * names, like a `next-X.Y` build below its candidates, so a gate that asks
-   * for a feature of 3.4 refuses `3.4-rc`.
+   * for a feature of 3.4 refuses a 3.4 candidate.
    */
   test("ranks a release candidate below the release it precedes", () => {
     for (const raw of ["3.8-rc", "3.8-rc1"]) {
