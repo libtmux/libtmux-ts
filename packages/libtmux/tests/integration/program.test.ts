@@ -1,9 +1,10 @@
 import { spawn, spawnSync } from "node:child_process";
-import { access, chmod, mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { access, chmod, mkdir, readdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { describe, expect, test } from "bun:test";
+import { processExists } from "../support/converge.js";
 import { tmuxReaches } from "../support/tmux_release.js";
 
 import { leaseTimer } from "../../src/_internal/operations/program_lease.js";
@@ -62,15 +63,6 @@ async function withServer(
     );
   } finally {
     if (done) await rm(parent, { force: true, recursive: true });
-  }
-}
-
-function running(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
   }
 }
 
@@ -402,6 +394,23 @@ describe("program runs", () => {
         await expect(server.run(["true"], { environment: { "A=B": "x" } })).rejects.toBeInstanceOf(
           TypeError,
         );
+        // A caller without types can pass anything.
+        const loose = server as unknown as {
+          run(argv: unknown, options?: unknown): Promise<unknown>;
+          spawn(argv: unknown, options?: unknown): Promise<unknown>;
+        };
+        await expect(loose.run(["echo", 1])).rejects.toThrow(
+          new TypeError("argv[1] must be a string, not number"),
+        );
+        await expect(loose.spawn([null])).rejects.toThrow(
+          new TypeError("argv[0] must be a string, not null"),
+        );
+        await expect(loose.run("echo hi")).rejects.toThrow(
+          new TypeError("argv must be an array of strings"),
+        );
+        await expect(loose.run(["true"], { startDirectory: 5 })).rejects.toThrow(
+          new TypeError("startDirectory must be a string, not number"),
+        );
         expect(await programSessions(server)).toBe(0);
       });
     },
@@ -516,9 +525,9 @@ describe("program runs", () => {
         }
         expect(shown).toBe("ready");
         const pid = await panePid(server, program.pane.id);
-        expect(running(pid)).toBe(true);
+        expect(processExists(pid)).toBe(true);
         await program.kill();
-        expect(running(pid)).toBe(false);
+        expect(processExists(pid)).toBe(false);
 
         const result = await server.run(stubborn, { timeoutMs: 2_000 });
         expect(result).toMatchObject({ output: "ready", timedOut: true });
@@ -607,6 +616,63 @@ describe("program runs", () => {
           expect((await cold.run(["sort"], { input: "b\na\n" })).output).toBe("a\nb");
         } finally {
           if (await cold.isAlive()) await cold.kill();
+        }
+      });
+    },
+    40_000,
+  );
+
+  testProgram(
+    "a run outlives destroy-unattached, which removes a detached session as its client goes",
+    async () => {
+      await withServer(async (_server, directory, fixture) => {
+        const configFile = join(directory, "destroy-unattached.conf");
+        await writeFile(configFile, "set -g destroy-unattached on\nset -g exit-empty off\n");
+        const strict = new Server({
+          configFile,
+          environment: fixture.controllerEnvironment,
+          socketPath: join(directory, "strict"),
+          tmuxBin: fixture.tmuxExecutable,
+        });
+        try {
+          expect((await strict.run(["echo", "hi"])).output).toBe("hi");
+          await using program = await strict.spawn(["sh", "-c", "sleep 0.5; echo later"]);
+          expect(await program.wait({ timeoutMs: 10_000 })).toMatchObject({ exitCode: 0 });
+          expect(await program.output()).toBe("later");
+          // The option still holds for every session but the program's own.
+          await strict.cmd("new-session", ["-d", "-s", "person"]);
+          expect(await strict.hasSession("person")).toBe(false);
+        } finally {
+          if (await strict.isAlive()) await strict.kill();
+        }
+      });
+    },
+    40_000,
+  );
+
+  testProgram(
+    "a client whose locale is not UTF-8 reads tmux's answers whole",
+    async () => {
+      await withServer(async (_server, directory, fixture) => {
+        // tmux prints "_" for a tab or an "é" to a client it does not take for UTF-8.
+        const environment = Object.fromEntries(
+          Object.entries(fixture.controllerEnvironment).filter(
+            ([name]) => !["LANG", "LC_ALL", "LC_CTYPE", "TMUX"].includes(name),
+          ),
+        );
+        const plain = new Server({
+          configFile: "/dev/null",
+          environment,
+          socketPath: join(directory, "plain"),
+          tmuxBin: fixture.tmuxExecutable,
+        });
+        try {
+          await plain.newSession({ name: "café" });
+          expect((await plain.snapshot()).sessions.one({}).name).toBe("café");
+          const run = await plain.run(["sh", "-c", "echo hi; exit 3"]);
+          expect([run.output, run.exitCode]).toEqual(["hi", 3]);
+        } finally {
+          if (await plain.isAlive()) await plain.kill();
         }
       });
     },
@@ -868,7 +934,7 @@ describe("program runs", () => {
         }
         expect(
           await eventually(
-            async () => running(pid),
+            async () => processExists(pid),
             (alive) => !alive,
             5000,
           ),
@@ -906,7 +972,7 @@ describe("program runs", () => {
         }
         await server.cmd("set-option", ["-p", "-t", program.pane.id, "@libtmux-lease", "2"]);
         await new Promise((resolve) => setTimeout(resolve, 1000));
-        expect(running(await panePid(server, program.pane.id))).toBe(true);
+        expect(processExists(await panePid(server, program.pane.id))).toBe(true);
       });
     },
     40_000,
@@ -940,14 +1006,14 @@ describe("program runs", () => {
         await writeFile(gate, "");
         await program.wait({ timeoutMs: 10_000 });
         const child = Number(await program.output());
-        expect(running(child)).toBe(true);
+        expect(processExists(child)).toBe(true);
         try {
           // Past the timer, which leaves nothing to see for a dead pane.
           const fired = queued + 5_000 - Date.now();
           await new Promise((resolve) => setTimeout(resolve, Math.max(0, fired)));
-          expect(running(child)).toBe(true);
+          expect(processExists(child)).toBe(true);
         } finally {
-          if (running(child)) process.kill(child, "SIGKILL");
+          if (processExists(child)) process.kill(child, "SIGKILL");
           await server.cmd("kill-session", ["-t", `=${program.sessionName}`]);
         }
       });
@@ -993,7 +1059,7 @@ setInterval(() => undefined, 1000);`,
             5000,
           ),
         ).toBe(false);
-        expect(running(pid)).toBe(false);
+        expect(processExists(pid)).toBe(false);
         expect(
           await eventually(
             () => gone(files),
@@ -1119,12 +1185,12 @@ setInterval(() => undefined, 1000);`,
         await server.cmd("kill-session", ["-t", `=${program.sessionName}`]);
         expect(
           await eventually(
-            async () => running(child),
+            async () => processExists(child),
             (alive) => !alive,
             5000,
           ),
         ).toBe(false);
-        expect(running(sh)).toBe(false);
+        expect(processExists(sh)).toBe(false);
       });
     },
     40_000,
@@ -1199,7 +1265,7 @@ setInterval(() => undefined, 1000);`,
         expect(await windows()).toBe(2);
         await caller.kill();
         expect(await eventually(windows, (count) => count === 1, 5000)).toBe(1);
-        expect(running(pid)).toBe(false);
+        expect(processExists(pid)).toBe(false);
         expect(await server.hasSession("person")).toBe(true);
       });
     },
@@ -1376,6 +1442,137 @@ setInterval(() => undefined, 1000);`,
         let whole = "";
         for await (const chunk of fits.stream()) whole += chunk;
         expect(whole).toBe("12345");
+      });
+    },
+    40_000,
+  );
+
+  testProgram(
+    "a stream paused across a kill still delivers what was written before it",
+    async () => {
+      await withServer(async (server) => {
+        const program = await server.spawn(
+          ["sh", "-c", "echo one; sleep 0.2; echo two; sleep 0.2; echo three; exec sleep 30"],
+          { stream: true },
+        );
+        const stream = program.stream();
+        let text = String((await stream.next()).value);
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        await program.kill();
+        const ended = await (async () => {
+          for await (const chunk of stream) text += chunk;
+        })().catch((error: unknown) => error);
+        expect(text.replaceAll("\r", "")).toBe("one\ntwo\nthree\n");
+        expect(ended).toBeInstanceOf(LibTmuxError);
+      });
+    },
+    40_000,
+  );
+
+  testProgram(
+    "a stream its reader drops closes its copy once collected",
+    async () => {
+      if (typeof Bun === "undefined") return;
+      await withServer(async (_server, _directory, fixture) => {
+        const index = fileURLToPath(new URL("../../src/index.ts", import.meta.url));
+        // Bun raises when it collects a file left open; the dropped stream held one.
+        const script = `
+          import { readdirSync, readlinkSync } from "node:fs";
+          const { Server } = await import(${JSON.stringify(index)});
+          const server = new Server({ socketPath: ${JSON.stringify(fixture.socketPath)} });
+          await (async () => {
+            await using program = await server.spawn(["sh", "-c", "echo 1; exec sleep 30"], {
+              stream: true,
+            });
+            await program.stream().next();
+          })();
+          for (let round = 0; round < 5; round += 1) {
+            Bun.gc(true);
+            await new Promise((resolve) => setTimeout(resolve, 50));
+          }
+          const open = readdirSync("/proc/self/fd").filter((fd) => {
+            try { return readlinkSync("/proc/self/fd/" + fd).includes("ltx-program-"); } catch { return false; }
+          });
+          console.log("open copies:", open.length);
+        `;
+        const child = spawnSync("bun", ["-e", script], {
+          encoding: "utf8",
+          env: { ...process.env, ...fixture.controllerEnvironment },
+        });
+        expect(child.stderr).not.toContain("garbage collection");
+        expect(child.stdout).toContain("open copies: 0");
+        expect(child.status).toBe(0);
+      });
+    },
+    40_000,
+  );
+
+  testProgram(
+    "a stream its reader drops while its program runs closes its copy once collected",
+    async () => {
+      if (typeof Bun === "undefined") return;
+      await withServer(async (_server, _directory, fixture) => {
+        const index = fileURLToPath(new URL("../../src/index.ts", import.meta.url));
+        // The program outlives the dropped stream, so its exit cannot be what closes the copy.
+        const script = `
+          import { readdirSync, readlinkSync } from "node:fs";
+          const { Server } = await import(${JSON.stringify(index)});
+          const server = new Server({ socketPath: ${JSON.stringify(fixture.socketPath)} });
+          const program = await server.spawn(["sh", "-c", "echo 1; exec sleep 30"], {
+            stream: true,
+          });
+          await (async () => {
+            await program.stream().next();
+          })();
+          for (let round = 0; round < 5; round += 1) {
+            Bun.gc(true);
+            await new Promise((resolve) => setTimeout(resolve, 50));
+          }
+          const open = readdirSync("/proc/self/fd").filter((fd) => {
+            try { return readlinkSync("/proc/self/fd/" + fd).includes("ltx-program-"); } catch { return false; }
+          });
+          console.log("open copies:", open.length);
+          await program.kill();
+        `;
+        const child = spawnSync("bun", ["-e", script], {
+          encoding: "utf8",
+          env: { ...process.env, ...fixture.controllerEnvironment },
+        });
+        expect(child.stderr).not.toContain("garbage collection");
+        expect(child.stdout).toContain("open copies: 0");
+        expect(child.status).toBe(0);
+      });
+    },
+    40_000,
+  );
+
+  testProgram(
+    "a capped stream leaves nothing in the server's TMPDIR",
+    async () => {
+      await withServer(async (_server, directory, fixture) => {
+        // uutils' stdbuf makes a directory under TMPDIR on every run and never removes it.
+        // A pipe-pane job sees the server's own environment, so the server starts with it.
+        const scratch = join(directory, "tmpdir");
+        await mkdir(scratch);
+        const server = new Server({
+          configFile: "/dev/null",
+          environment: { ...fixture.controllerEnvironment, TMPDIR: scratch },
+          socketPath: join(directory, "capped"),
+          tmuxBin: fixture.tmuxExecutable,
+        });
+        try {
+          await server.newSession({ name: "keep" });
+          await using program = await server.spawn(["printf", "12345"], {
+            maxStreamBytes: 1024,
+            stream: true,
+          });
+          let text = "";
+          for await (const chunk of program.stream()) text += chunk;
+          expect(text).toBe("12345");
+          expect(await readdir(scratch)).toEqual([]);
+        } finally {
+          if (await server.isAlive()) await server.kill();
+        }
       });
     },
     40_000,

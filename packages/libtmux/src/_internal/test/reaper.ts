@@ -230,6 +230,17 @@ def matches(pid, expected_identity, expected_comm, expected_executable, expected
         and launch_matches(pid, expected_argv, generation_name, generation_value)
     )
 
+def refuse(pid, expected_identity):
+    # An exited, unreaped daemon keeps its stat line, start time included, while
+    # its exe, cmdline and environ go: that is the daemon gone, not another one.
+    with open(f"/proc/{pid}/stat", encoding="utf-8") as stream:
+        text = stream.read()
+    if text[text.rfind(") ") + 2:].split()[0] in ("Z", "X") and identity(pid) == expected_identity:
+        print(json.dumps({"status": "gone"}))
+        raise SystemExit(0)
+    print(json.dumps({"status": "identity-mismatch"}))
+    raise SystemExit(3)
+
 pid = int(sys.argv[1])
 expected = sys.argv[2]
 expected_comm = sys.argv[3]
@@ -239,13 +250,11 @@ generation_name = sys.argv[6]
 generation_value = sys.argv[7]
 try:
     if not matches(pid, expected, expected_comm, expected_executable, expected_argv, generation_name, generation_value):
-        print(json.dumps({"status": "identity-mismatch"}))
-        raise SystemExit(3)
+        refuse(pid, expected)
     descriptor = os.pidfd_open(pid, 0)
     try:
         if not matches(pid, expected, expected_comm, expected_executable, expected_argv, generation_name, generation_value):
-            print(json.dumps({"status": "identity-mismatch"}))
-            raise SystemExit(3)
+            refuse(pid, expected)
         signal.pidfd_send_signal(descriptor, signal.SIGTERM)
         poller = select.poll()
         poller.register(descriptor, select.POLLIN)
@@ -261,8 +270,7 @@ try:
                 ):
                     print(json.dumps({"status": "gone"}))
                     raise SystemExit(0)
-                print(json.dumps({"status": "identity-mismatch"}))
-                raise SystemExit(3)
+                refuse(pid, expected)
             signal.pidfd_send_signal(descriptor, signal.SIGKILL)
         if not poller.poll(2000):
             print(json.dumps({"status": "still-live"}))

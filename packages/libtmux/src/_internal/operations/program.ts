@@ -15,7 +15,7 @@ import type { DaemonGuard } from "../../engine.js";
 import type { Program } from "../../program.js";
 import type { AbortLike, ProgramExit, ProgramWaitOptions } from "../../types.js";
 import type { RuntimeContext } from "../runtime/context.js";
-import { isColdEndpoint, runCommand, runCommands, type PinnedCommandOptions } from "./command.js";
+import { isServerGone, runCommand, runCommands, type PinnedCommandOptions } from "./command.js";
 import type { Lease } from "./program_lease.js";
 
 /** The pane's first process: it exits at once and stays, so the pane id exists before the program. */
@@ -183,6 +183,15 @@ export async function sleep(ms: number, wake?: AbortSignal): Promise<void> {
   );
 }
 
+/** A pane that is gone, named as the caller knows it. */
+export function paneGone(paneId: string): TmuxObjectNotFoundError {
+  return new TmuxObjectNotFoundError({
+    message: `${paneId}: the pane is gone`,
+    obj_id: paneId,
+    obj_key: "pane_id",
+  });
+}
+
 /**
  * Read `formats` from a pane that must exist: `display-message` on a gone
  * target expands against nothing and succeeds. The last value keeps its tabs.
@@ -193,23 +202,16 @@ export async function readPane(
   formats: readonly string[],
   options: PinnedCommandOptions = {},
 ): Promise<string[]> {
-  const missing = (): TmuxObjectNotFoundError =>
-    new TmuxObjectNotFoundError({
-      list_cmd: "display-message",
-      list_extra_args: ["-t", paneId],
-      obj_id: paneId,
-      obj_key: "pane_id",
-    });
   const [line = ""] = await runCommand(
     runtime,
     ["display-message", "-p", "-t", paneId, ["#{pane_id}", ...formats].join("\t")],
     options,
   ).catch((error: unknown) => {
     // A server that exited with its last session took the pane with it.
-    throw isColdEndpoint(error) ? missing() : error;
+    throw isServerGone(error) ? paneGone(paneId) : error;
   });
   const [id, ...values] = line.split("\t");
-  if (id !== paneId) throw missing();
+  if (id !== paneId) throw paneGone(paneId);
   const last = formats.length - 1;
   return [...values.slice(0, last), values.slice(last).join("\t")];
 }

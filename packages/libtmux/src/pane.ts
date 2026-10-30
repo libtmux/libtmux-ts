@@ -364,8 +364,9 @@ export class Pane {
    * {@link WaitTimeoutError} and an abort throws {@link TmuxTransportError} of
    * kind `cancelled`; with neither it waits as long as the program runs. A
    * pane killed from outside, which fires no event, raises
-   * {@link ObjectNotFoundError} within about two seconds: one to notice, and
-   * one for the event a closing pane fires to arrive.
+   * {@link ObjectNotFoundError} within about two seconds of the kill. A read every
+   * second notices the pane gone, and the wait gives the event a closing pane
+   * fires up to a second to arrive.
    *
    * Requires tmux 3.8 or newer.
    *
@@ -407,7 +408,9 @@ export class Pane {
 
   /**
    * Resolve with the first line of this pane's screen that `pattern` matches:
-   * a substring, or a regular expression tested against each line.
+   * a substring, or a regular expression tested against each line. A line the
+   * pane's width wrapped is one line here, matched and returned whole, so the
+   * result can be wider than the pane.
    *
    * The screen is read at once, then again each time tmux reports that the
    * pane printed, at most every 50 ms, and once a second besides. Use it to
@@ -415,7 +418,8 @@ export class Pane {
    * typing into it. Giving up leaves the pane as it was: a timeout throws
    * {@link WaitTimeoutError} and an abort throws {@link TmuxTransportError}
    * of kind `cancelled`. A pane whose program has exited without the text
-   * rejects with {@link LibTmuxError}.
+   * rejects with {@link LibTmuxError}, and a pane that is gone, or goes during
+   * the wait, with {@link ObjectNotFoundError}.
    *
    * Requires tmux 3.8 or newer.
    *

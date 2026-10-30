@@ -2,6 +2,8 @@ import { deepStrictEqual, strictEqual } from "node:assert";
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { link, lstat, readFile, unlink } from "node:fs/promises";
+import { dirname, join } from "node:path";
+import { isDeepStrictEqual } from "node:util";
 
 import { readDaemonIdentity, resolveControllerIdentity } from "../../src/_internal/test/testkit.js";
 import { closeChildWithin, waitForProcessExit } from "./converge.js";
@@ -70,6 +72,12 @@ async function terminateCapturedTmux(captured: CapturedTmuxCleanup): Promise<voi
   const stdoutText = Buffer.concat(stdout).toString("utf8");
   const stderrText = Buffer.concat(stderr).toString("utf8");
   if (closed.code !== 0 || stdoutText === `${mismatch}\n`) {
+    // The test still fails, but the daemon it owns must not outlive it: nothing
+    // else knows it, and a refused socket leaves no other way to reach it.
+    if (isDeepStrictEqual(await readDaemonIdentity(captured.daemon.pid), captured.daemon)) {
+      process.kill(captured.daemon.pid, "SIGKILL");
+      await waitForProcessExit(captured.daemon.pid);
+    }
     throw new Error(`test-owned tmux cleanup refused: ${stderrText || stdoutText}`);
   }
   await waitForProcessExit(captured.daemon.pid);
@@ -118,7 +126,8 @@ async function launchExactTmux(
 }
 
 async function killExactTmux(socketPath: string, pid: number): Promise<void> {
-  const recoverySocket = `${socketPath}.test-cleanup-${randomUUID()}`;
+  // A short name beside the socket keeps the link under the 107 bytes tmux connects to.
+  const recoverySocket = join(dirname(socketPath), `r-${randomUUID().slice(0, 8)}`);
   const captured = await captureTmuxCleanup(pid, socketPath, recoverySocket);
   await terminateCapturedTmux(captured);
   const original = await lstat(socketPath, { bigint: true }).catch(

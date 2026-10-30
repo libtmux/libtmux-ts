@@ -1364,6 +1364,10 @@ Requires tmux 3.8 or newer, and raises `VersionTooLowError`
 below it. Earlier releases have no exit event to wait on, and through
 3.7c a dead pane never closes the pipe `stream` reads.
 
+@throws TypeError, before tmux sees anything, for an `argv` that is not a
+non-empty array of strings, a `startDirectory` that is not a string, or a
+count out of its range or options that do not go together.
+
 ```ts
 await using cat = await server.spawn(["cat"]);
 await cat.pane.sendKeys("hello");
@@ -1395,6 +1399,10 @@ Should this process die first, tmux itself ends the program and removes
 its pane within `orphanAfterMs`, a minute by default.
 
 Requires tmux 3.8 or newer, like [`Server.spawn`](#serverspawn).
+
+@throws TypeError, before tmux sees anything, for an `argv` that is not a
+non-empty array of strings, a `startDirectory` that is not a string, or a
+count out of its range or options that do not go together.
 
 ```ts
 const result = await server.run(["git", "--version"]);
@@ -2704,8 +2712,9 @@ Giving up leaves the program running: a timeout throws
 `WaitTimeoutError` and an abort throws `TmuxTransportError` of
 kind `cancelled`; with neither it waits as long as the program runs. A
 pane killed from outside, which fires no event, raises
-`ObjectNotFoundError` within about two seconds: one to notice, and
-one for the event a closing pane fires to arrive.
+`ObjectNotFoundError` within about two seconds of the kill. A read every
+second notices the pane gone, and the wait gives the event a closing pane
+fires up to a second to arrive.
 
 Requires tmux 3.8 or newer.
 
@@ -2749,7 +2758,9 @@ waitForText(pattern: string | RegExp, options?: ProgramWaitOptions): Promise<str
 ```
 
 Resolve with the first line of this pane's screen that `pattern` matches:
-a substring, or a regular expression tested against each line.
+a substring, or a regular expression tested against each line. A line the
+pane's width wrapped is one line here, matched and returned whole, so the
+result can be wider than the pane.
 
 The screen is read at once, then again each time tmux reports that the
 pane printed, at most every 50 ms, and once a second besides. Use it to
@@ -2757,7 +2768,8 @@ wait for a prompt, or for a full-screen program's first screen before
 typing into it. Giving up leaves the pane as it was: a timeout throws
 `WaitTimeoutError` and an abort throws `TmuxTransportError`
 of kind `cancelled`. A pane whose program has exited without the text
-rejects with `LibTmuxError`.
+rejects with `LibTmuxError`, and a pane that is gone, or goes during
+the wait, with `ObjectNotFoundError`.
 
 Requires tmux 3.8 or newer.
 
@@ -3199,9 +3211,8 @@ with `ProgramStartError`, and its stream ends with it.
 Giving up leaves the program running: a timeout throws
 `WaitTimeoutError` and an abort throws `TmuxTransportError`
 of kind `cancelled`; with neither it waits as long as the program runs. A
-program whose pane is killed from outside raises
-`ObjectNotFoundError` at the next read of its pane, within about a
-second.
+pane killed from outside fires no event, so the wait reads its pane every
+second and raises `ObjectNotFoundError` within about a second of the kill.
 
 ```ts
 await using program = await server.spawn(["sh", "-c", "exit 3"]);

@@ -4,6 +4,7 @@ import type { ConnectionAlias, DaemonEpoch } from "../../common.js";
 import type { DaemonGuard } from "../../engine.js";
 import { LibTmuxError, TmuxTransportError } from "../../errors.js";
 import type { AbortLike } from "../../types.js";
+import { connectionArguments } from "../operations/request.js";
 import {
   daemonProbe,
   interpretProbe,
@@ -166,15 +167,10 @@ export class LazyCapabilityBinding implements CapabilityBinding {
   }
 
   async #probe(daemonEpoch: DaemonEpoch, signal: AbortLike): Promise<TmuxCapabilities> {
-    const args = [];
-    if (this.#connection.colors === 256) args.push("-2");
-    if (this.#connection.configFile !== undefined) args.push(`-f${this.#connection.configFile}`);
-    if (this.#connection.socketName !== undefined) args.push(`-L${this.#connection.socketName}`);
-    if (this.#connection.socketPath !== undefined) args.push(`-S${this.#connection.socketPath}`);
     const { marker, request } = daemonProbe({
       environment: this.#connection.environment,
       executable: this.#connection.executable,
-      globalArgs: args,
+      globalArgs: connectionArguments(this.#connection),
       signal,
       // The probe is the first command a server runs, so an unbounded one
       // hangs every caller before any of their own deadlines apply.

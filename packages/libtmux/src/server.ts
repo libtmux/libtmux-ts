@@ -1472,6 +1472,10 @@ export class Server {
    * below it. Earlier releases have no exit event to wait on, and through
    * 3.7c a dead pane never closes the pipe `stream` reads.
    *
+   * @throws TypeError, before tmux sees anything, for an `argv` that is not a
+   * non-empty array of strings, a `startDirectory` that is not a string, or a
+   * count out of its range or options that do not go together.
+   *
    * ```ts
    * await using cat = await server.spawn(["cat"]);
    * await cat.pane.sendKeys("hello");
@@ -1510,6 +1514,10 @@ export class Server {
    * its pane within `orphanAfterMs`, a minute by default.
    *
    * Requires tmux 3.8 or newer, like {@link Server.spawn}.
+   *
+   * @throws TypeError, before tmux sees anything, for an `argv` that is not a
+   * non-empty array of strings, a `startDirectory` that is not a string, or a
+   * count out of its range or options that do not go together.
    *
    * ```ts
    * const result = await server.run(["git", "--version"]);

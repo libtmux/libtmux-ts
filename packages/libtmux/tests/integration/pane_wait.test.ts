@@ -137,10 +137,27 @@ describe("pane waits", () => {
     async () => {
       await withServer(async (server) => {
         const pane = await paneRunning(server, "killed", "sleep 30");
-        const waiting = pane.waitForExit({ timeoutMs: 20_000 });
+        const text = await paneRunning(server, "watched", "sleep 30");
+        const waiting = pane.waitForExit({ timeoutMs: 20_000 }).catch((error: unknown) => error);
+        const reading = text
+          .waitForText("never", { timeoutMs: 20_000 })
+          .catch((error: unknown) => error);
         await new Promise((resolve) => setTimeout(resolve, 300));
         await server.cmd("kill-pane", ["-t", pane.id]);
-        await expect(waiting).rejects.toBeInstanceOf(ObjectNotFoundError);
+        await server.cmd("kill-pane", ["-t", text.id]);
+        // Each wait names the pane in its message.
+        const gone = (target: Pane): ObjectNotFoundError =>
+          new ObjectNotFoundError({ message: `${target.id}: the pane is gone` });
+        for (const [target, error] of [
+          [pane, await waiting],
+          [text, await reading],
+          [text, await text.waitForText("never").catch((error: unknown) => error)],
+          [pane, await pane.waitForExit().catch((error: unknown) => error)],
+          [pane, await pane.waitForCommand().catch((error: unknown) => error)],
+        ] as const) {
+          expect(error).toBeInstanceOf(ObjectNotFoundError);
+          expect(error).toMatchObject({ message: gone(target).message });
+        }
       });
     },
     40_000,
@@ -181,6 +198,72 @@ describe("pane waits", () => {
   );
 
   testWait(
+    "a wait on its server's last pane reports the pane gone when the server goes with it",
+    async () => {
+      const directory = await makeTestDirectory("ltx-pane-wait-last-");
+      const lone = new Server({ configFile: "/dev/null", socketPath: join(directory, "s") });
+      try {
+        const pane = await paneRunning(lone, "only", "sleep 60");
+        const gone = { message: `${pane.id}: the pane is gone` };
+        const waiting = pane.waitForText("never", { timeoutMs: 20_000 }).catch((error) => error);
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        await lone.cmd("kill-pane", ["-t", pane.id]);
+        expect(await waiting).toBeInstanceOf(ObjectNotFoundError);
+        expect(await waiting).toMatchObject(gone);
+        for (const later of [
+          await pane.waitForText("never").catch((error: unknown) => error),
+          await pane.waitForExit().catch((error: unknown) => error),
+          await pane.waitForCommand().catch((error: unknown) => error),
+        ]) {
+          expect(later).toBeInstanceOf(ObjectNotFoundError);
+          expect(later).toMatchObject(gone);
+        }
+      } finally {
+        if (await lone.isAlive()) await lone.kill();
+        await rm(directory, { force: true, recursive: true });
+      }
+    },
+    40_000,
+  );
+
+  testWait(
+    "a wait whose server dies during a read reports the pane gone",
+    async () => {
+      const directory = await makeTestDirectory("ltx-pane-wait-died-");
+      const dieMidRead = async (kind: "Program.wait" | "waitForExit"): Promise<void> => {
+        const lone = new Server({ configFile: "/dev/null", socketPath: join(directory, kind) });
+        let paneId: string;
+        let waiting: Promise<unknown>;
+        if (kind === "waitForExit") {
+          const pane = await paneRunning(lone, "only", "sleep 60");
+          paneId = pane.id;
+          waiting = pane.waitForExit({ timeoutMs: 20_000 }).catch((error: unknown) => error);
+        } else {
+          const program = await lone.spawn(["sleep", "60"], { orphanAfterMs: null });
+          paneId = program.pane.id;
+          waiting = program.wait({ timeoutMs: 20_000 }).catch((error: unknown) => error);
+        }
+        const [pid] = await lone.cmd("display-message", ["-p", "#{pid}"]);
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        // Stopped, the server leaves the wait's next read connected and waiting.
+        process.kill(Number(pid), "SIGSTOP");
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+        process.kill(Number(pid), "SIGKILL");
+        const error = await waiting;
+        expect(error).toBeInstanceOf(ObjectNotFoundError);
+        expect(error).toMatchObject({ message: `${paneId}: the pane is gone` });
+      };
+      try {
+        await dieMidRead("waitForExit");
+        await dieMidRead("Program.wait");
+      } finally {
+        await rm(directory, { force: true, recursive: true });
+      }
+    },
+    40_000,
+  );
+
+  testWait(
     "a command wait on a pane killed from outside is reported missing",
     async () => {
       await withServer(async (server) => {
@@ -211,6 +294,16 @@ describe("pane waits", () => {
           "for n in 1 2 3 4 5 6 7 8; do echo line$n; sleep 0.1; done; sleep 30",
         );
         expect(await counting.waitForText("line8", { timeoutMs: 10_000 })).toBe("line8");
+        // A line wider than the pane wraps on screen and still matches, and returns, whole.
+        const wide = `${"a".repeat(30)}${"b".repeat(30)}tail`;
+        const narrow = await server.newSession({
+          name: "narrow",
+          shellCommand: `printf '%s\\n' ${wide}; sleep 30`,
+          width: 20,
+        });
+        const wrapped = narrow.activePane;
+        if (wrapped === undefined) throw new Error("a new session has a pane");
+        expect(await wrapped.waitForText(/a+b+tail/u, { timeoutMs: 10_000 })).toBe(wide);
       });
     },
     40_000,

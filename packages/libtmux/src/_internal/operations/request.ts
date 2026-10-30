@@ -12,7 +12,9 @@ import type {
 import { snapshotInvocationRequest, TmuxTransportError } from "../transport/types.js";
 
 export function connectionArguments(connection: TmuxConnection): string[] {
-  const args: string[] = [];
+  // Every answer is read as UTF-8, and tmux prints "_" for a tab or any
+  // non-ASCII character to a client whose locale does not name UTF-8.
+  const args: string[] = ["-u"];
   if (connection.colors === 256) args.push("-2");
   if (connection.configFile !== undefined) args.push(`-f${connection.configFile}`);
   if (connection.socketName !== undefined) args.push(`-L${connection.socketName}`);

@@ -135,6 +135,7 @@ describe("tmux capabilities", () => {
     expect(first.rawVersion).toBe("3.6a");
     expect(requests).toHaveLength(1);
     expect(flattenInvocation(requests[0]!)).toEqual([
+      "-u",
       "-S/tmp/capability.sock",
       "-N",
       "run-shell",

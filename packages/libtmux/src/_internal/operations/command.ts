@@ -209,3 +209,12 @@ export function isColdEndpoint(error: unknown): boolean {
     (reason.startsWith("error connecting to ") && reason.endsWith(" (No such file or directory)"))
   );
 }
+
+/** Whether a command failed because its daemon was gone, before it connected or after. */
+export function isServerGone(error: unknown): boolean {
+  return (
+    isColdEndpoint(error) ||
+    (error instanceof TmuxCommandError &&
+      error.stderr.join("\n").trim() === "server exited unexpectedly")
+  );
+}

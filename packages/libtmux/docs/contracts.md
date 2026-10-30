@@ -248,6 +248,11 @@ What a run does not do:
   as a dead pane, so its id exists before the program does.
 - `remain-on-exit` is set in the list that creates the session: set by a second
   invocation, it arrives after an instant program's pane is already gone.
+- `destroy-unattached` is turned off for that session in the same list. tmux
+  [checks it](https://github.com/tmux/tmux/blob/3.8/server-fn.c#L530) as each
+  client [goes](https://github.com/tmux/tmux/blob/3.8/server-client.c#L565), so
+  under `destroy-unattached on` the client that made the session would take it
+  with it. Every other session keeps the option.
 - The pane is respawned with `sh` and `argv` as its positional parameters, so
   `sh` does not parse them and runs `argv[0]` as a program name, `A=b`
   included, which `env` would read as an assignment.
@@ -341,7 +346,8 @@ bytes their own way.
 - A death counts only once tmux has the exit status: `pane_dead` turns 1 when
   the pty closes, which can come first.
 - The wait still reads the pane every second, because tmux fires no event for a
-  pane killed from outside.
+  pane killed from outside, so it raises `ObjectNotFoundError` within about a second
+  of such a kill.
 - The list ends in that wait, so it holds no slot of `maxInFlight` for the
   program's life; each live program costs one tmux client, its exit watch. With
   50 programs on 3.8a, each client held about 4 MiB, while the tmux server grew
@@ -473,7 +479,9 @@ bytes their own way.
 - The reader polls the copy every 25 ms for as long as it is read, one small
   read a poll for each stream, which needs no file watching. A capped copy runs
   `head -c` under `stdbuf -o0` where there is one, since GNU `head` holds its
-  writes to a file until it exits. `stream({ signal })` ends the stream, and
+  writes to a file until it exits. That `stdbuf` gets the run's own directory
+  as its `TMPDIR`: uutils' `stdbuf` leaves a directory there on every run.
+  `stream({ signal })` ends the stream, and
   the program runs on.
 
 ## Pane waits
@@ -494,8 +502,10 @@ pane, whoever started it, through tmux 3.8's events.
 - `-v` prints the payload of every event the waiter checked, matching or not,
   each as its keys in sorted order, so a key that does not sort after the one
   before it starts the next event, and the match is the last.
-- `kill-pane` fires neither event, so the wait reads the pane every second and
-  raises `ObjectNotFoundError` once it is gone.
+- `kill-pane` fires neither event, so the waits read the pane every second.
+  Once it is gone, `waitForExit` and `waitForCommand` give the event a closing
+  pane fires up to a second to arrive, then raise `ObjectNotFoundError`, within
+  about two seconds of the kill; `waitForText` raises at that read.
 - A command's end is `pane-command-finished`, which tmux fires on an OSC 133 `D`
   mark with the status in `command_status`; a mark without a status reports 0,
   and one tmux cannot read as 0 to 255 reports 255

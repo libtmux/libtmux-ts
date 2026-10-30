@@ -27,8 +27,9 @@ import {
   type LaunchAttemptCapability,
   type ReservationCapability,
 } from "./fixture_launch.js";
-import { reapFixture, retireFixtureGeneration } from "./reaper.js";
+import { reapFixture, retireFixtureGeneration, sweepStaleRunRoots } from "./reaper.js";
 import { readFixtureRecord, type FixtureRecord, type LaunchGeneration } from "./records.js";
+import { RUN_ROOT_ENV } from "./supervisor.js";
 
 export interface TestServerRequestSnapshot {
   readonly args: readonly string[];
@@ -370,6 +371,9 @@ async function launchFixtureGeneration(options: {
   return { daemonIdentity, observedSocketPath, record, sessionId };
 }
 
+/** Set once a run with no supervisor has swept, as the runners do before they start. */
+let sweptUnsupervised = false;
+
 export class TestServer {
   daemonIdentity: DaemonIdentity;
   readonly logicalSocketName: string;
@@ -428,6 +432,10 @@ export class TestServer {
   }
 
   static async create(options: TestServerOptions): Promise<TestServer> {
+    if (!sweptUnsupervised && process.env[RUN_ROOT_ENV] === undefined) {
+      sweptUnsupervised = true;
+      await sweepStaleRunRoots();
+    }
     const entry = snapshotEntry(options);
     const configuredController =
       entry.tmuxExecutable === undefined

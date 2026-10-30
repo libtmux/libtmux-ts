@@ -211,7 +211,7 @@ describe("request preparation and batching", () => {
       commands: [["display-message", ";", "hello world"]],
       environment: { TERM: "screen-256color" },
       executable: "/usr/bin/tmux",
-      globalArgs: ["-2", "-f/tmp/tmux.conf", "-S/tmp/tmux.sock"],
+      globalArgs: ["-u", "-2", "-f/tmp/tmux.conf", "-S/tmp/tmux.sock"],
     });
   });
 

@@ -10,13 +10,14 @@ import {
 import type { CommandWaitOptions, ProgramExit, ProgramWaitOptions } from "../../types.js";
 import type { RuntimeContext } from "../runtime/context.js";
 import { capabilitySince, hasCapability } from "../support/capabilities.js";
-import { runCommand, runCommands } from "./command.js";
+import { isServerGone, runCommand, runCommands } from "./command.js";
 import { sendKeys } from "./pane_io.js";
 import {
   BACKSTOP_MS,
   cancelled,
   drainChannel,
   isAborted,
+  paneGone,
   MAX_TIMER_MS,
   readPane,
   requireCount,
@@ -96,8 +97,11 @@ async function arm(
   try {
     await runCommand(runtime, ["wait-for", armed], { signal: giveUp.signal, timeoutMs: ARM_MS });
   } catch (error) {
-    if (failure !== undefined && !stop.aborted) throw failure;
-    if (!stop.aborted) throw error;
+    // A server that exited with the pane, its last, took the pane with it.
+    if (failure !== undefined && !stop.aborted) {
+      throw isServerGone(failure) ? paneGone(paneId) : failure;
+    }
+    if (!stop.aborted) throw isServerGone(error) ? paneGone(paneId) : error;
     // Cancelled: a list that signalled left the channel woken, which one more wait consumes.
     drainChannel(runtime, armed);
   }

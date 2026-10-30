@@ -115,14 +115,35 @@ export function streamProgram(
   if (files === undefined) {
     throw new TypeError("spawn the program with { stream: true } to stream its output");
   }
-  return readStream(program, state, files, signal);
+  const copy: Copy = { stop: new AbortController() };
+  const stream = readStream(program, state, files, signal, copy);
+  // Keyed on the generator, which only its reader holds: the exit wait keeps the
+  // generator's own scope alive for as long as the program runs.
+  abandoned.register(stream, copy, copy);
+  return stream;
 }
+
+/** What a dropped stream leaves to close: its exit wait, and its copy once open. */
+interface Copy {
+  readonly stop: AbortController;
+  handle?: Awaited<ReturnType<typeof open>>;
+}
+
+/**
+ * Closes the copy of a stream whose reader stopped reading and let it go: such a
+ * generator never reaches its `finally`, and Bun raises on collecting an open file.
+ */
+const abandoned = new FinalizationRegistry<Copy>((copy) => {
+  copy.stop.abort();
+  void copy.handle?.close().catch(() => undefined);
+});
 
 async function* readStream(
   program: Program,
   state: ProgramState,
   files: StreamFiles,
   signal: AbortLike | undefined,
+  copy: Copy,
 ): AsyncGenerator<string, void, undefined> {
   if (state.killing !== undefined) {
     throw new LibTmuxError("the program was killed, and its copied output with it");
@@ -137,8 +158,9 @@ async function* readStream(
     }
     throw error;
   }
+  copy.handle = handle;
   // Stopped when the consumer leaves early or cancels, so no wait outlives the loop.
-  const stop = new AbortController();
+  const { stop } = copy;
   const onAbort = (): void => stop.abort();
   signal?.addEventListener("abort", onAbort, { once: true });
   let ended = false;
@@ -208,6 +230,7 @@ async function* readStream(
   } finally {
     signal?.removeEventListener("abort", onAbort);
     stop.abort();
+    abandoned.unregister(copy);
     await handle.close();
   }
 }

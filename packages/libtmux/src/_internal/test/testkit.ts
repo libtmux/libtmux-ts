@@ -48,6 +48,7 @@ export {
   assertDaemonIdentity,
   assertIdentity,
   parseProcStatStartTime,
+  procStatExited,
   readDaemonIdentity,
   readProcessIdentity,
   resolveControllerIdentity,

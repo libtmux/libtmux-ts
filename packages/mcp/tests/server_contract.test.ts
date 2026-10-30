@@ -449,10 +449,42 @@ testControl(
 );
 
 // The trailer that removes the private mkdtemp directory (`command.ts`
-// `deliverFramedScript`) only runs once the sourced script exits. A pane
-// killed mid-run never gets there, so the directory outlives it - documented
-// in `packages/mcp/AGENTS.md` and confirmed here against a real pane.
-test("a private directory is left behind when the pane is killed mid-run", async () => {
+// `deliverFramedScript`) runs only once the sourced script exits, so a call
+// that returns first, or finds its pane killed, removes the directory itself.
+test("a run past its timeout no longer needs its private directory", async () => {
+  await withServer(async (fixture) => {
+    await fixture.executeText(["set-option", "-g", "default-command", "sh"]);
+    const scratchTmp = await mkdtemp(join(tmpdir(), "ltxscratch-"));
+    try {
+      await withClient(
+        fixture,
+        async (client) => {
+          const created = structured<{ paneId: string }>(
+            await client.callTool({
+              arguments: { height: 24, name: "outlives", width: 80 },
+              name: "create_session",
+            }),
+          );
+          const result = structured<{ outcome: string }>(
+            await client.callTool({
+              arguments: { command: "sleep 3", paneId: created.paneId, timeoutMs: 1_000 },
+              name: "run_shell_command",
+            }),
+          );
+          expect(result.outcome).toBe("timed_out");
+          // The shell holds the script open once it starts, so nothing waits on its trailer.
+          const leftover = await readdir(scratchTmp);
+          expect(leftover.filter((name) => name.startsWith("ltx-"))).toEqual([]);
+        },
+        { TMPDIR: scratchTmp },
+      );
+    } finally {
+      await rm(scratchTmp, { force: true, recursive: true });
+    }
+  });
+}, 20_000);
+
+test("a pane killed mid-run takes its private directory with it", async () => {
   await withServer(async (fixture) => {
     await fixture.executeText(["set-option", "-g", "default-command", "sh"]);
     const scratchTmp = await mkdtemp(join(tmpdir(), "ltxscratch-"));
@@ -467,20 +499,24 @@ test("a private directory is left behind when the pane is killed mid-run", async
             }),
           );
           const running = client.callTool({
-            arguments: { command: "sleep 4", paneId: created.paneId, timeoutMs: 6_000 },
+            arguments: { command: "sleep 30", paneId: created.paneId, timeoutMs: 15_000 },
             name: "run_shell_command",
           });
           await new Promise((resolve) => setTimeout(resolve, 500));
           await fixture.executeText(["kill-pane", "-t", created.paneId]);
+          const killed = performance.now();
 
           const result = structured<{ outcome: string }>(await running);
           expect(result.outcome).toBe("pane_died");
+          // Answered once the pane is seen gone, not at the timeout.
+          expect(performance.now() - killed).toBeLessThan(5_000);
         },
         { TMPDIR: scratchTmp },
       );
 
+      // The trailer that would remove it runs only in the pane, so the run that saw it die does.
       const leftover = await readdir(scratchTmp);
-      expect(leftover.some((name) => name.startsWith("ltx-"))).toBe(true);
+      expect(leftover.filter((name) => name.startsWith("ltx-"))).toEqual([]);
     } finally {
       await rm(scratchTmp, { force: true, recursive: true });
     }

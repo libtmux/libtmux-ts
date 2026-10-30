@@ -118,6 +118,17 @@ function shellQuote(value: string): string {
 
 /** Where the program runs, refusing a placement its options do not fit. */
 function requireSpawn(argv: readonly string[], spawn: SpawnOptions): ProgramPlacement {
+  // A caller without types can pass anything.
+  const kind = (value: unknown): string => (value === null ? "null" : typeof value);
+  if (!Array.isArray(argv)) throw new TypeError("argv must be an array of strings");
+  for (const [index, value] of argv.entries()) {
+    if (typeof value !== "string") {
+      throw new TypeError(`argv[${String(index)}] must be a string, not ${kind(value)}`);
+    }
+  }
+  if (spawn.startDirectory !== undefined && typeof spawn.startDirectory !== "string") {
+    throw new TypeError(`startDirectory must be a string, not ${kind(spawn.startDirectory)}`);
+  }
   const [program = ""] = argv;
   if (program === "") throw new TypeError("argv must name a program");
   // bash, which is /bin/sh on some systems, reads `exec -l` as an option to exec itself.
@@ -209,6 +220,9 @@ async function createSession(
     // In the creating list: set by a second invocation, it arrives after an
     // instant program's pane is already gone.
     ["set-option", "-w", "-t", target, "remain-on-exit", "on"],
+    // destroy-unattached removes an unattached session as soon as the client
+    // that made it exits, before the program could start in it.
+    ["set-option", "-t", target, "destroy-unattached", "off"],
     ["set-option", "-w", "-t", target, "remain-on-exit-format", ""],
     [
       "set-option",
@@ -365,11 +379,13 @@ function startList(
       ? undefined
       : stream.limit + Math.max(...markSequences(mark).map((sequence) => sequence.length)) + 1;
   // GNU head holds its writes to a file until it exits; stdbuf, where there is one, lets
-  // them through as they come.
+  // them through as they come. uutils' stdbuf leaves a directory under TMPDIR on every
+  // run, so it is pointed at the run's own, which goes with the run.
   const copy =
-    room === undefined
+    room === undefined || files === undefined
       ? "cat"
-      : `if command -v stdbuf >/dev/null 2>&1; then stdbuf -o0 head -c ${String(room)}; ` +
+      : `if command -v stdbuf >/dev/null 2>&1; then ` +
+        `TMPDIR=${shellQuote(files.directory)} stdbuf -o0 head -c ${String(room)}; ` +
         `else head -c ${String(room)}; fi`;
   return [
     [

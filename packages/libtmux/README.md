@@ -1005,7 +1005,8 @@ const { exitCode } = await vim.wait({ timeoutMs: 10_000 });
   full-screen program may still be setting up its terminal then, and can
   discard what was typed before, so the keys wait for vim's first screen.
   [`Pane.waitForText`][ref-pane-waitfortext] reads the screen each time tmux
-  says the pane printed, and resolves with the first line that matches.
+  says the pane printed, and resolves with the first line that matches. A
+  line the pane's width wrapped is one line to it, returned whole.
 - Each running program holds one tmux client, its exit watch, until it ends.
 - `await using` ends the program and removes its pane however the scope
   leaves; without it, call [`kill()`][ref-program-kill] in a `finally`, which
@@ -1262,7 +1263,9 @@ const { exitCode } = await pane.waitForExit({ timeoutMs: 30_000 });
 - It resolves when tmux reports the pane's program exiting, with the status a
   closing pane takes with it, or at once for a pane `remain-on-exit` kept.
 - A pane killed from outside fires no event, and the wait raises
-  `ObjectNotFoundError` within about two seconds.
+  `ObjectNotFoundError` within about two seconds of the kill. A read every second
+  notices the pane gone, and the event a closing pane fires gets up to a second
+  to arrive.
 - Requires tmux 3.8 or newer.
 
 ## Watch tmux change

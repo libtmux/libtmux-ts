@@ -3,6 +3,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { expect, test } from "bun:test";
 import { spawn } from "node:child_process";
 import { rm } from "node:fs/promises";
+import { constants as osConstants } from "node:os";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
@@ -16,7 +17,10 @@ import {
   type TestServer,
 } from "../../libtmux/src/_internal/test/testkit.js";
 import { structured, withServer } from "./support/server_harness.js";
-import { testControl } from "../../libtmux/tests/support/tmux_release.js";
+import { testControl, tmuxReaches } from "../../libtmux/tests/support/tmux_release.js";
+
+// start_program needs tmux 3.8.
+const testProgram = tmuxReaches("3.8") ? test : test.skip;
 
 type Runtime = "bun" | "node";
 
@@ -27,9 +31,11 @@ async function withProgram(
     readonly client: Client;
     readonly endInput: () => void;
     readonly exited: Promise<{ code: number | null; signal: NodeJS.Signals | null }>;
+    readonly kill: (signal: NodeJS.Signals) => void;
     readonly stderr: () => string;
   }) => Promise<void>,
   script?: string,
+  toolsets = "inspect",
 ): Promise<void> {
   const executable = runtime === "bun" ? process.execPath : await resolveNode22();
   const entry = new URL(
@@ -43,7 +49,7 @@ async function withProgram(
     HOME: home,
     LIBTMUX_SOCKET_PATH: fixture.socketPath,
     LIBTMUX_TMUX_BIN: fixture.tmuxExecutable,
-    LIBTMUX_TOOLSETS: "inspect",
+    LIBTMUX_TOOLSETS: toolsets,
     XDG_CACHE_HOME: join(home, "cache"),
     XDG_CONFIG_HOME: join(home, "config"),
     XDG_DATA_HOME: join(home, "data"),
@@ -87,6 +93,7 @@ async function withProgram(
             client,
             endInput: () => child.stdin.end(),
             exited,
+            kill: (signal) => child.kill(signal),
             stderr: () => diagnostic,
           });
         },
@@ -100,14 +107,18 @@ async function withProgram(
   );
 }
 
+/** A child run from a script connects nothing first, so its exit also waits for runtime start-up. */
+const UNCONNECTED_EXIT_MS = 10_000;
+
 async function boundedExit(
   exited: Promise<{ code: number | null; signal: NodeJS.Signals | null }>,
+  boundMs = 1_000,
 ): Promise<{ code: number | null; signal: NodeJS.Signals | null } | "timed out"> {
   const abort = new AbortController();
   try {
     return await Promise.race([
       exited,
-      delay(deadlineMs(1_000), "timed out" as const, { signal: abort.signal }),
+      delay(deadlineMs(boundMs), "timed out" as const, { signal: abort.signal }),
     ]);
   } finally {
     abort.abort();
@@ -193,6 +204,15 @@ for (const runtime of ["bun", "node"] as const) {
   test.each([
     { name: "immediate EOF", script: "const { main } = await import(entry); await main();" },
     {
+      name: "EOF, leaving no signal handler behind",
+      script: `
+        const { main } = await import(entry);
+        await main();
+        const left = ["SIGHUP", "SIGINT", "SIGTERM"].filter((signal) => process.listenerCount(signal) > 0);
+        if (left.length > 0) throw new Error("left handlers for " + left.join(" "));
+      `,
+    },
+    {
       name: "EOF observed before main starts",
       script: `
         const ended = new Promise((resolve) => process.stdin.once("end", resolve));
@@ -224,7 +244,10 @@ for (const runtime of ["bun", "node"] as const) {
           runtime,
           async ({ endInput, exited, stderr }) => {
             if (name !== "protocol close during connect") endInput();
-            expect(await boundedExit(exited), stderr()).toEqual({ code: 0, signal: null });
+            expect(await boundedExit(exited, UNCONNECTED_EXIT_MS), stderr()).toEqual({
+              code: 0,
+              signal: null,
+            });
           },
           script,
         );
@@ -232,6 +255,45 @@ for (const runtime of ["bun", "node"] as const) {
     },
     15_000,
   );
+
+  for (const signal of ["SIGTERM", "SIGINT", "SIGHUP"] as const) {
+    testProgram(
+      `${runtime} ${signal} ends the started programs before the server exits`,
+      async () => {
+        await withServer(async (fixture) => {
+          await withProgram(
+            fixture,
+            runtime,
+            async ({ client, exited, kill, stderr }) => {
+              const started = structured<{ programId: string }>(
+                await client.callTool({
+                  arguments: { argv: ["sleep", "300"], lifetimeMs: 600_000 },
+                  name: "start_program",
+                }),
+              );
+              expect(started.programId).toBeString();
+              kill(signal);
+              expect(await boundedExit(exited), stderr()).toEqual({
+                code: 128 + osConstants.signals[signal],
+                signal: null,
+              });
+              const sessions = await fixture.executeText([
+                "list-sessions",
+                "-F",
+                "#{session_name}",
+              ]);
+              expect(sessions.stdout.filter((name) => name.startsWith("libtmux-program-"))).toEqual(
+                [],
+              );
+            },
+            undefined,
+            "inspect,execute",
+          );
+        });
+      },
+      15_000,
+    );
+  }
 
   test.each([
     {
@@ -267,7 +329,10 @@ for (const runtime of ["bun", "node"] as const) {
           runtime,
           async ({ endInput, exited, stderr }) => {
             endInput();
-            expect(await boundedExit(exited), stderr()).toEqual({ code: 1, signal: null });
+            expect(await boundedExit(exited, UNCONNECTED_EXIT_MS), stderr()).toEqual({
+              code: 1,
+              signal: null,
+            });
             expect(stderr()).toContain(message);
           },
           script,

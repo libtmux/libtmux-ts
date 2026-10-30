@@ -2,9 +2,9 @@ import { spawnSync } from "node:child_process";
 import { existsSync, rmSync, writeFileSync } from "node:fs";
 import { mkdir, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
-import { describe, expect, spyOn, test } from "bun:test";
+import { afterEach, describe, expect, spyOn, test } from "bun:test";
 
 import { TmuxTransportError, type Pane, type ServerSnapshot } from "libtmux";
 
@@ -74,6 +74,13 @@ describe("command framing", () => {
     return { id, source };
   }
 
+  // A shell's trailer removes the directory a script was saved into; these fakes run none.
+  const staged = new Set<string>();
+  afterEach(async () => {
+    await Promise.all([...staged].map((path) => rm(path, { force: true, recursive: true })));
+    staged.clear();
+  });
+
   /**
    * A fake of the three-command server-side delivery `deliverFramedScript`
    * uses (`loadBuffer`/`saveBuffer`/`deleteBuffer`), plus `runShell` for its
@@ -107,7 +114,9 @@ describe("command framing", () => {
           ranShell.push(command);
           return [];
         },
-        saveBuffer: async () => undefined,
+        saveBuffer: async (_name, path) => {
+          staged.add(dirname(path));
+        },
       },
     };
   }
@@ -475,10 +484,11 @@ describe("command framing", () => {
     const dispatched = sent[0] ?? "";
     expect(dispatched).not.toContain("__ltx_");
     expect(dispatched).not.toContain("printf '%b");
-    expect(dispatched.length).toBeLessThan(150);
     const { id, source } = dispatchedFrame(buffers.source());
     const dispatchedPath = /\. '([^']+)'/u.exec(dispatched)?.[1];
     if (dispatchedPath === undefined) throw new Error("expected a sourcing line");
+    // The path, there twice, is as long as TMPDIR makes it; the rest is the line's own.
+    expect(dispatched.replaceAll(dispatchedPath, "").length).toBeLessThan(100);
     expect(dispatchedPath.endsWith(`/${id}.sh`)).toBe(true);
 
     // The script sourced from that path is the framed command, plus a
@@ -585,7 +595,8 @@ describe("command framing", () => {
     // Not "ltx-" (no dash after "ltx"): another test's own `mkdtemp("ltx-")`
     // check on the real, shared `os.tmpdir()` reads a fresh "ltx-" prefixed
     // top-level entry as its own, and this must not be mistaken for one.
-    const quotedRoot = join(tmpdir(), `ltxquote-${randomId()}`, "it's a dir");
+    const quotedParent = join(tmpdir(), `ltxquote-${randomId()}`);
+    const quotedRoot = join(quotedParent, "it's a dir");
     await mkdir(quotedRoot, { recursive: true });
     const originalTmpdir = process.env.TMPDIR;
     process.env.TMPDIR = quotedRoot;
@@ -646,7 +657,7 @@ describe("command framing", () => {
     } finally {
       if (originalTmpdir === undefined) delete process.env.TMPDIR;
       else process.env.TMPDIR = originalTmpdir;
-      await rm(quotedRoot, { force: true, recursive: true });
+      await rm(quotedParent, { force: true, recursive: true });
     }
   });
 
@@ -865,6 +876,48 @@ describe("command framing", () => {
     await result.settled;
     expect(settled).toBe(true);
   });
+
+  test("a cancel during the running pane check ends the call at once", async () => {
+    const controller = new AbortController();
+    const tail = new PaneTail("%1");
+    const buffers = fakeBuffers();
+    let id = "";
+    const pane = {
+      format: { session_id: "$1" },
+      id: "%1",
+      cmd: async () => {
+        id = dispatchedFrame(buffers.source()).id;
+        tail.append(`${id}_S\n`);
+      },
+    } as unknown as Pane;
+    let checks = 0;
+    let cancelledAt = 0;
+    const context = {
+      hub: { closed: false, tail: async () => tail },
+      policy: resolvePolicy({ LIBTMUX_MCP_COMMAND_TIMEOUT_MS: "5000" }),
+      // The first check meets a stalled tmux, which answers only once its signal aborts.
+      snapshot: async (signal: AbortSignal) => {
+        checks += 1;
+        if (checks > 1) return { panes: { first: () => pane } };
+        return new Promise((_resolve, reject) => {
+          signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+          setTimeout(() => {
+            cancelledAt = performance.now();
+            controller.abort();
+          }, 20);
+        });
+      },
+      tmux: buffers.tmux,
+    } as unknown as ToolContext;
+
+    const result = await runFramedCommand(context, pane, "sleep 30", 20_000, controller.signal);
+
+    expect(result.outcome).toBe("cancelled");
+    expect(cancelledAt).toBeGreaterThan(0);
+    expect(performance.now() - cancelledAt).toBeLessThan(1_000);
+    tail.append(`${id}_E 0 ${id}_D\n`);
+    await result.settled;
+  }, 15_000);
 
   test("retries retained settlement after a live-tail failure", async () => {
     const controller = new AbortController();

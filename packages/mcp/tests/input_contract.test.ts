@@ -438,10 +438,9 @@ testBuffers(
             // regardless of that file's own mode.
             expect((await stat(tmpdir())).mode & 0o077).not.toBe(0);
 
-            // A command that outlives the tool's own timeout, so the script and
-            // its directory are still on disk when this reads them back.
+            // Read while the call still runs: the directory goes once it returns.
             const run = client.callTool({
-              arguments: { command: "sleep 5", paneId: created.paneId, timeoutMs: 300 },
+              arguments: { command: "sleep 5", paneId: created.paneId, timeoutMs: 3_000 },
               name: "run_shell_command",
             });
             await new Promise((resolve) => setTimeout(resolve, 400));
@@ -497,7 +496,7 @@ testBuffers(
 
             const before = new Set(await readdir(customTmpDir));
             const run = client.callTool({
-              arguments: { command: "sleep 5", paneId: created.paneId, timeoutMs: 300 },
+              arguments: { command: "sleep 5", paneId: created.paneId, timeoutMs: 3_000 },
               name: "run_shell_command",
             });
             await new Promise((resolve) => setTimeout(resolve, 400));

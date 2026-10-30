@@ -295,7 +295,7 @@ instead of waiting in a pager.
 The respawn and a `wait-for -E pane-died` waiter go to tmux as one command list,
 which tmux runs without handling any other event in between, so the waiter is
 registered before the program can exit. The pane state is still read every second, because tmux fires no
-event for a pane killed from outside.
+event for a pane killed from outside, so such a kill ends the run within about a second.
 
 The output is `capture-pane` of the program's own pane, scrollback included and
 wrapped lines joined; stderr shares the terminal with stdout. Scrollback past
@@ -333,7 +333,9 @@ missing: either flag makes it false, as does a stop or the lifetime ending the
 program before its output was read to the end. `outcome` is decided
 by how the program ended before its status is read: `expired` for one its
 lifetime ended and `stopped` for one `stop_program` ended, whose SIGTERM can
-also leave a status.
+also leave a status. It, `exitStatus` and `signal` come with every read once
+the copy has ended, a page that stops short of the end included, so `running`
+means the program still runs.
 
 No later call owns cleanup:
 
@@ -366,8 +368,8 @@ and `pane-died`, the two exclusive exit events, before it reads the pane, so an
 exit between the two still wakes it, and a pane already dead answers at once. A pane that
 closes takes its status with it, and the event's payload carries that status.
 `kill-pane` fires no event; the pane is read every second, and a removed one
-answers `gone` within about two seconds: one to notice, and one for the event a
-closing pane fires to arrive. It needs tmux 3.8 or newer.
+answers `gone` within about two seconds of the kill, up to one to notice and up to one
+for the event a closing pane fires to arrive. It needs tmux 3.8 or newer.
 
 ### How each tool reports an end
 

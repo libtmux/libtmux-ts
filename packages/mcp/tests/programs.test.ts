@@ -413,6 +413,7 @@ testProgram(
         let cursor = 0;
         let modelText = "";
         let structuredText = "";
+        const pages: { readonly headline: string; readonly read: Read }[] = [];
         for (let read = 0; read < 200; read += 1) {
           const answer = (await call({
             arguments: { cursor, programId: started.programId, timeoutMs: 5000 },
@@ -423,11 +424,24 @@ testProgram(
           modelText += shown.slice(0, shown.lastIndexOf("\n\n["));
           structuredText += answer.structuredContent.text;
           cursor = answer.structuredContent.cursor;
+          pages.push({
+            headline: shown.slice(shown.lastIndexOf("\n\n[")),
+            read: answer.structuredContent,
+          });
           if (answer.structuredContent.ended) break;
         }
         expect(modelText.startsWith("BEGIN-")).toBe(true);
         expect(modelText).toBe(structuredText);
         expect(cursor).toBe(999_999);
+        // The program had exited before the first read: every page says how, and
+        // only the last, with nothing after it, is ended.
+        expect(pages.length).toBeGreaterThan(1);
+        for (const [index, { headline, read }] of pages.entries()) {
+          const last = index === pages.length - 1;
+          expect(read).toMatchObject({ ended: last, exitStatus: 0, outcome: "completed" });
+          expect(headline).toContain("exit 0");
+          expect(headline.includes("more output after cursor")).toBe(!last);
+        }
         await call({ arguments: { programId: started.programId }, name: "stop_program" });
       });
     });

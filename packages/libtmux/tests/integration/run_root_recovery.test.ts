@@ -1,4 +1,6 @@
+import { spawn } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
+import { once } from "node:events";
 import { tmpdir } from "node:os";
 import {
   chmod,
@@ -16,10 +18,11 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { basename, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { describe, expect, test } from "bun:test";
 
-import { processExists, waitForPathAbsent } from "../support/converge.js";
+import { processExists, waitForPathAbsent, waitForProcessExit } from "../support/converge.js";
 import { journalIdentity } from "../support/fixture_evidence.js";
 import { createIsolatedRunRoot, removeIsolatedRunRoot } from "../support/run_root_harness.js";
 import {
@@ -43,6 +46,37 @@ import {
 } from "../../src/_internal/test/testkit.js";
 
 describe("run-root recovery", () => {
+  test("a fixture an unsupervised run starts first ends what a killed one left", async () => {
+    const testkit = fileURLToPath(new URL("../../src/_internal/test/testkit.ts", import.meta.url));
+    const { LIBTMUX_TEST_RUN_ROOT: _published, ...environment } = process.env;
+    const run = (script: string) =>
+      spawn("bun", ["-e", `const t = await import(${JSON.stringify(testkit)});\n${script}`], {
+        env: environment,
+        stdio: ["ignore", "pipe", "inherit"],
+      });
+    // Killed while it holds a fixture: nothing in its process tree is left to end the daemon.
+    const killed = run(`await t.withOwnedRunRoot("ltx4-killed-", async (root) => {
+      const server = await t.TestServer.create({ runRoot: root });
+      console.log(server.daemonIdentity.pid);
+      await new Promise(() => undefined);
+    });`);
+    const [line] = (await once(killed.stdout, "data")) as [Buffer];
+    const daemon = Number(line.toString("utf8").trim());
+    killed.kill("SIGKILL");
+    await once(killed, "close");
+    try {
+      expect(processExists(daemon)).toBe(true);
+      const next = run(`await t.withOwnedRunRoot("ltx4-next-", async (root) => {
+        await (await t.TestServer.create({ runRoot: root })).dispose();
+      });`);
+      const [code] = (await once(next, "close")) as [number | null];
+      expect(code).toBe(0);
+      await waitForProcessExit(daemon);
+    } finally {
+      if ((await readDaemonIdentity(daemon)) !== undefined) process.kill(daemon, "SIGKILL");
+    }
+  }, 60_000);
+
   test("enumerates only the exact run root", async () => {
     const { parent, root } = await createIsolatedRunRoot("exact");
     const sibling = join(parent, "exact-sibling");

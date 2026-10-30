@@ -1,3 +1,5 @@
+import { spawn } from "node:child_process";
+import { once } from "node:events";
 import { lstat, readFile, rmdir, stat, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -19,7 +21,9 @@ import {
 
 import {
   parseProcStatStartTime,
+  procStatExited,
   readDaemonIdentity,
+  readProcessIdentity,
   reapOwnedRunRoot,
   validateOwnedRecordMetadata,
   type FixtureRecord,
@@ -33,6 +37,35 @@ describe("process identity", () => {
       Array.from({ length: 18 }, (_, i) => `${i + 1}`).join(" ") +
       " 18446744073709551614 99";
     expect(parseProcStatStartTime(line)).toBe("18446744073709551614");
+  });
+
+  test("an exited process its parent has not reaped reads as absent", async () => {
+    // The child exits at once; its parent becomes a sleep, which never waits for it.
+    const holder = spawn("sh", ["-c", "sleep 0 & echo $!; exec sleep 30"], {
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    try {
+      const [line] = (await once(holder.stdout, "data")) as [Buffer];
+      const pid = Number(line.toString("utf8").trim());
+      const exited = async (): Promise<boolean> =>
+        procStatExited(await readFile(`/proc/${String(pid)}/stat`, "utf8"));
+      // Bounded for liveness: the child exits at once, but a busy machine runs it late.
+      const deadline = performance.now() + 30_000;
+      for (;;) {
+        // eslint-disable-next-line no-await-in-loop -- the child's exit is observed within one bound.
+        if ((await exited()) || performance.now() > deadline) break;
+        // eslint-disable-next-line no-await-in-loop -- the child's exit is observed within one bound.
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      // It keeps its stat line and start time until reaped, as a tmux server tmux
+      // has just stopped does, and the reaper must not read that as a live process.
+      expect(await exited()).toBe(true);
+      expect(await readProcessIdentity(pid)).toBeUndefined();
+      expect(await readDaemonIdentity(pid)).toBeUndefined();
+      expect(processExists(pid)).toBe(false);
+    } finally {
+      holder.kill();
+    }
   });
 
   test("rejects record metadata owned by a different uid", () => {

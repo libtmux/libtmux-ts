@@ -218,6 +218,17 @@ export function parseProcStatStartTime(line: string): string {
   return startTime;
 }
 
+/**
+ * Whether a /proc stat line is a process that has exited: zombie or dead. It
+ * keeps that line, start time included, until its parent reaps it, while its
+ * /proc/<pid>/exe is already gone.
+ */
+export function procStatExited(line: string): boolean {
+  const closing = line.lastIndexOf(") ");
+  if (closing < 0) throw new Error("invalid /proc stat framing");
+  return ["X", "Z"].includes(line.charAt(closing + 2));
+}
+
 export async function readProcessIdentity(pid: number): Promise<ProcessIdentity | undefined> {
   if (!Number.isSafeInteger(pid) || pid < 1) throw new TypeError("pid must be a positive integer");
   try {
@@ -225,10 +236,9 @@ export async function readProcessIdentity(pid: number): Promise<ProcessIdentity 
       readFile("/proc/sys/kernel/random/boot_id", "utf8"),
       readFile(`/proc/${String(pid)}/stat`, "utf8"),
     ]);
-    return {
-      pid,
-      startIdentity: `linux:${bootId.trim()}:${parseProcStatStartTime(statText)}`,
-    };
+    const startTime = parseProcStatStartTime(statText);
+    if (procStatExited(statText)) return undefined;
+    return { pid, startIdentity: `linux:${bootId.trim()}:${startTime}` };
   } catch (error) {
     if (isAbsentProcess(error)) return undefined;
     throw error;

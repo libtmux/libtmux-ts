@@ -9,11 +9,16 @@ import {
 import { readdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 
+/** A fixture's socket sits below the root and must stay under 103 bytes, whatever TMPDIR is. */
+function rootName(name: string): string {
+  return name.slice(0, 16);
+}
+
 export async function createIsolatedRunRoot(
   name: string,
 ): Promise<{ parent: string; root: string }> {
   const parent = await makeTestDirectory("ltx4-supervisor-");
-  const root = join(parent, name);
+  const root = join(parent, rootName(name));
   await prepareRunRoot(root);
   return { parent, root };
 }
@@ -30,7 +35,7 @@ async function withTemporaryRunRoot<T>(
   const published = process.env.LIBTMUX_TEST_RUN_ROOT;
   if (published !== undefined) return body(published);
   const parent = await makeTestDirectory("ltx4-it-");
-  const runRoot = join(parent, name);
+  const runRoot = join(parent, rootName(name));
   await prepareRunRoot(runRoot);
   try {
     return await body(runRoot);

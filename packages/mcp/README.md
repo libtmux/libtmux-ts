@@ -64,8 +64,10 @@ $ bun add --exact @libtmux/mcp@0.1.1-alpha.1
 ```
 
 Closing the subprocess's stdin cancels pending waits and joins its control
-connections before exit. Existing tmux sessions and panes keep running. Backend
-cleanup failures produce a nonzero exit status.
+connections before exit, and SIGTERM, SIGINT or SIGHUP does the same, then
+exits with 128 plus the signal's number. Programs it started end with it.
+Existing tmux sessions and panes keep running. Backend cleanup failures produce
+a nonzero exit status.
 
 ### `claude mcp add`: tell Claude Code about it
 
@@ -220,15 +222,15 @@ made a session, watch it with `tmux -L libtmux-mcp attach`.
 
 ### Tune waits, results, and tool selection
 
-| Variable                         | Default               | Effect                                             | Policy field                                                      |
-| -------------------------------- | --------------------- | -------------------------------------------------- | ----------------------------------------------------------------- |
-| `LIBTMUX_TOOLSETS`               | depends on the server | Comma-separated toolsets to include                | [`toolsets`][mcpref-mcp-policy-policy-toolsets]                   |
-| `LIBTMUX_TOOLS`                  | none                  | Comma-separated tools to add                       | [`tools`][mcpref-mcp-policy-policy-tools]                         |
-| `LIBTMUX_EXCLUDE_TOOLS`          | none                  | Comma-separated tools to remove last               | [`excludeTools`][mcpref-mcp-policy-policy-excludetools]           |
-| `LIBTMUX_MCP_WAIT_MAX_MS`        | 30000                 | Ceiling on a wait that blocks the caller           | [`blockingWaitMaxMs`][mcpref-mcp-policy-policy-blockingwaitmaxms] |
-| `LIBTMUX_MCP_COMMAND_TIMEOUT_MS` | 30000                 | Deadline for each internal tmux request            | [`commandTimeoutMs`][mcpref-mcp-policy-policy-commandtimeoutms]   |
-| `LIBTMUX_MCP_MAX_RESULT_LINES`   | 200                   | Lines a result may carry before it trims and links | [`maxResultLines`][mcpref-mcp-policy-policy-maxresultlines]       |
-| `LIBTMUX_MCP_LIVE`               | on                    | Set to `0` to forbid control-mode connections      | [`liveEnabled`][mcpref-mcp-policy-policy-liveenabled]             |
+| Variable                         | Default               | Effect                                                                            | Policy field                                                      |
+| -------------------------------- | --------------------- | --------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| `LIBTMUX_TOOLSETS`               | depends on the server | Comma-separated toolsets to include                                               | [`toolsets`][mcpref-mcp-policy-policy-toolsets]                   |
+| `LIBTMUX_TOOLS`                  | none                  | Comma-separated tools to add                                                      | [`tools`][mcpref-mcp-policy-policy-tools]                         |
+| `LIBTMUX_EXCLUDE_TOOLS`          | none                  | Comma-separated tools to remove last                                              | [`excludeTools`][mcpref-mcp-policy-policy-excludetools]           |
+| `LIBTMUX_MCP_WAIT_MAX_MS`        | 30000                 | Ceiling on a wait that blocks the caller                                          | [`blockingWaitMaxMs`][mcpref-mcp-policy-policy-blockingwaitmaxms] |
+| `LIBTMUX_MCP_COMMAND_TIMEOUT_MS` | 30000                 | Deadline for each internal tmux request                                           | [`commandTimeoutMs`][mcpref-mcp-policy-policy-commandtimeoutms]   |
+| `LIBTMUX_MCP_MAX_RESULT_LINES`   | 200                   | Lines a result may carry before it trims and links; `read_program` pages by bytes | [`maxResultLines`][mcpref-mcp-policy-policy-maxresultlines]       |
+| `LIBTMUX_MCP_LIVE`               | on                    | Set to `0` to forbid control-mode connections                                     | [`liveEnabled`][mcpref-mcp-policy-policy-liveenabled]             |
 
 - With `LIBTMUX_MCP_LIVE=0`, [`wait_for_text`][tool-wait_for_text] stays in the
   selected surface but returns a `no_stream` tool error;
@@ -563,11 +565,17 @@ try {
   and returns a `cursor`. A read that times out returns no text; the next one
   with the same cursor carries on, past any wait ceiling.
 - The text is the byte stream with escape sequences removed, as
-  `capture_since` gives it. `ended` turns true once the program ended and
+  `capture_since` gives it, and a carriage return on its own starts a new
+  line: a progress bar that rewrites its line reads as a line for each state,
+  where `run_program` and `capture_pane` show only the screen's last.
+  `ended` turns true once the program ended and
   every byte was read, and `outcome` says how: `completed` with `exitStatus`
   or `signal`, `not_started` when it never ran, with the shell's 127 or 126,
   `expired` at its lifetime, `stopped` by `stop_program`, or
   `gone`. A program a signal ended reports `signal`, with `exitStatus` null.
+- Every read after the end reports `outcome` and the status, so an output too
+  long for one result says how the program ended on its first page, and its
+  status line reads `more output after cursor N` until `ended` turns true.
 - `outputCut` turns true once the copy reaches its limit, while the program
   runs on, and `lostEnd` when tmux closed the pane before reading the end.
 - A program's lifetime is `lifetimeMs` on `start_program`, capped by the server
@@ -653,8 +661,9 @@ const exit = await callTool<ExitResult>(client, "wait_for_exit", { paneId });
 - Use it for a pane you did not start, such as a person's build. For a program
   you run, `run_program` already reports the exit.
 - A pane that closes on exit still reports its status: tmux carries it in the
-  event. A pane killed from outside has none and answers `gone` within about
-  two seconds.
+  event. A pane killed from outside has none and answers `gone` within about two
+  seconds of the kill: up to one to notice, and up to one for the event a
+  closing pane fires to arrive.
 - `timed_out` means the program still runs; call again to keep waiting.
 - Needs tmux 3.8 or newer.
 

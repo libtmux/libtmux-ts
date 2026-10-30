@@ -1,5 +1,8 @@
 import { spawn } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { access } from "node:fs/promises";
+
+import { procStatExited } from "../../src/_internal/test/testkit.js";
 
 /**
  * Bounded waits for the resources a failed fixture reclaims.
@@ -25,9 +28,17 @@ const INTERVAL_MS = 5;
 export function processExists(pid: number): boolean {
   try {
     process.kill(pid, 0);
-    return true;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ESRCH") return false;
+    throw error;
+  }
+  // An exited process its parent has not reaped still answers kill(pid, 0).
+  try {
+    return !procStatExited(readFileSync(`/proc/${String(pid)}/stat`, "utf8"));
+  } catch (error) {
+    // Reaped between the two reads.
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "ENOENT" || code === "ESRCH") return false;
     throw error;
   }
 }
