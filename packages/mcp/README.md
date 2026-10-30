@@ -222,15 +222,15 @@ made a session, watch it with `tmux -L libtmux-mcp attach`.
 
 ### Tune waits, results, and tool selection
 
-| Variable                         | Default               | Effect                                             | Policy field                                                      |
-| -------------------------------- | --------------------- | -------------------------------------------------- | ----------------------------------------------------------------- |
-| `LIBTMUX_TOOLSETS`               | depends on the server | Comma-separated toolsets to include                | [`toolsets`][mcpref-mcp-policy-policy-toolsets]                   |
-| `LIBTMUX_TOOLS`                  | none                  | Comma-separated tools to add                       | [`tools`][mcpref-mcp-policy-policy-tools]                         |
-| `LIBTMUX_EXCLUDE_TOOLS`          | none                  | Comma-separated tools to remove last               | [`excludeTools`][mcpref-mcp-policy-policy-excludetools]           |
-| `LIBTMUX_MCP_WAIT_MAX_MS`        | 30000                 | Ceiling on a wait that blocks the caller           | [`blockingWaitMaxMs`][mcpref-mcp-policy-policy-blockingwaitmaxms] |
-| `LIBTMUX_MCP_COMMAND_TIMEOUT_MS` | 30000                 | Deadline for each internal tmux request            | [`commandTimeoutMs`][mcpref-mcp-policy-policy-commandtimeoutms]   |
-| `LIBTMUX_MCP_MAX_RESULT_LINES`   | 200                   | Lines a result may carry before it trims and links | [`maxResultLines`][mcpref-mcp-policy-policy-maxresultlines]       |
-| `LIBTMUX_MCP_LIVE`               | on                    | Set to `0` to forbid control-mode connections      | [`liveEnabled`][mcpref-mcp-policy-policy-liveenabled]             |
+| Variable                         | Default               | Effect                                                                            | Policy field                                                      |
+| -------------------------------- | --------------------- | --------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| `LIBTMUX_TOOLSETS`               | depends on the server | Comma-separated toolsets to include                                               | [`toolsets`][mcpref-mcp-policy-policy-toolsets]                   |
+| `LIBTMUX_TOOLS`                  | none                  | Comma-separated tools to add                                                      | [`tools`][mcpref-mcp-policy-policy-tools]                         |
+| `LIBTMUX_EXCLUDE_TOOLS`          | none                  | Comma-separated tools to remove last                                              | [`excludeTools`][mcpref-mcp-policy-policy-excludetools]           |
+| `LIBTMUX_MCP_WAIT_MAX_MS`        | 30000                 | Ceiling on a wait that blocks the caller                                          | [`blockingWaitMaxMs`][mcpref-mcp-policy-policy-blockingwaitmaxms] |
+| `LIBTMUX_MCP_COMMAND_TIMEOUT_MS` | 30000                 | Deadline for each internal tmux request                                           | [`commandTimeoutMs`][mcpref-mcp-policy-policy-commandtimeoutms]   |
+| `LIBTMUX_MCP_MAX_RESULT_LINES`   | 200                   | Lines a result may carry before it trims and links; `read_program` pages by bytes | [`maxResultLines`][mcpref-mcp-policy-policy-maxresultlines]       |
+| `LIBTMUX_MCP_LIVE`               | on                    | Set to `0` to forbid control-mode connections                                     | [`liveEnabled`][mcpref-mcp-policy-policy-liveenabled]             |
 
 - With `LIBTMUX_MCP_LIVE=0`, [`wait_for_text`][tool-wait_for_text] stays in the
   selected surface but returns a `no_stream` tool error;
