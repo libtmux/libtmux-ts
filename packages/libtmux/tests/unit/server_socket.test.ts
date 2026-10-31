@@ -169,6 +169,7 @@ describe("what reaches tmux", () => {
 
     await server.cmd("list-sessions");
 
+    expect(recorded.arguments.length).toBeGreaterThan(0);
     for (const globalArgs of recorded.arguments) {
       expect(globalArgs).toContain("-S/tmp/ltx-env.sock");
       expect(globalArgs.filter((argument) => argument.startsWith("-L"))).toEqual([]);
@@ -181,6 +182,7 @@ describe("what reaches tmux", () => {
 
     await server.cmd("list-sessions");
 
+    expect(recorded.arguments.length).toBeGreaterThan(0);
     for (const globalArgs of recorded.arguments) {
       expect(globalArgs).toContain("-Lltx");
       expect(globalArgs.filter((argument) => argument.startsWith("-S"))).toEqual([]);

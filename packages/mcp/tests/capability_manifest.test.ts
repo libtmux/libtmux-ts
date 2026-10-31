@@ -143,10 +143,22 @@ const SOURCE_CATALOG_ORDER = [
   "call_read_tools_batch",
 ] as const;
 
+/**
+ * A server whose every tmux call fails the case. These cases read the surface
+ * and never tmux, and a server with no engine would reach the default socket of
+ * whoever runs them.
+ */
+function untouchedServer(environment: Readonly<Record<string, string | undefined>> = {}): Server {
+  return new Server({
+    engine: checkedEngine(() => Promise.reject(new Error("this case must not reach tmux"))),
+    environment,
+  });
+}
+
 async function withClient(
   environment: Readonly<Record<string, string | undefined>>,
   body: (client: Client) => Promise<void>,
-  tmux: Server = new Server(),
+  tmux: Server = untouchedServer(),
   serverOptions: Readonly<Record<string, unknown>> = {},
 ): Promise<void> {
   const mcp = createTmuxMcpServer(tmux, {
@@ -194,7 +206,7 @@ test("one manifest governs every toolset subset, selection, metadata, and report
   }
 
   expect(() =>
-    createTmuxMcpServer(new Server(), {
+    createTmuxMcpServer(untouchedServer(), {
       environment: { LIBTMUX_TOOLS: "not_a_tool", LIBTMUX_TOOLSETS: "" },
     }),
   ).toThrow(/unknown tool.*not_a_tool/u);
@@ -1081,7 +1093,7 @@ test("no startup state puts teardown in the implicit surface", async () => {
         expect(report.socket.configurationProvenance).toBe(startup.configurationProvenance);
         expect(report.socket.serverState).toBe(startup.serverState);
       },
-      new Server({ environment: {} }),
+      untouchedServer(),
       { startup },
     );
   }
@@ -1089,16 +1101,16 @@ test("no startup state puts teardown in the implicit surface", async () => {
 
 test("the capability report names what chose the socket", async () => {
   const cases = [
-    { provenance: "tmux-choice", selector: "tmux-choice", server: new Server({ environment: {} }) },
+    { provenance: "tmux-choice", selector: "tmux-choice", server: untouchedServer() },
     {
       provenance: "socket-name",
       selector: "name:ltx-report",
-      server: new Server({ environment: { LIBTMUX_SOCKET: "ltx-report" } }),
+      server: untouchedServer({ LIBTMUX_SOCKET: "ltx-report" }),
     },
     {
       provenance: "socket-path",
       selector: "path:/tmp/ltx-report.sock",
-      server: new Server({ environment: { LIBTMUX_SOCKET_PATH: "/tmp/ltx-report.sock" } }),
+      server: untouchedServer({ LIBTMUX_SOCKET_PATH: "/tmp/ltx-report.sock" }),
     },
   ] as const;
 
