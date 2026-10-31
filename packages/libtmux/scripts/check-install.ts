@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 
 import { runBoundedCommand } from "../../../scripts/bounded_process.js";
 import { npmPack } from "../../../scripts/npm_pack.js";
-import { resolveNode22 } from "../src/_internal/test/testkit.js";
+import { enterSandbox, resolveNode22 } from "../src/_internal/test/testkit.js";
 
 /**
  * Install the tarball into a project that has never seen this repository.
@@ -19,6 +19,10 @@ import { resolveNode22 } from "../src/_internal/test/testkit.js";
  * Node 22 exercises the emitted JavaScript and Bun exercises the packed
  * TypeScript source selected by its export condition.
  */
+
+// The probes build a `Server` on a named socket, which lives under whatever
+// TMUX_TMPDIR they inherit.
+const sandbox = await enterSandbox();
 
 const tsRoot = fileURLToPath(new URL("..", import.meta.url));
 const MAX_COMMAND_OUTPUT_BYTES = 4 * 1024 * 1024;
@@ -230,6 +234,8 @@ try {
     }
   }
 
+  // A server the probes left behind fails the check, whatever they printed.
+  await sandbox.release();
   process.stdout.write(
     `${JSON.stringify({
       installed: `${manifest.name}@${manifest.version}`,
