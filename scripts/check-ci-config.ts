@@ -278,7 +278,15 @@ if (
 }
 
 const typescriptPath = join(repositoryRoot, ".github/workflows/typescript.yml");
-const typescriptDocument = Bun.YAML.parse(await Bun.file(typescriptPath).text()) as {
+const typescriptSource = await Bun.file(typescriptPath).text();
+// GitHub reads a bare `off` as false, in the options and in the default. A default
+// that is not one of the options refuses every dispatch that sets nothing.
+for (const want of ['options: ["off", before-tests, on-failure]', 'default: "off"']) {
+  if (!typescriptSource.includes(want)) {
+    failures.push(`.github/workflows/typescript.yml: the tmate input must contain ${want}`);
+  }
+}
+const typescriptDocument = Bun.YAML.parse(typescriptSource) as {
   readonly concurrency?: { readonly group?: unknown };
   readonly jobs?: Readonly<Record<string, WorkflowJob>>;
   readonly on?: Readonly<Record<string, unknown>>;

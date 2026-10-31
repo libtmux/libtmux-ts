@@ -39,7 +39,7 @@ on:
       tmate:
         description: Open a tmate session on the one tmux lane, which needs a single tmux-ref
         type: choice
-        options: [off, before-tests, on-failure]
+        options: ["off", before-tests, on-failure]
         default: "off"
 
 permissions:
