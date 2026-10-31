@@ -222,15 +222,15 @@ made a session, watch it with `tmux -L libtmux-mcp attach`.
 
 ### Tune waits, results, and tool selection
 
-| Variable                         | Default               | Effect                                                                            | Policy field                                                      |
-| -------------------------------- | --------------------- | --------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| `LIBTMUX_TOOLSETS`               | depends on the server | Comma-separated toolsets to include                                               | [`toolsets`][mcpref-mcp-policy-policy-toolsets]                   |
-| `LIBTMUX_TOOLS`                  | none                  | Comma-separated tools to add                                                      | [`tools`][mcpref-mcp-policy-policy-tools]                         |
-| `LIBTMUX_EXCLUDE_TOOLS`          | none                  | Comma-separated tools to remove last                                              | [`excludeTools`][mcpref-mcp-policy-policy-excludetools]           |
-| `LIBTMUX_MCP_WAIT_MAX_MS`        | 30000                 | Ceiling on a wait that blocks the caller                                          | [`blockingWaitMaxMs`][mcpref-mcp-policy-policy-blockingwaitmaxms] |
-| `LIBTMUX_MCP_COMMAND_TIMEOUT_MS` | 30000                 | Deadline for each internal tmux request                                           | [`commandTimeoutMs`][mcpref-mcp-policy-policy-commandtimeoutms]   |
-| `LIBTMUX_MCP_MAX_RESULT_LINES`   | 200                   | Lines a result may carry before it trims and links; `read_program` pages by bytes | [`maxResultLines`][mcpref-mcp-policy-policy-maxresultlines]       |
-| `LIBTMUX_MCP_LIVE`               | on                    | Set to `0` to forbid control-mode connections                                     | [`liveEnabled`][mcpref-mcp-policy-policy-liveenabled]             |
+| Variable                         | Default               | Effect                                                                           | Policy field                                                      |
+| -------------------------------- | --------------------- | -------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| `LIBTMUX_TOOLSETS`               | depends on the server | Comma-separated toolsets to include                                              | [`toolsets`][mcpref-mcp-policy-policy-toolsets]                   |
+| `LIBTMUX_TOOLS`                  | none                  | Comma-separated tools to add                                                     | [`tools`][mcpref-mcp-policy-policy-tools]                         |
+| `LIBTMUX_EXCLUDE_TOOLS`          | none                  | Comma-separated tools to remove last                                             | [`excludeTools`][mcpref-mcp-policy-policy-excludetools]           |
+| `LIBTMUX_MCP_WAIT_MAX_MS`        | 30000                 | Ceiling on a wait that blocks the caller                                         | [`blockingWaitMaxMs`][mcpref-mcp-policy-policy-blockingwaitmaxms] |
+| `LIBTMUX_MCP_COMMAND_TIMEOUT_MS` | 30000                 | Deadline for each internal tmux request                                          | [`commandTimeoutMs`][mcpref-mcp-policy-policy-commandtimeoutms]   |
+| `LIBTMUX_MCP_MAX_RESULT_LINES`   | 200                   | Lines a result may carry before it trims and links; `read_program` pages by size | [`maxResultLines`][mcpref-mcp-policy-policy-maxresultlines]       |
+| `LIBTMUX_MCP_LIVE`               | on                    | Set to `0` to forbid control-mode connections                                    | [`liveEnabled`][mcpref-mcp-policy-policy-liveenabled]             |
 
 - With `LIBTMUX_MCP_LIVE=0`, [`wait_for_text`][tool-wait_for_text] stays in the
   selected surface but returns a `no_stream` tool error;
@@ -564,6 +564,11 @@ try {
 - Each `read_program` waits up to its `timeoutMs` for new output or the exit
   and returns a `cursor`. A read that times out returns no text; the next one
   with the same cursor carries on, past any wait ceiling.
+- A page holds up to about 24,000 characters of JSON, ending on a line break
+  when it has one, or `maxLines` lines when that is fewer. The budget holds
+  the whole result, which carries the text twice, under the 50,000 characters
+  Claude Code shows inline. `cursor` is a byte offset and never splits a
+  character; call again with it for the rest.
 - The text is the byte stream with escape sequences removed, as
   `capture_since` gives it, and a carriage return on its own starts a new
   line: a progress bar that rewrites its line reads as a line for each state,

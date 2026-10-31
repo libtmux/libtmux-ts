@@ -321,8 +321,14 @@ the tmux source for both.
 `Server.spawn` with a stream copy, and returns at once. This server copies the
 output into memory as it is written, through the same escape-sequence filter as
 `capture_since`, and `read_program` hands out bytes after a cursor. A read waits
-for new output or the end, up to the wait ceiling, so a program of any length
-is read whole over several calls.
+for new output or the end, up to the wait ceiling. A page ends when its text,
+which the result carries twice, would take more than about 24,000 characters
+of JSON each, or after `maxLines` lines when that comes first. That keeps a
+whole result under the 50,000 characters Claude Code shows inline, and under
+`MAX_RESULT_BYTES` whatever the text holds.
+A page cut by the budget ends on a line break when it has one, and the cursor
+never splits a character. A program of any length is read whole over several
+calls.
 
 `ended` is true only once the program has ended and every byte it wrote has been
 returned. tmux holds a dying pane until its pipe has drained, so what tmux read

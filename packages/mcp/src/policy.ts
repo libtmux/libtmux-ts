@@ -16,6 +16,12 @@ export const DEFAULT_MAX_RESULT_LINES = 200;
 /** Largest complete serialized MCP result, including its protocol envelope. */
 export const MAX_RESULT_BYTES = 1_000_000;
 
+/**
+ * Characters of JSON a result may take before Claude Code shows the model a file
+ * link instead of the text.
+ */
+export const INLINE_RESULT_CHARS = 50_000;
+
 /** Largest UTF-8 payload a request may stage or collect across repeated items. */
 export const MAX_REQUEST_BYTES = MAX_RESULT_BYTES;
 
