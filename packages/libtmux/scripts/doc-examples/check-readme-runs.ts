@@ -1,8 +1,8 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import {
+  enterSandbox,
   prepareRunRoot,
   reapOwnedRunRoot,
   sweepStaleRunRoots,
@@ -11,13 +11,7 @@ import {
 } from "../../src/_internal/test/testkit.js";
 
 import { packageRoot } from "../package_root.js";
-import {
-  bindingsFor,
-  fencedBlocks,
-  isolateTmuxEnvironment,
-  splitForExecution,
-  type Example,
-} from "./example_harness.js";
+import { bindingsFor, fencedBlocks, splitForExecution, type Example } from "./example_harness.js";
 import { sweepStrayTmux } from "./tmux_sweep.js";
 
 /**
@@ -115,9 +109,6 @@ const readme = await Bun.file(join(packageRoot, OUTPUT)).text();
 const blocks = fencedBlocks(readme, (line) => `${OUTPUT}:${String(line)}`);
 if (blocks.length === 0) throw new Error(`no \`\`\`ts blocks found in ${OUTPUT}`);
 
-// A block that builds its own `new Server()` reaches tmux's default socket.
-// Pointing TMUX_TMPDIR somewhere disposable is what keeps it off the server the
-// person running this is sitting in.
 const { STAYS_UP_COMMANDS } = await import("./readme_world.js");
 const supplied = new Set([...STAYS_UP_COMMANDS, "make"]);
 const unsupplied = blocks
@@ -141,8 +132,10 @@ if (unsupplied.length > 0) {
 // still can. Once per suite process, before anything creates a root of its own.
 await sweepStaleRunRoots();
 
-const isolated = await mkdtemp(join(tmpdir(), "ltx-readme-runs-"));
-isolateTmuxEnvironment(isolated);
+// A block's `new Server()` follows an inherited TMUX before TMUX_TMPDIR; the sandbox
+// clears it and gives the block a default socket of this run's own.
+const sandbox = await enterSandbox();
+const isolated = sandbox.root;
 
 const directory = join(packageRoot, "node_modules", ".examples-runs");
 await mkdir(directory, { recursive: true });
@@ -236,7 +229,7 @@ try {
       strayServers = await sweepStrayTmux(isolated);
       await rm(parent, { force: true, recursive: true });
       await rm(directory, { force: true, recursive: true });
-      await rm(isolated, { force: true, recursive: true });
+      await sandbox.release();
     },
   );
 }

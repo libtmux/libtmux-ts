@@ -1,15 +1,14 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
   bindingsFor,
   fencedBlocks,
-  isolateTmuxEnvironment,
   type Example,
 } from "../packages/libtmux/scripts/doc-examples/example_harness.js";
 import { sweepStrayTmux } from "../packages/libtmux/scripts/doc-examples/tmux_sweep.js";
+import { enterSandbox } from "../packages/libtmux/src/_internal/test/testkit.js";
 import { workspaceDocuments } from "./workspace_documents.js";
 
 /**
@@ -107,10 +106,10 @@ const documents = await Promise.all(
 const blocks = documents.flatMap(({ blocks: found }) => found);
 if (blocks.length === 0) throw new Error("no ```ts blocks found above the library package");
 
-// A default socket of this run's own, so `new Server()` reaches something that
-// is not the tmux the person running this is sitting in.
-const isolated = await mkdtemp(join(tmpdir(), "ltx-doc-runs-"));
-isolateTmuxEnvironment(isolated);
+// `new Server()` follows an inherited TMUX before TMUX_TMPDIR, so the sandbox clears
+// it too: the default socket these blocks reach is this run's own.
+const sandbox = await enterSandbox();
+const isolated = sandbox.root;
 const binary = join(isolated, "bin");
 await mkdir(binary, { recursive: true });
 for (const name of STUBS) {
@@ -228,7 +227,7 @@ try {
   strays = await sweepStrayTmux(isolated).catch(() => []);
   // eslint-disable-next-line no-await-in-loop -- removed in the order they were made.
   for (const directory of written) await rm(directory, { force: true, recursive: true });
-  await rm(isolated, { force: true, recursive: true });
+  await sandbox.release();
 }
 
 const covered = outcomes.filter((outcome) => outcome.state === "covered");
