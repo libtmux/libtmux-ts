@@ -231,13 +231,14 @@ replacement numbers panes from `%0` again — see `DaemonIdentity`.
 **What is on here.** A tmux server does a great many things, so this class
 has a great many members. They fall into a few groups:
 
-**Connecting.** `new Server()` takes tmux's default socket, and
-`ServerOptions` names another with `socketName` or `socketPath`. One
-liveness check answers `false` when nothing is listening, where the other
-rejects with tmux's reason. A restart on the same socket puts a different
-daemon there, which the daemon identity tells apart. The control-mode methods
-need tmux 3.7, each shows up in tmux as an attached client while it is open,
-and each refuses a server built with an `engine`.
+**Connecting.** `new Server()` passes tmux no socket unless
+`LIBTMUX_SOCKET_PATH` or `LIBTMUX_SOCKET` is set, and `ServerOptions`
+names another with `socketName` or `socketPath`, which the variables never
+override. One liveness check answers `false` when nothing is listening, where
+the other rejects with tmux's reason. A restart on the same socket puts a
+different daemon there, which the daemon identity tells apart. The
+control-mode methods need tmux 3.7, each shows up in tmux as an attached
+client while it is open, and each refuses a server built with an `engine`.
 
 - Alive: [`Server.isAlive`](#serverisalive), [`Server.checkAlive`](#servercheckalive)
 - Version: [`Server.version`](#serverversion), [`Server.versionAtLeast`](#serverversionatleast)

@@ -76,7 +76,11 @@ import {
   runtimeForServerValue,
   type RuntimeContext,
 } from "./_internal/runtime/context.js";
-import { TmuxConnection } from "./_internal/runtime/connection.js";
+import {
+  socketFromEnvironment,
+  TmuxConnection,
+  type EnvironmentSocket,
+} from "./_internal/runtime/connection.js";
 import type { RuntimeConstructors } from "./_internal/runtime/constructors.js";
 
 import { ControlConnection, watchServer } from "./_internal/control/connection.js";
@@ -112,8 +116,9 @@ const DEFAULT_TIMEOUT_MS = 30_000;
  *
  * Every field is optional and every default is tmux's own, except
  * {@link ServerOptions.environment}, which replaces the process environment
- * rather than extending it. `socketName` and `socketPath` name the same thing
- * two ways and are mutually exclusive.
+ * rather than extending it, and the socket, which `LIBTMUX_SOCKET_PATH` or
+ * `LIBTMUX_SOCKET` choose when neither `socketName` nor `socketPath` is given.
+ * Those two name the same thing two ways and are mutually exclusive.
  */
 export interface ServerOptions {
   readonly colors?: 256;
@@ -142,7 +147,23 @@ export interface ServerOptions {
    * run is one.
    */
   readonly maxInFlight?: number;
+  /**
+   * The socket name, passed to tmux as `-L`.
+   *
+   * With neither `socketName` nor `socketPath` given, the server reads
+   * `LIBTMUX_SOCKET_PATH`, else `LIBTMUX_SOCKET`, from
+   * {@link ServerOptions.environment}; a variable that is empty or only
+   * whitespace counts as unset. With none set it passes tmux no socket, and tmux
+   * picks the server: the one `TMUX` names inside tmux, otherwise its default
+   * socket. A socket given here is never overridden by either variable.
+   */
   readonly socketName?: string;
+  /**
+   * The socket path, passed to tmux as `-S`.
+   *
+   * Takes the place of `socketName`; the two are mutually exclusive. See
+   * {@link ServerOptions.socketName} for what is used when neither is given.
+   */
   readonly socketPath?: string;
   /**
    * Default deadline, in milliseconds, for every command this server runs:
@@ -274,13 +295,14 @@ async function checkServerVersion(runtime: RuntimeContext): Promise<DaemonGuard>
  * **What is on here.** A tmux server does a great many things, so this class
  * has a great many members. They fall into a few groups:
  *
- * **Connecting.** `new Server()` takes tmux's default socket, and
- * {@link ServerOptions} names another with `socketName` or `socketPath`. One
- * liveness check answers `false` when nothing is listening, where the other
- * rejects with tmux's reason. A restart on the same socket puts a different
- * daemon there, which the daemon identity tells apart. The control-mode methods
- * need tmux 3.7, each shows up in tmux as an attached client while it is open,
- * and each refuses a server built with an `engine`.
+ * **Connecting.** `new Server()` passes tmux no socket unless
+ * `LIBTMUX_SOCKET_PATH` or `LIBTMUX_SOCKET` is set, and {@link ServerOptions}
+ * names another with `socketName` or `socketPath`, which the variables never
+ * override. One liveness check answers `false` when nothing is listening, where
+ * the other rejects with tmux's reason. A restart on the same socket puts a
+ * different daemon there, which the daemon identity tells apart. The
+ * control-mode methods need tmux 3.7, each shows up in tmux as an attached
+ * client while it is open, and each refuses a server built with an `engine`.
  *
  * - Alive: {@link Server.isAlive}, {@link Server.checkAlive}
  * - Version: {@link Server.version}, {@link Server.versionAtLeast}
@@ -455,13 +477,21 @@ export class Server {
       throw new TypeError("socketName and socketPath are mutually exclusive");
     }
 
+    const environment = options?.environment ?? process.env;
+    const fromEnvironment: EnvironmentSocket =
+      options?.socketName === undefined && options?.socketPath === undefined
+        ? socketFromEnvironment(environment)
+        : {};
+    const socketName = options?.socketName ?? fromEnvironment.socketName;
+    const socketPath = options?.socketPath ?? fromEnvironment.socketPath;
+
     const connection = new TmuxConnection({
       executable: options?.tmuxBin ?? "tmux",
-      environment: options?.environment ?? process.env,
+      environment,
       ...(options?.colors === undefined ? {} : { colors: options.colors }),
       ...(options?.configFile === undefined ? {} : { configFile: options.configFile }),
-      ...(options?.socketName === undefined ? {} : { socketName: options.socketName }),
-      ...(options?.socketPath === undefined ? {} : { socketPath: options.socketPath }),
+      ...(socketName === undefined ? {} : { socketName }),
+      ...(socketPath === undefined ? {} : { socketPath }),
     });
     const runtime = createRuntimeContext({
       connection,
