@@ -59,6 +59,66 @@ export interface SessionPlans {
  * A session outlives the clients attached to it: killing the last client
  * leaves the session running, which is the property the whole tool is built
  * around.
+ *
+ * **What is on here.** A session handle reads and changes the one session it
+ * addresses. Its members fall into a few groups:
+ *
+ * **Which session this is.** Each tmux field of the session reads directly on
+ * the handle, such as `id` and `name`, as it was when the handle was made, and
+ * `format` addresses the same row by tmux's own token names, which covers a
+ * field tmux added in a later version. Reading the session again returns a new
+ * handle and leaves the receiver at the instant it was read. One comparison
+ * needs the same socket, daemon, and `$n`; the other asks only for the same
+ * `$n`, which sessions on unrelated servers routinely share.
+ *
+ * - Identity: {@link Session.server}, {@link Session.format},
+ *   {@link Session.toString}
+ * - Compare: {@link Session.equals}, {@link Session.sameTmuxIdAs}
+ * - Reach: {@link Session.fromEnv}, {@link Session.refreshed}
+ *
+ * **Windows and panes.** A session's windows and panes come from the graph the
+ * handle was materialized against, so reading them issues no tmux command and
+ * reports the instant the handle came from. The active pane takes two hops
+ * rather than one, because `pane_active` is per window: every window has an
+ * active pane, and only the active window's is the session's.
+ *
+ * - Held by the handle: {@link Session.windows}, {@link Session.panes}
+ * - Active: {@link Session.activeWindow}, {@link Session.activePane}
+ *
+ * **Changing things.** Creating a window costs a snapshot of the whole server,
+ * not of this session: a window made here is linked into every session grouped
+ * with it, and the handle reports those links. `index` selects an exact slot,
+ * and an occupied slot fails without replacing its window. A rename refuses a
+ * name the supported servers would not store identically, and `plan` describes
+ * the same mutations for {@link Server.batch} to run together.
+ *
+ * - Windows: {@link Session.newWindow}, {@link Session.selectWindow}
+ * - The session: {@link Session.rename}, {@link Session.kill}
+ * - Planned: {@link Session.plan}
+ *
+ * **Options, hooks, and environment.** `showOptions` reports only what is set
+ * on this session, which for a fresh one is often nothing, where
+ * `showResolvedOptions` adds what it inherits. A hook reads back under the name
+ * `setHook` takes, and without `append` setting one replaces whatever it ran.
+ * `getEnvironment` answers `undefined` when tmux carries no entry, and where
+ * `unsetEnvironment` drops an entry, `removeEnvironment` keeps it and marks it
+ * for removal from the processes tmux starts.
+ *
+ * - Options: {@link Session.showOptions}, {@link Session.showResolvedOptions},
+ *   {@link Session.setOption}, {@link Session.unsetOption}
+ * - Hooks: {@link Session.showHooks}, {@link Session.setHook},
+ *   {@link Session.unsetHook}
+ * - Environment: {@link Session.showEnvironment},
+ *   {@link Session.getEnvironment}, {@link Session.setEnvironment},
+ *   {@link Session.unsetEnvironment}, {@link Session.removeEnvironment}
+ *
+ * **Clients and raw commands.** Detaching detaches every client attached to
+ * this session, which keeps running. A command this package does not model
+ * goes through `cmd`: its first argument is the command name and nothing else,
+ * the arguments go in the array, and the session's id is sent as the target
+ * unless `target` says otherwise.
+ *
+ * {@link Session.detach} and {@link Session.cmd}
  */
 // eslint-disable-next-line typescript/no-unsafe-declaration-merging -- CompleteFormatRow declaration merging exposes the frozen scalar snapshot on the nominal handle.
 export class Session {

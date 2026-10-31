@@ -232,98 +232,122 @@ replacement numbers panes from `%0` again — see `DaemonIdentity`.
 has a great many members. They fall into a few groups:
 
 **Connecting.** `new Server()` takes tmux's default socket, and
-`ServerOptions` names another with `socketName` or `socketPath`.
-[`Server.isAlive`](#serverisalive) answers `false` when nothing is listening, where
-[`Server.checkAlive`](#servercheckalive) rejects with tmux's reason. [`Server.version`](#serverversion)
-and [`Server.versionAtLeast`](#serverversionatleast) say which tmux is running, and
-[`Server.daemonIdentity`](#serverdaemonidentity) which daemon, since a restart on the same
-socket puts a different one there. [`Server.socketName`](#serversocketname),
-[`Server.socketPath`](#serversocketpath), [`Server.configFile`](#serverconfigfile), [`Server.colors`](#servercolors),
-and [`Server.tmuxBin`](#servertmuxbin) read back how the server was built, and
-`Server.equals` compares two by the socket they resolve to.
-[`Server.watch`](#serverwatch) streams control-mode notifications.
-[`Server.connect`](#serverconnect) holds one control-mode connection open until it
-closes, and [`Server.withConnection`](#serverwithconnection) closes it when its body returns or
-throws. While open, each shows up in tmux as an attached client, and each
-refuses a server built with an `engine`.
+`ServerOptions` names another with `socketName` or `socketPath`. One
+liveness check answers `false` when nothing is listening, where the other
+rejects with tmux's reason. A restart on the same socket puts a different
+daemon there, which the daemon identity tells apart. The control-mode methods
+need tmux 3.7, each shows up in tmux as an attached client while it is open,
+and each refuses a server built with an `engine`.
 
-**Finding one thing.** [`Server.hasSession`](#serverhassession) answers by exact name, with
+- Alive: [`Server.isAlive`](#serverisalive), [`Server.checkAlive`](#servercheckalive)
+- Version: [`Server.version`](#serverversion), [`Server.versionAtLeast`](#serverversionatleast)
+- Daemon: [`Server.daemonIdentity`](#serverdaemonidentity)
+- Built from: [`Server.socketName`](#serversocketname), [`Server.socketPath`](#serversocketpath),
+  [`Server.configFile`](#serverconfigfile), [`Server.colors`](#servercolors), [`Server.tmuxBin`](#servertmuxbin)
+- Compare: `Server.equals`
+- Describe: `Server.toString`
+- Control mode: [`Server.watch`](#serverwatch), [`Server.connect`](#serverconnect),
+  [`Server.withConnection`](#serverwithconnection)
+
+**Finding one thing.** The existence check takes an exact name and answers
 `false` when no server is running. To get the object, read a
-[`Selection`](#selection) and ask it for one. [`Selection.one`](#selectionone) throws
-`NoMatchError` or `MultipleMatchesError` unless exactly one member matches,
-[`Selection.oneOrUndefined`](#selectiononeorundefined) answers `undefined` when none does and
-still throws `MultipleMatchesError` for several, and
-[`Selection.first`](#selectionfirst) answers `undefined` for no match and takes the head
+[`Selection`](#selection) and ask it for one: `one` throws `NoMatchError` or
+`MultipleMatchesError` unless exactly one member matches, `oneOrUndefined`
+answers `undefined` when none does and still throws `MultipleMatchesError`
+for several, and `first` answers `undefined` for no match and takes the head
 of several.
 
-**Listing everything.** [`Server.sessions`](#serversessions), [`Server.windows`](#serverwindows),
-[`Server.panes`](#serverpanes), and [`Server.clients`](#serverclients) each resolve to a
-[`Selection`](#selection). Each reads tmux afresh and rejects when the server cannot
-be reached, so an outage does not read as an empty server. Calling several in
-a row describes several different instants; [`Server.snapshot`](#serversnapshot) reads all
-of them at one instant, which is cheaper and consistent.
+- Exists: [`Server.hasSession`](#serverhassession)
+- One: [`Selection.one`](#selectionone), [`Selection.oneOrUndefined`](#selectiononeorundefined),
+  [`Selection.first`](#selectionfirst)
+
+**Listing everything.** Each listing resolves to a [`Selection`](#selection), reads
+tmux afresh, and rejects when the server cannot be reached, so an outage does
+not read as an empty server. Calling several in a row describes several
+different instants; a snapshot reads all of them at one instant, which is
+cheaper and consistent.
+
+- Listings: [`Server.sessions`](#serversessions), [`Server.windows`](#serverwindows),
+  [`Server.panes`](#serverpanes), [`Server.clients`](#serverclients)
+- At one instant: [`Server.snapshot`](#serversnapshot)
 
 **Querying things and getting around.** A [`Selection`](#selection) answers
 synchronously and issues no tmux command; it describes the instant it was
-read. [`Selection.where`](#selectionwhere) keeps the members matching declarative
-criteria, and throws `VersionTooLowError` when a criterion names a field the
-running tmux lacks. [`Selection.filter`](#selectionfilter) keeps those a predicate accepts.
-[`Selection.exists`](#selectionexists) answers whether anything matches and
-[`Selection.count`](#selectioncount) how many. [`Selection.map`](#selectionmap) and
-[`Selection.toArray`](#selectiontoarray) leave the selection for a plain array, and
-[`Selection.at`](#selectionat) answers the member at an index, or `undefined` past the
-end. To move between levels, go down with [`Session.windows`](#sessionwindows),
-[`Session.panes`](#sessionpanes), and [`Window.panes`](#windowpanes); up with [`Pane.window`](#panewindow),
-[`Pane.session`](#panesession), and [`Window.session`](#windowsession); and across to the focused
-child with [`Session.activeWindow`](#sessionactivewindow), [`Session.activePane`](#sessionactivepane), and
-[`Window.activePane`](#windowactivepane). None of it reads tmux again: each resolves against
-the snapshot its handle came from, and the way up and across answers
-`undefined` when nothing is there.
+read. Its `where` throws `VersionTooLowError` when a criterion names a field
+the running tmux lacks. Moving between levels reads nothing either: each step
+resolves against the snapshot its handle came from, and the way up and across
+answers `undefined` when nothing is there.
 
-**Changing things.** [`Server.newSession`](#servernewsession) creates a detached session and
-resolves to its handle, and [`Server.kill`](#serverkill) terminates the server and
-every session on it. [`Server.batch`](#serverbatch) runs mutations planned through a
-handle's `plan`, such as [`Session.plan`](#sessionplan), in order and resolves each to
-what it made, all from one final snapshot. It is not atomic: tmux stops at
-the first failure and leaves everything before it applied. A command tmux
-refuses rejects with `TmuxCommandError`, which carries tmux's own
-stderr.
+- Narrow: [`Selection.where`](#selectionwhere), [`Selection.filter`](#selectionfilter)
+- Ask: [`Selection.exists`](#selectionexists), [`Selection.count`](#selectioncount)
+- By index: [`Selection.at`](#selectionat)
+- Leave the selection: [`Selection.map`](#selectionmap), [`Selection.toArray`](#selectiontoarray)
+- Down: [`Session.windows`](#sessionwindows), [`Session.panes`](#sessionpanes), [`Window.panes`](#windowpanes)
+- Up: [`Pane.window`](#panewindow), [`Pane.session`](#panesession), [`Window.session`](#windowsession)
+- Across: [`Session.activeWindow`](#sessionactivewindow), [`Session.activePane`](#sessionactivepane),
+  [`Window.activePane`](#windowactivepane)
 
-**Options and hooks.** [`Server.showOptions`](#servershowoptions) reads server-scope options,
-[`Server.showResolvedOptions`](#servershowresolvedoptions) adds the values the server inherits, and
-[`Server.setOption`](#serversetoption) and [`Server.unsetOption`](#serverunsetoption) write and remove
-them. The defaults that sessions and windows inherit are
-[`Server.showGlobalOptions`](#servershowglobaloptions), [`Server.setGlobalOption`](#serversetglobaloption), and
-[`Server.unsetGlobalOption`](#serverunsetglobaloption), each taking a `"session"` or `"window"`
-scope; unsetting falls back to tmux's built-in value.
-[`Server.showHooks`](#servershowhooks) reads the global hooks as a map from name to
-commands, [`Server.setHook`](#serversethook) replaces a hook's commands unless `append`
-is set, and [`Server.unsetHook`](#serverunsethook) removes the hook. The server environment
-is [`Server.showEnvironment`](#servershowenvironment), [`Server.getEnvironment`](#servergetenvironment),
-[`Server.setEnvironment`](#serversetenvironment), and [`Server.unsetEnvironment`](#serverunsetenvironment);
-`getEnvironment` answers `undefined` when tmux carries no entry. Where
-`unsetEnvironment` drops an entry, [`Server.removeEnvironment`](#serverremoveenvironment) keeps it
-and marks it for removal from the processes tmux starts.
+**Changing things.** A new session is detached and resolves to its handle,
+and a kill terminates the server and every session on it. A batch runs
+mutations planned through a handle's `plan`, such as [`Session.plan`](#sessionplan), in
+order and resolves each to what it made, all from one final snapshot. It is
+not atomic: tmux stops at the first failure and leaves everything before it
+applied. A command tmux refuses rejects with `TmuxCommandError`, which
+carries tmux's own stderr.
 
-**Everything else tmux keeps.** [`Server.listBuffers`](#serverlistbuffers) names the paste
-buffers. [`Server.showBuffer`](#servershowbuffer) reads one as lines and
-[`Server.showBufferBytes`](#servershowbufferbytes) as untouched bytes, [`Server.setBuffer`](#serversetbuffer)
-stores a string and [`Server.loadBuffer`](#serverloadbuffer) feeds large or binary data
-through stdin, [`Server.saveBuffer`](#serversavebuffer) has tmux write one to a file, and
-[`Server.deleteBuffer`](#serverdeletebuffer) discards it. [`Server.sourceFile`](#serversourcefile) runs a
-configuration file, [`Server.runShell`](#serverrunshell) returns the lines a shell command
-printed, [`Server.ifShell`](#serverifshell) runs a tmux command when a shell condition
-succeeds, [`Server.listCommands`](#serverlistcommands) names the commands the running tmux
-understands, and [`Server.validateLayouts`](#servervalidatelayouts) checks planned window layouts
-before anything is created.
+[`Server.newSession`](#servernewsession), [`Server.kill`](#serverkill), and [`Server.batch`](#serverbatch)
+
+**Running a program.** A program gets a pane of its own with a real
+terminal, and no shell parses its `argv`. One method resolves with what the
+program printed once it ends; the other returns the running [`Program`](#program),
+which owns its pane and ends and removes it on `await using` or
+[`Program.kill`](#programkill). Both need tmux 3.8 and reject with
+`VersionTooLowError` below it.
+
+[`Server.run`](#serverrun) and [`Server.spawn`](#serverspawn)
+
+**Options and hooks.** Reads cover the server's own options, with the values
+it inherits added on request. The defaults that sessions and windows inherit
+take a `"session"` or `"window"` scope, and unsetting falls back to tmux's
+built-in value. Hooks read as a map from name to commands, and setting one
+replaces its commands unless `append` is set. `getEnvironment` answers
+`undefined` when tmux carries no entry, and where `unsetEnvironment` drops an
+entry, `removeEnvironment` keeps it and marks it for removal from the
+processes tmux starts.
+
+- Server options: [`Server.showOptions`](#servershowoptions),
+  [`Server.showResolvedOptions`](#servershowresolvedoptions), [`Server.setOption`](#serversetoption),
+  [`Server.unsetOption`](#serverunsetoption)
+- Inherited defaults: [`Server.showGlobalOptions`](#servershowglobaloptions),
+  [`Server.setGlobalOption`](#serversetglobaloption), [`Server.unsetGlobalOption`](#serverunsetglobaloption)
+- Hooks: [`Server.showHooks`](#servershowhooks), [`Server.setHook`](#serversethook),
+  [`Server.unsetHook`](#serverunsethook)
+- Environment: [`Server.showEnvironment`](#servershowenvironment), [`Server.getEnvironment`](#servergetenvironment),
+  [`Server.setEnvironment`](#serversetenvironment), [`Server.unsetEnvironment`](#serverunsetenvironment),
+  [`Server.removeEnvironment`](#serverremoveenvironment)
+
+**Everything else tmux keeps.** A paste buffer reads as lines or as untouched
+bytes, is stored from a string, is fed through stdin when the data is large
+or binary, or is written by tmux to a file. A shell command returns the lines
+it printed, and a condition runs a tmux command when a shell test succeeds.
+Planned window layouts are checked before anything is created.
+
+- Buffers: [`Server.listBuffers`](#serverlistbuffers), [`Server.showBuffer`](#servershowbuffer),
+  [`Server.showBufferBytes`](#servershowbufferbytes), [`Server.setBuffer`](#serversetbuffer),
+  [`Server.loadBuffer`](#serverloadbuffer), [`Server.saveBuffer`](#serversavebuffer),
+  [`Server.deleteBuffer`](#serverdeletebuffer)
+- Configuration: [`Server.sourceFile`](#serversourcefile), [`Server.listCommands`](#serverlistcommands),
+  [`Server.validateLayouts`](#servervalidatelayouts)
+- Shell: [`Server.runShell`](#serverrunshell), [`Server.ifShell`](#serverifshell)
 
 **Things that need a terminal.** Popups, menus, and choosers draw on an
 attached client, so they live on the pane they open over rather than on the
-server: [`Pane.displayPopup`](#panedisplaypopup), [`Pane.displayMenu`](#panedisplaymenu),
-[`Pane.chooseTree`](#panechoosetree), [`Pane.chooseBuffer`](#panechoosebuffer), and
-[`Pane.findWindow`](#panefindwindow). With no client attached, the popup and the menu
-reject because tmux has no current client, while the chooser and search modes
-do nothing and report success.
+server. With no client attached, the popup and the menu reject because tmux
+has no current client, while the chooser and search modes do nothing and
+report success.
+
+[`Pane.displayPopup`](#panedisplaypopup), [`Pane.displayMenu`](#panedisplaymenu), [`Pane.chooseTree`](#panechoosetree),
+[`Pane.chooseBuffer`](#panechoosebuffer), and [`Pane.findWindow`](#panefindwindow)
 
 Anything tmux can do that is not here is reachable through
 [`Server.cmd`](#servercmd), which runs one command and resolves to the lines it
