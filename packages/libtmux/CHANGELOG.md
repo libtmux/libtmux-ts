@@ -13,6 +13,7 @@ release is always `latest`, so `npm i libtmux` fetches it. Releases before
 <!-- toc -->
 
 - [Unreleased](#unreleased)
+- [0.1.1-alpha.2 (2026-10-30)](#011-alpha2-2026-10-30)
 - [0.1.1-alpha.1 (2026-10-29)](#011-alpha1-2026-10-29)
 - [0.1.0 (2026-10-25)](#010-2026-10-25)
 - [0.1.0-alpha.15 (2026-10-24)](#010-alpha15-2026-10-24)
@@ -37,6 +38,11 @@ release is always `latest`, so `npm i libtmux` fetches it. Releases before
 <!-- /toc -->
 
 ## Unreleased
+
+## 0.1.1-alpha.2 (2026-10-30)
+
+A prerelease, published under the `alpha` dist-tag, so `npm i libtmux` still
+fetches 0.1.0. Install this one by its version, `npm i libtmux@0.1.1-alpha.2`.
 
 ### `libtmux`
 
