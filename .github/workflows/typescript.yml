@@ -36,6 +36,11 @@ on:
         type: choice
         options: [ubuntu-latest, ubuntu-24.04, ubuntu-22.04]
         default: ubuntu-latest
+      tmate:
+        description: Open a tmate session on the one tmux lane, which needs a single tmux-ref
+        type: choice
+        options: [off, before-tests, on-failure]
+        default: "off"
 
 permissions:
   contents: read
@@ -71,6 +76,7 @@ jobs:
           INPUT_TMUX_REF: ${{ inputs.tmux-ref }}
           INPUT_BUN: ${{ inputs.bun }}
           INPUT_OS: ${{ inputs.os }}
+          INPUT_TMATE: ${{ inputs.tmate }}
         run: bun scripts/plan-ci.ts
 
   # One check to require. A job the plan left out of scope may be skipped; every
@@ -267,7 +273,8 @@ jobs:
     needs: plan
     if: ${{ needs.plan.outputs.tmux != '[]' }}
     runs-on: ${{ needs.plan.outputs.os }}
-    timeout-minutes: 15
+    # A tmate session needs longer than a test run does.
+    timeout-minutes: ${{ matrix.tmate == 'off' && 15 || 60 }}
     # Only the master lane: it tracks tmux's own branch, so a commit upstream
     # must be able to report a regression without failing this repository's
     # checks. Every tagged version stays blocking.
@@ -348,6 +355,12 @@ jobs:
         with:
           ref: ${{ matrix.tmux-version }}
 
+      - name: Open a tmate session before the tests
+        if: ${{ matrix.tmate == 'before-tests' }}
+        uses: mxschmitt/action-tmate@35b54afac29c97fb54faba5b513f8fbd1882f113 # v3.24
+        with:
+          limit-access-to-actor: true
+
       - name: Use tmux ${{ matrix.tmux-version }}
         env:
           TMUX_PREFIX: ${{ steps.tmux.outputs.prefix }}
@@ -382,6 +395,12 @@ jobs:
         run: |
           sudo apt-get install -y fish zsh
           bun run test
+
+      - name: Open a tmate session after a failure
+        if: ${{ failure() && matrix.tmate == 'on-failure' }}
+        uses: mxschmitt/action-tmate@35b54afac29c97fb54faba5b513f8fbd1882f113 # v3.24
+        with:
+          limit-access-to-actor: true
 
   # The releases just below the floor, which the package must refuse before any
   # effect. 3.3a is the client, so a refusal here is the daemon's version

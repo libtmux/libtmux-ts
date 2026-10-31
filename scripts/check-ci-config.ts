@@ -58,6 +58,7 @@ interface WorkflowJob {
   readonly permissions?: unknown;
   readonly steps?: unknown;
   readonly strategy?: { readonly matrix?: Readonly<Record<string, unknown>> };
+  readonly "timeout-minutes"?: unknown;
   readonly uses?: unknown;
   readonly with?: Readonly<Record<string, unknown>>;
 }
@@ -348,6 +349,39 @@ if (
   failures.push(
     `.github/workflows/typescript.yml: required must run under always() and need every other job (${otherJobs.join(", ")}), not ${requiredNeeds.join(", ")}`,
   );
+}
+
+// A tmate session is a way into the runner. Only the tmux job may open one,
+// pinned, limited to the account that dispatched the run, and under a timeout;
+// no other workflow may.
+for (const [name, job] of Object.entries(typescriptJobs)) {
+  const steps = Array.isArray(job.steps) ? (job.steps as readonly WorkflowStep[]) : [];
+  for (const step of steps) {
+    if (typeof step.uses !== "string" || !step.uses.startsWith("mxschmitt/action-tmate@")) continue;
+    if (name !== "tmux") {
+      failures.push(
+        `.github/workflows/typescript.yml: ${name} opens a tmate session; only tmux may`,
+      );
+    }
+    if (step.with?.["limit-access-to-actor"] !== true) {
+      failures.push(
+        `.github/workflows/typescript.yml: the tmate step in ${name} must set limit-access-to-actor: true`,
+      );
+    }
+    if (job["timeout-minutes"] === undefined) {
+      failures.push(
+        `.github/workflows/typescript.yml: ${name} opens tmate with no timeout-minutes`,
+      );
+    }
+  }
+}
+for (const workflow of workflows) {
+  if (workflow === "workflows/typescript.yml") continue;
+  // eslint-disable-next-line no-await-in-loop -- each workflow gets an exact diagnostic.
+  const source = await Bun.file(join(repositoryRoot, ".github", workflow)).text();
+  if (source.includes("action-tmate")) {
+    failures.push(`.github/${workflow}: must not open a tmate session`);
+  }
 }
 
 const setupNodeStep = (step: WorkflowStep, version: string): boolean =>
