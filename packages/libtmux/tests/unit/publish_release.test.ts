@@ -82,6 +82,7 @@ function makeReleaseIO(
   registry: Map<string, RegistryFixture>,
   options: {
     readonly npmVersion?: string;
+    readonly packWithoutChangelog?: string;
     readonly publishUpdatesRegistry?: boolean;
     readonly registryLagReads?: number;
     readonly publishSkipsDistTag?: boolean;
@@ -124,7 +125,10 @@ function makeReleaseIO(
       };
       const tarballPath = join(destination, `${basename(packageRoot)}.tgz`);
       const artifact = {
-        entries: ["dist/index.js", "package.json"],
+        entries:
+          manifest.name === options.packWithoutChangelog
+            ? ["dist/index.js", "package.json"]
+            : ["CHANGELOG.md", "dist/index.js", "package.json"],
         filename: basename(tarballPath),
         integrity: localIntegrity(manifest.name),
         name: manifest.name,
@@ -582,6 +586,31 @@ describe("coordinated release", () => {
       await rm(fixture.root, { force: true, recursive: true });
     }
   });
+
+  test.each(packages.map(([, name]) => name))(
+    "rejects a %s tarball with no CHANGELOG.md before publishing",
+    async (name) => {
+      const fixture = await makeReleaseFixture("1.0.0");
+      const { io, publishes } = makeReleaseIO(makeRegistry(), { packWithoutChangelog: name });
+      try {
+        await expect(
+          coordinateRelease(
+            {
+              artifactDirectory: fixture.artifacts,
+              dryRun: false,
+              eventName: "push",
+              refName: "v1.0.0",
+              repositoryRoot: fixture.root,
+            },
+            io,
+          ),
+        ).rejects.toThrow(`${name}@1.0.0 tarball has no CHANGELOG.md`);
+        expect(publishes).toEqual([]);
+      } finally {
+        await rm(fixture.root, { force: true, recursive: true });
+      }
+    },
+  );
 
   test("rejects tag disagreement before packing", async () => {
     const fixture = await makeReleaseFixture("1.0.0");
