@@ -484,7 +484,7 @@ test("a run past its timeout no longer needs its private directory", async () =>
   });
 }, 20_000);
 
-test("a pane killed mid-run takes its private directory with it", async () => {
+test("a pane killed mid-run returns what it printed and takes its private directory", async () => {
   await withServer(async (fixture) => {
     await fixture.executeText(["set-option", "-g", "default-command", "sh"]);
     const scratchTmp = await mkdtemp(join(tmpdir(), "ltxscratch-"));
@@ -499,15 +499,20 @@ test("a pane killed mid-run takes its private directory with it", async () => {
             }),
           );
           const running = client.callTool({
-            arguments: { command: "sleep 30", paneId: created.paneId, timeoutMs: 15_000 },
+            arguments: {
+              command: "echo one; echo two; sleep 30",
+              paneId: created.paneId,
+              timeoutMs: 15_000,
+            },
             name: "run_shell_command",
           });
           await new Promise((resolve) => setTimeout(resolve, 500));
           await fixture.executeText(["kill-pane", "-t", created.paneId]);
           const killed = performance.now();
 
-          const result = structured<{ outcome: string }>(await running);
+          const result = structured<{ outcome: string; output: string }>(await running);
           expect(result.outcome).toBe("pane_died");
+          expect(result.output).toBe("one\ntwo\n");
           // Answered once the pane is seen gone, not at the timeout.
           expect(performance.now() - killed).toBeLessThan(5_000);
         },
