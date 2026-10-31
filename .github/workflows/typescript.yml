@@ -73,6 +73,28 @@ jobs:
           INPUT_OS: ${{ inputs.os }}
         run: bun scripts/plan-ci.ts
 
+  # One check to require. A job the plan left out of scope may be skipped; every
+  # other job has to have passed. Matrices shrink through the plan, not through
+  # an `if` on a matrix leg, so a skipped leg cannot read as a pass.
+  required:
+    name: required
+    if: ${{ always() }}
+    needs: [plan, gates, tmux, tmux-rejected]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.4.0
+
+      - name: Require every planned job to have passed
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+          ALLOW_SKIPPED: ${{ needs.plan.outputs.skip }}
+        run: bun scripts/plan-ci.ts verify
+
   # Everything that does not depend on which tmux is installed. Split out
   # because it used to run once per tmux release: a lint rule and a doc link do
   # not become truer on 3.5 than on 3.3a, and paying for them per version is

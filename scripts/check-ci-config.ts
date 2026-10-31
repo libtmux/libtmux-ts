@@ -332,6 +332,24 @@ if (
   );
 }
 
+// One stable check stands for the workflow, so it has to wait for every job in
+// it, or a job added later can fail without failing the check.
+const requiredJob = typescriptJobs.required;
+const otherJobs = Object.keys(typescriptJobs)
+  .filter((name) => name !== "required")
+  .toSorted();
+const requiredNeeds = Array.isArray(requiredJob?.needs)
+  ? requiredJob.needs.map(String).toSorted()
+  : [];
+if (
+  requiredJob?.if !== "${{ always() }}" ||
+  JSON.stringify(requiredNeeds) !== JSON.stringify(otherJobs)
+) {
+  failures.push(
+    `.github/workflows/typescript.yml: required must run under always() and need every other job (${otherJobs.join(", ")}), not ${requiredNeeds.join(", ")}`,
+  );
+}
+
 const setupNodeStep = (step: WorkflowStep, version: string): boolean =>
   typeof step.uses === "string" &&
   step.uses.startsWith("actions/setup-node@") &&
