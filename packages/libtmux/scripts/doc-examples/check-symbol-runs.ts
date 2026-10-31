@@ -17,7 +17,13 @@ import {
   requireSymbolExamples,
 } from "../api_surface.js";
 import { packageRoot } from "../package_root.js";
-import { bindingsFor, fencedBlocks, splitForExecution, type Example } from "./example_harness.js";
+import {
+  bindingsFor,
+  fencedBlocks,
+  isolateTmuxEnvironment,
+  splitForExecution,
+  type Example,
+} from "./example_harness.js";
 import { buildWorld, disposeWorld, type World } from "./readme_world.js";
 import { sweepStrayTmux } from "./tmux_sweep.js";
 
@@ -233,7 +239,7 @@ if (examples.length === 0) throw new Error("no symbol examples were found to run
 await sweepStaleRunRoots();
 
 const isolated = await mkdtemp(join(tmpdir(), "ltx-symbol-runs-"));
-process.env["TMUX_TMPDIR"] = isolated;
+isolateTmuxEnvironment(isolated);
 
 const directory = join(packageRoot, "node_modules", ".examples-symbol-runs");
 await mkdir(directory, { recursive: true });

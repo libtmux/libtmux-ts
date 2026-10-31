@@ -71,6 +71,11 @@ and for a dispatch with `scope=full`. `workflow_dispatch` takes `scope`,
 version, tag, branch or commit. `.github/ci-matrix.txt` lists the releases and
 Bun versions once. The tmux badge names 3.3a–3.8, because 3.8a has no tag.
 
+The documentation runners, `test:readme`, `test:symbols` and the one above the
+library package, now clear `TMUX`, `TMUX_PANE`, `LIBTMUX_SOCKET` and
+`LIBTMUX_SOCKET_PATH` beside setting `TMUX_TMPDIR`, so a recipe's `new Server()`
+cannot reach the server of whoever runs them. (#164)
+
 ## 0.1.1 (2026-10-31)
 
 ### `libtmux`

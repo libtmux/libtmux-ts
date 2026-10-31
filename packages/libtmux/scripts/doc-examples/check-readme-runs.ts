@@ -11,7 +11,13 @@ import {
 } from "../../src/_internal/test/testkit.js";
 
 import { packageRoot } from "../package_root.js";
-import { bindingsFor, fencedBlocks, splitForExecution, type Example } from "./example_harness.js";
+import {
+  bindingsFor,
+  fencedBlocks,
+  isolateTmuxEnvironment,
+  splitForExecution,
+  type Example,
+} from "./example_harness.js";
 import { sweepStrayTmux } from "./tmux_sweep.js";
 
 /**
@@ -136,7 +142,7 @@ if (unsupplied.length > 0) {
 await sweepStaleRunRoots();
 
 const isolated = await mkdtemp(join(tmpdir(), "ltx-readme-runs-"));
-process.env["TMUX_TMPDIR"] = isolated;
+isolateTmuxEnvironment(isolated);
 
 const directory = join(packageRoot, "node_modules", ".examples-runs");
 await mkdir(directory, { recursive: true });

@@ -119,6 +119,33 @@ declare const onChunk: (chunk: string) => void;
 `;
 
 /**
+ * What points a bare `new Server()` or a `tmux` command at a server this run did
+ * not make: tmux follows `TMUX`, and the library follows the two socket
+ * variables.
+ */
+export const AMBIENT_TMUX_VARIABLES: readonly string[] = Object.freeze([
+  "LIBTMUX_SOCKET",
+  "LIBTMUX_SOCKET_PATH",
+  "TMUX",
+  "TMUX_PANE",
+]);
+
+/**
+ * Give the default socket a directory of this run's own and take away every
+ * variable that would route past it.
+ *
+ * `TMUX_TMPDIR` moves only the default socket, so a runner that sets nothing
+ * else still reaches whatever server the person running it is sitting in.
+ */
+export function isolateTmuxEnvironment(
+  directory: string,
+  environment: Record<string, string | undefined> = process.env,
+): void {
+  for (const name of AMBIENT_TMUX_VARIABLES) delete environment[name];
+  environment["TMUX_TMPDIR"] = directory;
+}
+
+/**
  * How a block is covered, when it is not run here.
  *
  * Two markers, both already the repository's: `<!-- runs: examples/x.ts -->`

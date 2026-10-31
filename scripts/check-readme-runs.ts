@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import {
   bindingsFor,
   fencedBlocks,
+  isolateTmuxEnvironment,
   type Example,
 } from "../packages/libtmux/scripts/doc-examples/example_harness.js";
 import { sweepStrayTmux } from "../packages/libtmux/scripts/doc-examples/tmux_sweep.js";
@@ -109,7 +110,7 @@ if (blocks.length === 0) throw new Error("no ```ts blocks found above the librar
 // A default socket of this run's own, so `new Server()` reaches something that
 // is not the tmux the person running this is sitting in.
 const isolated = await mkdtemp(join(tmpdir(), "ltx-doc-runs-"));
-process.env["TMUX_TMPDIR"] = isolated;
+isolateTmuxEnvironment(isolated);
 const binary = join(isolated, "bin");
 await mkdir(binary, { recursive: true });
 for (const name of STUBS) {
