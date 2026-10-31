@@ -8,6 +8,7 @@ import {
   extractVersionLiterals,
 } from "./bun_version_pins.js";
 import { slugify } from "../packages/libtmux/scripts/markdown_anchors.js";
+import { parseCiMatrix } from "./ci_matrix.js";
 
 /**
  * Hold the shell blocks and version claims in the docs to what the repository
@@ -387,32 +388,15 @@ for (const { depth, file } of tablesOfContents) {
 }
 
 // The tmux badge is the one version claim a reader takes at face value, so it
-// is pinned to the matrix that proves it rather than to someone's memory.
-const workflow = await Bun.file(join(repositoryRoot, ".github/workflows/typescript.yml")).text();
-const matrix = /tmux-version:\s*\[([^\]]+)\]/u.exec(workflow)?.[1];
-if (matrix === undefined) throw new Error("could not read the tmux matrix from typescript.yml");
-// The formatter adds a trailing comma once the list wraps, which splits into
-// a final empty entry and would otherwise read as a version named "".
-// A release with no tag upstream, such as 3.8a, is built from its
-// `release_` branch and named by the release.
-const tested = matrix
-  .split(",")
-  .map((entry) =>
-    entry
-      .trim()
-      .replaceAll('"', "")
-      .replace(/^release_/u, ""),
-  )
-  .filter((entry) => entry !== "");
-
-// The badge names the range's ends rather than every release in it: eight
-// entries is a badge nobody reads, and the ends are the claim — everything
-// between them is in the matrix above, which is what this compares against.
-// A badge tells a reader which releases are covered, and `master` is not one
-// they can install — it is a moving branch the matrix tracks so the version
-// ranking has a real `next-X.Y` binary behind it. The ends of the badge are
-// the tagged ends.
-const releases = tested.filter((version) => version !== "master");
+// is pinned to the manifest that decides what CI runs rather than to someone's
+// memory. The badge names the range's tagged ends: `release_3.8a` has no tag
+// yet and `master` is a moving branch, neither a release a reader can install,
+// so both run with the whole table and neither is in the claim. Everything
+// between the ends is in the manifest, which is what this compares against.
+const ciMatrix = parseCiMatrix(
+  await Bun.file(join(repositoryRoot, ".github/ci-matrix.txt")).text(),
+);
+const releases = ciMatrix.supported;
 const range = `${releases[0] ?? ""}\u2013${releases.at(-1) ?? ""}`;
 
 let badges = 0;
@@ -433,14 +417,10 @@ for (const file of files) {
   }
 }
 
-// The Bun version is recorded in the gates matrix, the regex corpus, the
+// The Bun version is recorded in the CI manifest, the regex corpus, the
 // packageManager pin, every manifest's engines.bun floor, and the
 // CONTRIBUTING prose that describes them — nowhere else compares all five.
-const bunMatrixClaim = /bun-version:\s*\[([^\]]+)\]/u.exec(workflow)?.[1];
-if (bunMatrixClaim === undefined) {
-  throw new Error("could not read the gates job's bun-version matrix from typescript.yml");
-}
-const bunMatrix = bunMatrixClaim.split(",").map((entry) => entry.trim().replaceAll('"', ""));
+const bunMatrix = ciMatrix.bun;
 
 const regexCorpusPath = "packages/libtmux/tests/fixtures/where_regex.json";
 const regexCorpus = (await Bun.file(join(repositoryRoot, regexCorpusPath)).json()) as {
@@ -530,5 +510,5 @@ if (failures.length > 0) {
 }
 
 process.stdout.write(
-  `Documentation claims hold: ${String(checkedCommands)} shell commands, ${String(checkedPrereleasePins)} prerelease pins, ${String(badges)} tmux badges against CI's ${tested.join(", ")}, Bun ${bunMatrix.join(", ")} agreed across the matrix, corpus, packageManager, engines, and CONTRIBUTING, ${String(tocEntriesChecked)} table-of-contents entries across ${String(tablesOfContents.length)} files, and ${String(benchScripts.length)} benchmark scripts\n`,
+  `Documentation claims hold: ${String(checkedCommands)} shell commands, ${String(checkedPrereleasePins)} prerelease pins, ${String(badges)} tmux badges against CI's ${releases.join(", ")}, Bun ${bunMatrix.join(", ")} agreed across the matrix, corpus, packageManager, engines, and CONTRIBUTING, ${String(tocEntriesChecked)} table-of-contents entries across ${String(tablesOfContents.length)} files, and ${String(benchScripts.length)} benchmark scripts\n`,
 );
