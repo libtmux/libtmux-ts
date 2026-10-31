@@ -61,6 +61,7 @@ const SUITES: readonly string[] = [
   "tests/integration/capability_locale.test.ts",
   "tests/integration/testing_doubles.test.ts",
   "tests/integration/sandbox_release.test.ts",
+  "tests/integration/sandbox_runner.test.ts",
 ];
 
 /** Run by `test:differential`, which needs the Python oracle this runner has no part in. */

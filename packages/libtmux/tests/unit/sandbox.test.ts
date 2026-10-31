@@ -8,12 +8,14 @@ import { basename, dirname, join } from "node:path";
 import { afterEach, describe, expect, test } from "bun:test";
 
 import {
+  assertOwnedSocketPath,
   assertSandboxed,
   enterSandbox,
   makeTestDirectory,
   SANDBOX_ENV,
   SANDBOX_SOCKET_LIMIT,
   sandboxFindings,
+  TestServer,
   tmuxSocketFor,
   type Sandbox,
   type SandboxOptions,
@@ -642,5 +644,36 @@ describe("leaving the sandbox", () => {
 
     expect(message).toContain("A test that starts a server must kill it");
     expect(message.includes(sandbox.root)).toBe(false);
+  });
+});
+
+describe("fixtures", () => {
+  /** Run `body` with the variable that points at another server set, as it is in a pane. */
+  async function insideAPane(body: () => unknown): Promise<void> {
+    process.env["TMUX"] = "/nowhere/theirs.sock,1,0";
+    try {
+      await body();
+    } finally {
+      delete process.env["TMUX"];
+    }
+  }
+
+  test("assertOwnedSocketPath refuses a process that is not sandboxed", async () => {
+    const socketPath = join(tmpdir(), "ltx-refusal", "s");
+
+    await insideAPane(() => {
+      expect(() => assertOwnedSocketPath(socketPath)).toThrow(
+        "refusing to run outside the tmux sandbox: TMUX is set",
+      );
+    });
+    expect(() => assertOwnedSocketPath(socketPath)).not.toThrow();
+  });
+
+  test("TestServer.create refuses before it resolves tmux or touches the run root", async () => {
+    await insideAPane(async () => {
+      await expect(
+        TestServer.create({ runRoot: "/nonexistent", tmuxExecutable: "/nonexistent/tmux" }),
+      ).rejects.toThrow("refusing to run outside the tmux sandbox: TMUX is set");
+    });
   });
 });

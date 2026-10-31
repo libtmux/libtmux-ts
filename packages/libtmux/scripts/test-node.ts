@@ -6,6 +6,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import {
   deadlineMs,
+  enterSandbox,
   resolveNode22,
   reapStaleRunRoot,
   RUN_ROOT_ENV,
@@ -13,6 +14,10 @@ import {
   makeTestDirectory,
   testParallelism,
 } from "../src/_internal/test/testkit.js";
+
+// Every Node process below inherits this, vitest's among them: its setup file
+// joins it rather than entering a second one.
+const sandbox = await enterSandbox();
 
 interface Arguments {
   readonly expectMajor: number;
@@ -976,18 +981,26 @@ const vitest = fileURLToPath(new URL("../node_modules/vitest/vitest.mjs", import
 await access(vitest).catch(() => {
   throw new Error(`vitest is not installed beside the package: ${vitest}`);
 });
-for (const suite of ["unit", "integration"] as const) {
-  const run = spawnSync(
-    executable,
-    [
-      vitest,
-      "run",
-      "--config",
-      "vitest.node.config.ts",
-      ...(suite === "integration" ? [`--maxWorkers=${String(testParallelism())}`] : []),
-    ],
-    { cwd: tsRoot, env: { ...process.env, LTX_NODE_SUITE: suite }, stdio: "inherit" },
-  );
-  if (run.error !== undefined) throw run.error;
-  if (run.status !== 0) throw new Error(`the ${suite} suite failed on ${version}`);
+try {
+  for (const suite of ["unit", "integration"] as const) {
+    const run = spawnSync(
+      executable,
+      [
+        vitest,
+        "run",
+        "--config",
+        "vitest.node.config.ts",
+        ...(suite === "integration" ? [`--maxWorkers=${String(testParallelism())}`] : []),
+      ],
+      { cwd: tsRoot, env: { ...process.env, LTX_NODE_SUITE: suite }, stdio: "inherit" },
+    );
+    if (run.error !== undefined) throw run.error;
+    if (run.status !== 0) throw new Error(`the ${suite} suite failed on ${version}`);
+  }
+} finally {
+  // A server a test left behind fails the run, whatever its tests said.
+  await sandbox.release().catch((error: unknown) => {
+    process.stderr.write(`${String(error)}\n`);
+    process.exitCode = 1;
+  });
 }

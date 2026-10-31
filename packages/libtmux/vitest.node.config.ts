@@ -15,6 +15,7 @@ import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
 
 const REPOSITORY_GATES: Readonly<Record<string, string>> = {
+  "integration/sandbox_runner": "starts a supervisor under bun",
   "integration/test_runners": "the repository's own runners, spawned under bun",
   "unit/bounded_process": "a repository script's process helper",
   "unit/build_tmux": "builds tmux from a fixture repository with a repository script",
@@ -62,6 +63,7 @@ export default defineConfig({
     exclude: Object.keys(REPOSITORY_GATES).map((gate) => `tests/${gate}.test.ts`),
     include: [`tests/${suite}/**/*.test.ts`],
     pool: "forks",
+    setupFiles: ["./tests/support/sandbox_preload.ts"],
     testNamePattern: new RegExp(`^(?!.*(?:${escaped.join("|")})).*$`, "u"),
   },
 });

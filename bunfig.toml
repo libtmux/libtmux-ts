@@ -1,2 +1,5 @@
 [install]
 exact = true
+
+[test]
+preload = ["./packages/libtmux/tests/support/sandbox_preload.ts"]
