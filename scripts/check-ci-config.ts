@@ -319,6 +319,19 @@ for (const [job, key, output] of [
   }
 }
 
+// A dispatch is a request for that run: its run id keeps one from cancelling
+// another run of the same branch.
+const typescriptGroup = typescriptDocument.concurrency?.group;
+if (
+  typeof typescriptGroup !== "string" ||
+  !typescriptGroup.includes("workflow_dispatch") ||
+  !typescriptGroup.includes("github.run_id")
+) {
+  failures.push(
+    ".github/workflows/typescript.yml: a dispatch run must add github.run_id to the concurrency group",
+  );
+}
+
 const setupNodeStep = (step: WorkflowStep, version: string): boolean =>
   typeof step.uses === "string" &&
   step.uses.startsWith("actions/setup-node@") &&
