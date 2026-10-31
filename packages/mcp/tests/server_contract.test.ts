@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { buildInstructions } from "../src/instructions.js";
 import { describeStartupFailure } from "../src/server.js";
 import { describeStartup } from "../src/startup.js";
 import { serverFor, structured, withClient, withServer } from "./support/server_harness.js";
@@ -701,30 +702,73 @@ test("a retired variable refuses with its own message and no stack", async () =>
 }, 30_000);
 
 /**
- * Joining a daemon somebody else started is the one startup fact with two
- * consequences an operator meets later: the toolsets narrow, because a server
- * this process did not create keeps `teardown` off, and the agent is sharing a
- * tmux with whoever else is on that socket. The line said neither.
+ * Joining a daemon somebody else started is the one startup fact an operator
+ * meets later: the agent is sharing a tmux with whoever else is on that socket.
+ * The line says so, and names the socket tmux picked when none was chosen.
  */
-test("the startup line says whether this process started the server", () => {
+test("the startup line says whether a server was already there, and which", () => {
+  const facts = (
+    server: object,
+    environment: Record<string, string>,
+    serverState: "absent" | "existing" = "absent",
+  ): Parameters<typeof describeStartup>[0] =>
+    ({
+      caller: {},
+      environment,
+      policy: { excludeTools: new Set(), tools: new Set(), toolsets: new Set(["inspect"]) },
+      server,
+      serverState,
+      version: "0.0.0",
+    }) as unknown as Parameters<typeof describeStartup>[0];
+
+  const absent = describeStartup(facts({ socketName: "agent" }, {}));
+  const existing = describeStartup(facts({ socketName: "agent" }, {}, "existing"));
+
+  expect(absent).toContain("serving agent,");
+  expect(existing).toContain("serving existing agent,");
+  expect(absent).not.toEqual(existing);
+
+  // With no socket chosen the line names the one tmux picks.
+  expect(describeStartup(facts({}, {}))).toContain("serving default,");
+  expect(describeStartup(facts({}, { TMUX: "/tmp/tmux-1000/work,123,0" }))).toContain(
+    "serving /tmp/tmux-1000/work,",
+  );
+  expect(
+    describeStartup(facts({ socketName: "agent" }, { TMUX: "/tmp/tmux-1000/work,123,0" })),
+  ).toContain("serving agent,");
+});
+
+test("the startup line names the server of the pane it was launched from", () => {
   const facts = {
-    caller: {},
+    caller: {
+      paneId: "%0",
+      socketPath: "/tmp/tmux-1000/work",
+    },
+    environment: {},
     policy: { excludeTools: new Set(), tools: new Set(), toolsets: new Set(["inspect"]) },
     server: { socketName: "agent" },
+    serverState: "existing",
     version: "0.0.0",
   } as unknown as Parameters<typeof describeStartup>[0];
 
-  const created = describeStartup({ ...facts, serverState: "created" });
-  const existing = describeStartup({ ...facts, serverState: "existing" });
+  expect(describeStartup(facts)).toMatch(/, from pane %0 on \/tmp\/tmux-1000\/work$/u);
+  expect(describeStartup({ ...facts, caller: {} } as typeof facts)).not.toContain("from pane");
+});
 
-  expect(created).toContain("serving new agent");
-  expect(existing).toContain("serving existing agent");
-  expect(created).not.toEqual(existing);
+test("the server instructions name the server of the pane they were launched from", () => {
+  const policy = { liveEnabled: true, tools: new Set() } as never;
+  const attached = buildInstructions(policy, {
+    paneId: "%0",
+    socketPath: "/tmp/tmux-1000/work",
+  } as never);
+
+  expect(attached).toContain("launched from tmux pane %0 on the server at /tmp/tmux-1000/work;");
+  expect(buildInstructions(policy, {} as never)).not.toContain("launched from");
 });
 
 test("describeStartupFailure falls back to the message for an unrecognized failure", () => {
-  expect(describeStartupFailure(new TypeError("LIBTMUX_SOCKET must not be empty"), {})).toBe(
-    "LIBTMUX_SOCKET must not be empty",
+  expect(describeStartupFailure(new TypeError("LIBTMUX_SOCKET_PATH must be absolute"), {})).toBe(
+    "LIBTMUX_SOCKET_PATH must be absolute",
   );
   expect(describeStartupFailure("not an error", {})).toBe("not an error");
 });

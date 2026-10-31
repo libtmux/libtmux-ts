@@ -8,26 +8,26 @@
  * that into something a person can notice.
  */
 
+import { TmuxTransportError } from "libtmux/errors";
 import type { Server } from "libtmux/server";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 
 import type { CallerEnvironment } from "./caller.js";
 import type { Policy } from "./policy.js";
 
 export interface StartupFacts {
   readonly caller: CallerEnvironment;
+  /** The environment tmux followed when it was given no socket; the process's by default. */
+  readonly environment?: Readonly<Record<string, string | undefined>>;
   readonly policy: Policy;
   readonly server: Server;
-  /** How this process came by that server: created here, or already running. */
+  /** Whether a tmux server was already running on that socket. */
   readonly serverState: ServerState;
   readonly version: string;
 }
 
-export type ConfigurationProvenance = "minimal" | "unknown" | "user-configured";
-export type ServerState = "absent" | "created" | "existing" | "unprobed";
-
-export const MINIMAL_OWNER_ENVIRONMENT = "LIBTMUX_MCP_LAUNCH_NONCE";
-const MINIMAL_OWNER_OPTION = "@libtmux-mcp-owner";
+export type ConfigurationProvenance = "unknown" | "user-configured";
+export type ServerState = "absent" | "existing" | "unprobed";
 
 /** Socket facts observed once, before the MCP surface is exposed. */
 export interface ServerStartup {
@@ -42,12 +42,29 @@ export function shellQuote(value: string): string {
   return `'${value.replaceAll("'", `'"'"'`)}'`;
 }
 
-/** Resolve a named socket the same way tmux does without starting a daemon. */
+/**
+ * The socket path tmux takes from `TMUX` when it is given no socket.
+ *
+ * tmux reads everything before the first comma, so a path holding one is cut
+ * there, and a value that is not absolute names nothing.
+ */
+export function socketFromTmuxVariable(
+  environment: Readonly<Record<string, string | undefined>>,
+): string | undefined {
+  const [path] = (environment.TMUX ?? "").split(",");
+  return path !== undefined && isAbsolute(path) ? path : undefined;
+}
+
+/** Resolve the socket tmux would use without starting a daemon. */
 export function resolvedSocketPath(
   server: Server,
   environment: Readonly<Record<string, string | undefined>> = process.env,
 ): string | null {
   if (server.socketPath !== undefined) return server.socketPath;
+  if (server.socketName === undefined) {
+    const current = socketFromTmuxVariable(environment);
+    if (current !== undefined) return current;
+  }
   const uid = process.getuid?.();
   if (uid === undefined) return null;
   const base = environment.TMUX_TMPDIR;
@@ -70,40 +87,15 @@ export function attachCommand(server: Server, socketPath: string | null): string
 /**
  * Pin the startup facts used for policy and reporting.
  *
- * A configured null file proves only what a server started by this process
- * will load. An already-running daemon may have been started by anybody, so
- * its configuration remains unknown regardless of this client's `-f` flag.
+ * An already-running daemon may have been started by anybody, so its
+ * configuration is unknown. One that is absent gets whatever configuration tmux
+ * loads when something starts it, which is the user's own.
  */
 export async function inspectServerStartup(
   server: Server,
-  absentConfiguration: ConfigurationProvenance = "user-configured",
   environment: Readonly<Record<string, string | undefined>> = process.env,
 ): Promise<ServerStartup> {
   const selectedPath = resolvedSocketPath(server, environment);
-  if (absentConfiguration === "minimal") {
-    const expectedOwner = environment[MINIMAL_OWNER_ENVIRONMENT];
-    if (expectedOwner === undefined || expectedOwner === "") {
-      throw new TypeError(`${MINIMAL_OWNER_ENVIRONMENT} must identify the minimal launch`);
-    }
-    await server.cmd("start-server");
-    const [observedOwner] = await server.cmd("show-options", ["-gqv", MINIMAL_OWNER_OPTION]);
-    let observedPath = selectedPath;
-    try {
-      const lines = await server.cmd("display-message", ["-p", "#{socket_path}"], {
-        target: null,
-      });
-      if (lines[0] !== undefined && lines[0] !== "") observedPath = lines[0];
-    } catch {
-      // Keep the already-resolved selector if the daemon exits during disclosure.
-    }
-    const created = observedOwner === expectedOwner;
-    return Object.freeze({
-      attachCommand: attachCommand(server, observedPath),
-      configurationProvenance: created ? "minimal" : "unknown",
-      resolvedSocketPath: observedPath,
-      serverState: created ? "created" : "existing",
-    });
-  }
   if (await server.isAlive()) {
     let observedPath = selectedPath;
     try {
@@ -121,30 +113,36 @@ export async function inspectServerStartup(
       serverState: "existing",
     });
   }
+  // An empty socket is a fact about the server. A tmux that cannot run at all is
+  // a fact about this launch, and ends it with the executable named.
+  await server.checkAlive().catch((error: unknown) => {
+    if (error instanceof TmuxTransportError && error.kind === "spawn") throw error;
+  });
   return Object.freeze({
     attachCommand: attachCommand(server, selectedPath),
-    configurationProvenance: absentConfiguration,
+    configurationProvenance: "user-configured",
     resolvedSocketPath: selectedPath,
     serverState: "absent",
   });
 }
 
-/** The socket this server addresses, as an operator wrote it. */
-function socketOf(server: Server): string {
-  return server.socketPath ?? server.socketName ?? "default";
+/**
+ * The socket this server addresses, as an operator wrote it, or the one tmux
+ * picked: the socket `TMUX` names inside tmux, otherwise `default`.
+ */
+function socketOf(
+  server: Server,
+  environment: Readonly<Record<string, string | undefined>>,
+): string {
+  return server.socketPath ?? server.socketName ?? socketFromTmuxVariable(environment) ?? "default";
 }
 
 /**
- * How this process came by the server it is about to drive.
- *
- * Whether the socket was already there decides the toolsets — a server this
- * process did not create keeps `teardown` off — and it is the only warning
- * that an agent is sharing a daemon somebody else is using. Both questions
- * are asked at the same moment, so they are answered on the same line.
+ * Whether a tmux server was already on the socket, which is the only notice
+ * that an agent is sharing a daemon with whoever else is on it.
  */
 const REACHED: Readonly<Record<ServerState, string>> = Object.freeze({
   absent: "serving",
-  created: "serving new",
   existing: "serving existing",
   unprobed: "serving",
 });
@@ -154,12 +152,16 @@ const REACHED: Readonly<Record<ServerState, string>> = Object.freeze({
  *
  * Everything here answers a question somebody asks *after* something went
  * wrong: which tmux did it choose, had somebody else already started it, how
- * much was it allowed to do, and is it the pane I am typing in.
+ * much was it allowed to do, and is it the pane I am typing in. A pane id means
+ * nothing without its server, so the pane is named with the socket it lives on.
  */
 export function describeStartup(facts: StartupFacts): string {
   const { caller, policy, server, serverState, version } = facts;
   const toolsets = [...policy.toolsets].sort().join(",") || "none";
   const narrowed = `, toolsets ${toolsets}, ${String(policy.tools.size)} named inclusions, ${String(policy.excludeTools.size)} exclusions`;
-  const pane = caller.paneId === undefined ? "" : `, from pane ${caller.paneId}`;
-  return `libtmux-mcp ${version} ${REACHED[serverState]} ${socketOf(server)}${narrowed}${pane}`;
+  const pane =
+    caller.paneId === undefined
+      ? ""
+      : `, from pane ${caller.paneId}${caller.socketPath === undefined ? "" : ` on ${caller.socketPath}`}`;
+  return `libtmux-mcp ${version} ${REACHED[serverState]} ${socketOf(server, facts.environment ?? process.env)}${narrowed}${pane}`;
 }

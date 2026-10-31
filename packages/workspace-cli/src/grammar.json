@@ -29,7 +29,7 @@
         "nargs": null,
         "choices": null,
         "const": null,
-        "help": "passthru to tmux(1) -L",
+        "help": "passthru to tmux(1) -L; with neither -L nor -S, LIBTMUX_SOCKET_PATH then LIBTMUX_SOCKET select the socket, else tmux picks the server",
         "flags": ["-L"]
       },
       {
@@ -39,7 +39,7 @@
         "nargs": null,
         "choices": null,
         "const": null,
-        "help": "passthru to tmux(1) -S",
+        "help": "passthru to tmux(1) -S; takes precedence over -L",
         "flags": ["-S"]
       },
       {
@@ -196,7 +196,7 @@
         "nargs": null,
         "choices": null,
         "const": null,
-        "help": "pass-through for tmux -S",
+        "help": "pass-through for tmux -S; takes precedence over -L",
         "flags": ["-S"]
       },
       {
@@ -206,7 +206,7 @@
         "nargs": null,
         "choices": null,
         "const": null,
-        "help": "pass-through for tmux -L",
+        "help": "pass-through for tmux -L; with neither -L nor -S, LIBTMUX_SOCKET_PATH then LIBTMUX_SOCKET select the socket, else tmux picks the server",
         "flags": ["-L"]
       },
       {
@@ -699,7 +699,7 @@
         "nargs": null,
         "choices": null,
         "const": null,
-        "help": "pass-through for tmux -S",
+        "help": "pass-through for tmux -S; takes precedence over -L",
         "flags": ["-S"]
       },
       {
@@ -709,7 +709,7 @@
         "nargs": null,
         "choices": null,
         "const": null,
-        "help": "pass-through for tmux -L",
+        "help": "pass-through for tmux -L; with neither -L nor -S, LIBTMUX_SOCKET_PATH then LIBTMUX_SOCKET select the socket, else tmux picks the server",
         "flags": ["-L"]
       },
       {

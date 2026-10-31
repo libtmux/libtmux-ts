@@ -31,7 +31,7 @@ export function buildInstructions(
   const own =
     caller?.paneId === undefined
       ? ""
-      : ` This process was launched from tmux pane ${caller.paneId}; direct write and teardown tools retain their self-target guard.`;
+      : ` This process was launched from tmux pane ${caller.paneId}${caller.socketPath === undefined ? "" : ` on the server at ${caller.socketPath}`}; direct write and teardown tools retain their self-target guard.`;
   const text = `${SHARED}\n\n${selection} ${live}${own}`;
   return Buffer.byteLength(text, "utf8") <= MAX_BYTES ? text : SHARED;
 }

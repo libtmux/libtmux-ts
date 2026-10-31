@@ -244,14 +244,14 @@ test("execution shapes reject malformed options and toggles before creating anyt
     ).toThrow();
 });
 
-test("the current tmux socket is resolved before the child environment is sanitized", () => {
+test("connection leaves the TMUX socket to tmux and honors the flags", () => {
   const io = { stdin: Readable.from([]), stdout: new Writable(), stderr: new Writable() };
   const local = {
     ...context,
     ...io,
     env: { ...context.env, TMUX: "/tmp/private, socket,123,0", TMUX_PANE: "%3" },
   };
-  expect(connection({}, local).socketPath).toBe("/tmp/private, socket");
+  expect(connection({}, local).socketPath).toBeUndefined();
   expect(connection({ socket_path: "/tmp/explicit" }, local).socketPath).toBe("/tmp/explicit");
   expect(connection({ socket_name: "named" }, local).socketPath).toBeUndefined();
 });

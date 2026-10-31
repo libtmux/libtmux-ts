@@ -210,8 +210,8 @@ pane, send keys, and **wait for output** rather than polling for it.
 [npm](https://www.npmjs.com/package/@libtmux/mcp) ·
 [Changelog](packages/mcp/CHANGELOG.md)
 
-With no configuration it starts its own tmux server on the `libtmux-mcp`
-socket:
+With no socket chosen it passes tmux none, so tmux picks the server: the one it
+is launched inside, otherwise its default socket:
 
 ```console
 $ npx -y @libtmux/mcp@0.1.1

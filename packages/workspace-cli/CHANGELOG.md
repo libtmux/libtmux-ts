@@ -29,6 +29,23 @@ are in the [`libtmux` changelog](../libtmux/CHANGELOG.md).
 
 ## Unreleased
 
+### `@libtmux/workspace-cli`
+
+`tmux-workspace` no longer passes the socket `TMUX` names as `-S` when neither
+`-S` nor `-L` is given.
+
+Before: inside tmux it always used the server `TMUX` names, and read neither
+`LIBTMUX_SOCKET_PATH` nor `LIBTMUX_SOCKET`.
+
+After: it uses `LIBTMUX_SOCKET_PATH`, else `LIBTMUX_SOCKET`; with neither set it
+passes tmux no socket, so tmux picks the server, which inside tmux is still the
+one `TMUX` names. An attached `load`, `load --append` and `freeze` without a
+session name still refuse a selected server that is not the one `TMUX` names.
+(#164)
+
+- `tmux-workspace shell` and Python extension loads pass tmuxp `-S` or `-L` for
+  a socket a variable chose, which tmuxp does not read. (#164)
+
 ## 0.1.1 (2026-10-31)
 
 No entries for `@libtmux/workspace-cli`.

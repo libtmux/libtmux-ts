@@ -57,8 +57,9 @@ nothing needs installing ahead of time or keeping running.
 $ npx -y @libtmux/mcp@0.1.1
 ```
 
-With no socket or config variable set, the server starts a tmux server of its
-own on a socket named `libtmux-mcp`. To pin the package in a project instead:
+With no socket variable set, the server passes tmux no socket, so tmux picks the
+server: the one `TMUX` names when it is launched from a tmux pane, otherwise
+tmux's default socket. To pin the package in a project instead:
 
 ```console
 $ bun add --exact @libtmux/mcp@0.1.1
@@ -91,13 +92,11 @@ $ claude mcp add tmux --env LIBTMUX_SOCKET=agent -- \
 }
 ```
 
-Naming a socket is choosing one, and an explicitly chosen server gets
-`inspect,manage,execute`. This configuration therefore ships without the
-`teardown` tools: [`kill_pane`][tool-kill_pane],
+Every server gets `inspect,manage,execute`. These configurations therefore ship
+without the `teardown` tools: [`kill_pane`][tool-kill_pane],
 [`kill_window`][tool-kill_window], [`kill_session`][tool-kill_session] and
 [`clear_pane_scrollback`][tool-clear_pane_scrollback].
 
-That is the intended default for a socket the server did not create.
 [Toolsets and trust](#toolsets-and-trust) says how to opt in.
 
 ### [`list_sessions`][tool-list_sessions]: check that it connects
@@ -170,19 +169,22 @@ carries notifications; commands use the library's command engine.
 
 An MCP client gives the server an environment and a command line, and nothing
 else. [`serverFromEnvironment`][mcpref-mcp-server-serverfromenvironment] reads
-that environment; the library never does.
+that environment. The library reads the two socket variables from it, and this
+checks what they chose.
 
 ### [`LIBTMUX_SOCKET`][guide-start-the-stdio-server]: choose the tmux server
 
 | Variable                                               | Effect                                                     |
 | ------------------------------------------------------ | ---------------------------------------------------------- |
 | [`LIBTMUX_SOCKET`][guide-start-the-stdio-server]       | Socket name, resolved under tmux's own directory           |
-| [`LIBTMUX_SOCKET_PATH`][guide-choose-another-endpoint] | Absolute path to the tmux socket; mutually exclusive above |
+| [`LIBTMUX_SOCKET_PATH`][guide-choose-another-endpoint] | Absolute path to the tmux socket; wins over the name above |
 | [`LIBTMUX_TMUX_CONFIG`][guide-choose-another-endpoint] | Absolute path to the config used for a new server          |
 | [`LIBTMUX_TMUX_BIN`][guide-choose-another-endpoint]    | The `tmux` executable to use                               |
 
-Give the agent its own socket name. Sharing the one you are attached to means an
-agent's cleanup can reap the session you are working in.
+With neither variable set, the server passes tmux no socket and tmux picks the
+server: the one `TMUX` names when the server is launched from a tmux pane,
+otherwise tmux's default socket. A variable that is empty or only whitespace
+counts as unset, each one alone.
 
 - The executable and socket selector are validated and frozen before any tmux
   connection; control characters are refused.
@@ -200,26 +202,28 @@ Start it on a socket of its own:
 $ tmux -L agent new-session -d -s work
 ```
 
-Naming the socket attaches to that server instead of starting one. The startup
-line on stderr says `serving existing`, and the toolsets default to
-`inspect,manage,execute`:
+Naming the socket points the server at that tmux. The startup line on stderr
+says `serving existing`, and the toolsets default to `inspect,manage,execute`:
 
 ```console
 $ LIBTMUX_SOCKET=agent npx -y @libtmux/mcp@0.1.1
 libtmux-mcp 0.1.1 serving existing agent, toolsets execute,inspect,manage, 0 named inclusions, 0 exclusions
 ```
 
-### Let it start a server of its own
+### Let tmux pick the server
 
-With no socket or config variable, the executable selects `libtmux-mcp` and
-starts that daemon with the shipped minimal configuration. Once the agent has
-made a session, watch it with `tmux -L libtmux-mcp attach`.
+With neither socket variable set, the executable passes tmux no socket and
+starts no server of its own. tmux picks: the server `TMUX` names when the
+executable is launched from a tmux pane, otherwise its default socket, which
+holds the sessions you already have.
 
-- Only the process that created the daemon claims the minimal provenance. A
-  second process racing for the socket attaches and defaults without `teardown`.
-- An explicit socket is never reported as having the shipped minimal provenance.
-- [The full contract](docs/contracts.md#provenance-and-default-toolsets) and the
-  [provenance topic][topic-toolsets-and-startup-provenance].
+- The startup line and the server instructions name the server of the pane the
+  process was launched from, so a pane id such as `%0` is never read against
+  another server.
+- To keep an agent apart from your sessions, name a socket of its own with
+  `LIBTMUX_SOCKET`.
+- [The full contract](docs/contracts.md#socket-and-environment-variables) and
+  the [provenance topic][topic-toolsets-and-startup-provenance].
 
 ### Tune waits, results, and tool selection
 
@@ -257,9 +261,8 @@ runs with the tmux user's authority.
 
 ### [`LIBTMUX_TOOLSETS`][topic-toolsets-and-startup-provenance]: choose the toolsets
 
-A new dedicated socket with the shipped minimal configuration gets all four
-sets. An existing, explicitly selected, or otherwise unknown server gets
-`inspect,manage,execute`.
+Every server gets `inspect,manage,execute`. `teardown` is never in that default;
+name it.
 
 `LIBTMUX_TOOLSETS` names the sets to grant, comma-separated. An explicitly empty
 value selects none.
@@ -319,15 +322,17 @@ The startup line on stderr names the selected socket, effective toolsets, named
 inclusions, and exclusions. Stdout stays exclusively MCP JSON-RPC, so the
 diagnostic cannot corrupt the protocol stream.
 
-The verb says whether this process started that tmux (`serving new`) or attached
-to one already running (`serving existing`). It is the only notice that an agent
-is sharing a daemon with whoever else is on that socket.
+The verb says whether a tmux server was already running on that socket
+(`serving existing`) or not (`serving`). It is the only notice that an agent is
+sharing a daemon with whoever else is on it. With no socket chosen the line
+names the one tmux picked: the socket `TMUX` names, otherwise `default`. Launched
+from a tmux pane, it ends with `from pane %0 on` and that pane's socket.
 
-On a fresh default socket, that diagnostic is:
+With no server running on tmux's default socket, that diagnostic is:
 
 ```console
 $ libtmux-mcp
-libtmux-mcp 0.1.1 serving new libtmux-mcp, toolsets execute,inspect,manage,teardown, 0 named inclusions, 0 exclusions
+libtmux-mcp 0.1.1 serving default, toolsets execute,inspect,manage, 0 named inclusions, 0 exclusions
 ```
 
 ## The tools
@@ -944,8 +949,7 @@ const mcp = createTmuxMcpServer(serverFromEnvironment());
   it.
 - Pass a complete policy environment: changing the object later cannot add a
   hidden tool or alter batch authority.
-- For the executable's minimal-daemon provenance, launch the executable instead.
-  [The full contract](docs/contracts.md#embedding-the-server).
+- [The full contract](docs/contracts.md#embedding-the-server).
 
 ## What it leaves out
 

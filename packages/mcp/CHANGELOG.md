@@ -42,6 +42,35 @@ are in the [`libtmux` changelog](../libtmux/CHANGELOG.md).
 
 ## Unreleased
 
+### `@libtmux/mcp`
+
+The server no longer starts a tmux server of its own on the socket
+`libtmux-mcp` when neither `LIBTMUX_SOCKET` nor `LIBTMUX_SOCKET_PATH` is set.
+
+Before: it started that server with a shipped minimal configuration, and an
+agent launched inside tmux drove it instead of the server of its own window.
+
+After: it passes tmux no socket, so tmux picks the server: the one `TMUX` names
+when launched from a tmux pane, otherwise its default socket. To keep the old
+server, set `LIBTMUX_SOCKET=libtmux-mcp`. (#164)
+
+- `LIBTMUX_SOCKET_PATH` wins when both variables are set, where setting both
+  stopped startup. A variable that is empty or only whitespace counts as unset,
+  where an empty `LIBTMUX_SOCKET` stopped startup. (#164)
+- `teardown` is no longer in the default toolsets of any launch, where the
+  server the default launch had created got it. Name it in `LIBTMUX_TOOLSETS`.
+  (#164)
+- `tmux://capabilities` reports `socketProvenance` and `selectionProvenance` as
+  `socket-path`, `socket-name` or `tmux-choice`, where it reported
+  `default-dedicated` or `operator-current`, and the selector as `tmux-choice`
+  when no socket was passed. `serverState` is no longer `created` and
+  `configurationProvenance` is no longer `minimal`. (#164)
+- The startup line says `serving` or `serving existing`, where it also said
+  `serving new`. With no socket chosen it names the socket `TMUX` names,
+  otherwise `default`. (#164)
+- The startup line and the server instructions name the server of the pane the
+  process was launched from: `from pane %0 on /path/to/socket`. (#164)
+
 ## 0.1.1 (2026-10-31)
 
 ### `@libtmux/mcp`

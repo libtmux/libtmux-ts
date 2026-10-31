@@ -89,10 +89,13 @@ console.log(window.panes.length); // 2
 await window.panes.at(0)?.sendKeys("echo hello");
 ```
 
-`new Server()` drives the tmux server your own `tmux` command does. Pass
-`socketName` or `socketPath` to [`ServerOptions`][ref-serveroptions] for a
-private one. The program prints `2`: the `editor` window holds two panes after
-the split.
+`new Server()` drives the tmux server your own `tmux` command does: the one
+`TMUX` names inside tmux, otherwise tmux's default socket. Set
+`LIBTMUX_SOCKET_PATH` to a socket path, or `LIBTMUX_SOCKET` to a socket name,
+to drive another; the path wins when both are set. Pass `socketName` or
+`socketPath` to [`ServerOptions`][ref-serveroptions] for a private one, which
+the variables never override. The program prints `2`: the `editor` window holds
+two panes after the split.
 
 Every TypeScript block here is type-checked by `bun run typecheck:readme` and,
 unless a comment says otherwise, run against a real tmux server by

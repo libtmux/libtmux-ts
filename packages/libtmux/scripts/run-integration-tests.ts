@@ -43,6 +43,7 @@ const SUITES: readonly string[] = [
   "tests/integration/pane_io.test.ts",
   "tests/integration/topology.test.ts",
   "tests/integration/server_utils.test.ts",
+  "tests/integration/server_socket.test.ts",
   "tests/integration/shell.test.ts",
   "tests/integration/program.test.ts",
   "tests/integration/pane_wait.test.ts",

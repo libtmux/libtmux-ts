@@ -90,7 +90,7 @@
         {
           "flags": "-L <socket_name>",
           "short": "-L",
-          "description": "passthru to tmux(1) -L",
+          "description": "passthru to tmux(1) -L; with neither -L nor -S, LIBTMUX_SOCKET_PATH then LIBTMUX_SOCKET select the socket, else tmux picks the server",
           "value": "required",
           "variadic": false,
           "choices": []
@@ -98,7 +98,7 @@
         {
           "flags": "-S <socket_path>",
           "short": "-S",
-          "description": "passthru to tmux(1) -S",
+          "description": "passthru to tmux(1) -S; takes precedence over -L",
           "value": "required",
           "variadic": false,
           "choices": [],
@@ -259,7 +259,7 @@
         {
           "flags": "-S <socket_path>",
           "short": "-S",
-          "description": "pass-through for tmux -S",
+          "description": "pass-through for tmux -S; takes precedence over -L",
           "value": "required",
           "variadic": false,
           "choices": [],
@@ -268,7 +268,7 @@
         {
           "flags": "-L <socket_name>",
           "short": "-L",
-          "description": "pass-through for tmux -L",
+          "description": "pass-through for tmux -L; with neither -L nor -S, LIBTMUX_SOCKET_PATH then LIBTMUX_SOCKET select the socket, else tmux picks the server",
           "value": "required",
           "variadic": false,
           "choices": []
@@ -974,7 +974,7 @@
         {
           "flags": "-S <socket_path>",
           "short": "-S",
-          "description": "pass-through for tmux -S",
+          "description": "pass-through for tmux -S; takes precedence over -L",
           "value": "required",
           "variadic": false,
           "choices": [],
@@ -983,7 +983,7 @@
         {
           "flags": "-L <socket_name>",
           "short": "-L",
-          "description": "pass-through for tmux -L",
+          "description": "pass-through for tmux -L; with neither -L nor -S, LIBTMUX_SOCKET_PATH then LIBTMUX_SOCKET select the socket, else tmux picks the server",
           "value": "required",
           "variadic": false,
           "choices": []

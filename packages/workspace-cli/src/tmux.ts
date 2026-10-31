@@ -112,20 +112,58 @@ function currentEndpoint(context: CLIContext): { socketPath: string; pid: string
     throw new CliError("usage", "TMUX must name the current server as socket,pid,session", 2);
   return { socketPath: match[1], pid: match[2]! };
 }
+/**
+ * Whether a flag or a variable gave the server a socket. Without one, tmux
+ * picks the server itself.
+ */
+export function socketChosen(server: Server): boolean {
+  return server.socketPath !== undefined || server.socketName !== undefined;
+}
+/**
+ * The environment of a process that reaches `server`.
+ *
+ * A chosen socket is addressed outright, so `TMUX` and `TMUX_PANE` are left
+ * out. With none chosen, tmux follows `TMUX` to the current pane's server, so
+ * it stays; `TMUX_PANE` never does, because no command here targets the pane
+ * the CLI runs in implicitly.
+ */
+export function serverEnvironment(
+  server: Server,
+  context: CLIContext,
+): Record<string, string | undefined> {
+  return socketChosen(server)
+    ? { ...context.env, TMUX: undefined, TMUX_PANE: undefined }
+    : { ...context.env, TMUX_PANE: undefined };
+}
+/**
+ * The server `-S` or `-L` names, else the one `LIBTMUX_SOCKET_PATH` or
+ * `LIBTMUX_SOCKET` names, which the core reads. With none of them, no socket is
+ * passed and tmux picks the server. The socket in `TMUX` is used only where an
+ * operation asks for the current pane's server, through `currentServer`.
+ */
 export function connection(values: Record<string, unknown>, context: CLIContext): Server {
-  let path = values.socket_path ? expandPath(scalarText(values.socket_path), context) : undefined;
-  if (!path && !values.socket_name) path = currentEndpoint(context)?.socketPath;
-  const options: ConstructorParameters<typeof Server>[0] = {
+  const path = values.socket_path ? expandPath(scalarText(values.socket_path), context) : undefined;
+  const build = (environment: Record<string, string | undefined>): Server =>
+    new Server({
+      environment,
+      ...(path ? { socketPath: path } : {}),
+      ...(values.socket_name && !values.socket_path
+        ? { socketName: scalarText(values.socket_name) }
+        : {}),
+      ...(values.tmux_config_file ? { configFile: scalarText(values.tmux_config_file) } : {}),
+      ...(values.colors ? { colors: values.colors as 256 } : {}),
+      ...(context.env.TMUX_BIN ? { tmuxBin: context.env.TMUX_BIN } : {}),
+    });
+  const chosen = build({ ...context.env, TMUX: undefined, TMUX_PANE: undefined });
+  return socketChosen(chosen) ? chosen : build(serverEnvironment(chosen, context));
+}
+/** The server `TMUX` names, which an operation on the current pane asks for. */
+function currentServer(context: CLIContext, endpoint: { socketPath: string }): Server {
+  return new Server({
     environment: { ...context.env, TMUX: undefined, TMUX_PANE: undefined },
-    ...(path ? { socketPath: path } : {}),
-    ...(values.socket_name && !values.socket_path
-      ? { socketName: scalarText(values.socket_name) }
-      : {}),
-    ...(values.tmux_config_file ? { configFile: scalarText(values.tmux_config_file) } : {}),
-    ...(values.colors ? { colors: values.colors as 256 } : {}),
+    socketPath: endpoint.socketPath,
     ...(context.env.TMUX_BIN ? { tmuxBin: context.env.TMUX_BIN } : {}),
-  };
-  return new Server(options);
+  });
 }
 function terminalArguments(server: Server): string[] {
   return [
@@ -187,7 +225,7 @@ async function verifyCurrentServer(
 ): Promise<ServerSnapshot> {
   const acquisition = context.signal ? { signal: context.signal } : {};
   const [currentResult, selectedResult] = await Promise.allSettled([
-    connection({}, context).daemonIdentity(acquisition),
+    currentServer(context, endpoint).daemonIdentity(acquisition),
     server.snapshot(acquisition),
   ]);
   if (currentResult.status === "rejected") {

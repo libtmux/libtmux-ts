@@ -28,7 +28,12 @@ export function pinTmuxRoute(tmux: Server): PinnedTmuxRoute {
   if (socketPath !== undefined) assertSafeRouteValue("tmux socket path", socketPath);
   return Object.freeze({
     executable,
-    selector: socketPath === undefined ? `name:${socketName ?? "default"}` : `path:${socketPath}`,
+    selector:
+      socketPath !== undefined
+        ? `path:${socketPath}`
+        : socketName !== undefined
+          ? `name:${socketName}`
+          : "tmux-choice",
     socketName,
     socketPath,
   });
