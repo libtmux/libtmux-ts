@@ -9,9 +9,15 @@ anyone who needs the exact behavior.
 An MCP client supplies an environment and a command line, and nothing else, so
 the environment is the only place a socket can come from.
 
-The library itself never reads these — a library that picks up ambient
-configuration surprises its caller — so the reading happens here, at the edge
-that has a process.
+The library reads the two socket variables from that environment:
+`LIBTMUX_SOCKET_PATH` names the socket path, else `LIBTMUX_SOCKET` names the
+socket name, and the path wins when both are set. A variable that is empty or
+only whitespace counts as unset, each one alone. `LIBTMUX_SOCKET_PATH` must be
+absolute.
+
+With neither variable set, the server passes tmux no socket and starts no
+server of its own, so tmux picks: the server `TMUX` names when the executable is
+launched from a tmux pane, otherwise its default socket.
 
 The executable and socket selector are validated and frozen before any tmux
 connection. ASCII control characters and DEL are refused there; apostrophes and
@@ -22,35 +28,23 @@ Snapshots, live tails, and framed commands all use that selected server route.
 `LIBTMUX_SOCKET_NAME` is retired. Replace it with `LIBTMUX_SOCKET`; its presence
 stops startup instead of selecting a socket.
 
-Give the agent its own socket name. Sharing the one you are attached to means an
-agent's cleanup can reap the session you are working in.
+[`tmux://capabilities`][res-capabilities] reports what chose the socket as
+`socketProvenance`: `socket-path`, `socket-name`, or `tmux-choice` when no
+socket was passed.
 
 ## Provenance and default toolsets
 
-With no socket or config variables, the executable selects `libtmux-mcp` and
-starts that daemon with the shipped minimal configuration. The launch records a
-unique marker inside tmux, then reads it back before it exposes tools.
-
-Only the process that actually created the daemon can claim minimal provenance;
-a second process racing for the same socket sees an existing server and defaults
-without `teardown`.
-
-An explicit socket is different. The MCP process never assumes how an existing
-daemon was configured.
-
-A new daemon on that socket follows tmux's normal config behavior unless you
-explicitly name a file, and it is never reported as having the shipped minimal
-provenance.
+The MCP process never assumes how an existing daemon was configured. A new
+daemon follows tmux's normal config behavior unless you explicitly name a file,
+and the server reports its configuration as `user-configured` when none is
+running and `unknown` when one is.
 
 `LIBTMUX_TMUX_CONFIG` is passed to tmux as written and must be a nonempty
 absolute path.
 
 Tools belong to four unordered sets: `inspect`, `manage`, `execute`, and
-`teardown`. A new dedicated socket with the shipped minimal configuration gets
-all four by default.
-
-An existing, explicitly selected, or otherwise unknown server defaults to
-`inspect,manage,execute`.
+`teardown`. Every server defaults to `inspect,manage,execute`; `teardown` is
+never in that default, so name it.
 
 ## Toolset selection and the startup line
 
@@ -80,11 +74,14 @@ The startup line on stderr names the selected socket, effective toolsets, named
 inclusions, and exclusions. Stdout remains exclusively MCP JSON-RPC, so that
 diagnostic cannot corrupt the protocol stream.
 
-The verb says whether this process started that tmux (`serving new`) or attached
-to one already running (`serving existing`).
+The verb says whether a tmux server was already running on that socket
+(`serving existing`) or not (`serving`). It is the only notice that an agent is
+sharing a daemon with whoever else is on it.
 
-That is both why the toolsets differ between the two and the only notice that an
-agent is sharing a daemon with whoever else is on that socket.
+With no socket chosen, the line names the one tmux picked: the socket `TMUX`
+names, otherwise `default`. Launched from a tmux pane, it ends with
+`from pane %0 on` and that pane's socket, and the server instructions say the
+same, so a pane id is never read against another server.
 
 ## Waits, timeouts, and live connections
 
@@ -143,7 +140,7 @@ Routes removed or renamed since the previous alpha migrate as follows:
 | `pipe_pane`                                                                                  | No durable host-command pipe; use `run_shell_command` for a bounded pane command                                                                                                     |
 | `move_pane`                                                                                  | No direct replacement; `swap_pane` preserves pane identity in a window and `move_window` moves a whole window                                                                        |
 | `swap_window`                                                                                | No direct replacement; use `move_window` when moving between sessions is sufficient                                                                                                  |
-| `set_environment`                                                                            | No MCP environment writer; configure the dedicated daemon outside the MCP process                                                                                                    |
+| `set_environment`                                                                            | No MCP environment writer; configure the daemon outside the MCP process                                                                                                              |
 | `list_buffers`, `show_buffer`, `load_buffer`, `save_buffer`, `paste_buffer`, `delete_buffer` | No public buffer CRUD; use `paste_text` for literal input and capture tools for pane output                                                                                          |
 
 ## Pane protection
@@ -605,21 +602,15 @@ lookup without accepting a free-form format expression.
 from `process.env` when the factory is constructed; an embedded test can
 override that complete input with `callerEnvironment`.
 
-Embedded, the default is the conservative one — `inspect`, `manage`, `execute` —
-because a host passing its own [`Server`][ref-server-server] is naming a daemon
-this process did not create.
-
-That is a smaller surface than the CLI on a socket it started itself, which also
-gets `teardown`. To choose, pass `environment: { LIBTMUX_TOOLSETS: ... }` or a
-whole [`policy`][mcpref-mcp-policy-policy]; there is no `toolsets` option.
+Embedded, the default is the same as the executable's — `inspect`, `manage`,
+`execute` — because a host passing its own [`Server`][ref-server-server] is
+naming a daemon this process did not create. To choose, pass
+`environment: { LIBTMUX_TOOLSETS: ... }` or a whole
+[`policy`][mcpref-mcp-policy-policy]; there is no `toolsets` option.
 
 Embedding freezes the same surface as the executable. Pass a complete policy
 environment when constructing the server; changing the object later cannot add a
 hidden tool or alter batch authority.
-
-If the host wants the executable's automatic minimal-daemon provenance decision,
-launch the executable rather than claiming that provenance for an arbitrary
-embedded `Server`.
 
 ## What the surface leaves out
 

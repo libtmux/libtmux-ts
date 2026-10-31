@@ -214,7 +214,7 @@ async function observe(launch: Launch): Promise<Observed> {
   );
 }
 
-/** The toolsets the READMEs say a launch gets. */
+/** The toolsets the READMEs say a launch gets: `teardown` only when it is named. */
 function toolsetsFor(env: Readonly<Record<string, string>>): readonly string[] {
   if (env["LIBTMUX_TOOLSETS"] !== undefined) {
     return env["LIBTMUX_TOOLSETS"]
@@ -222,8 +222,7 @@ function toolsetsFor(env: Readonly<Record<string, string>>): readonly string[] {
       .filter((name) => name !== "")
       .toSorted();
   }
-  const chosen = env["LIBTMUX_SOCKET"] !== undefined || env["LIBTMUX_SOCKET_PATH"] !== undefined;
-  return chosen ? ["execute", "inspect", "manage"] : ["execute", "inspect", "manage", "teardown"];
+  return ["execute", "inspect", "manage"];
 }
 
 /** What a README claims about a launch, held against what the server did. */
@@ -232,14 +231,15 @@ async function assertLaunch(launch: Launch): Promise<void> {
   const where = `${launch.source} ${JSON.stringify(launch.env)}`;
   const toolsets = toolsetsFor(launch.env);
   const startup =
-    /^libtmux-mcp (?<version>\S+) serving(?: (?<state>new|existing))? (?<socket>\S+), toolsets (?<sets>\S+), (?<named>\d+) named inclusions, (?<excluded>\d+) exclusions/u.exec(
+    /^libtmux-mcp (?<version>\S+) serving(?: (?<state>existing))? (?<socket>\S+), toolsets (?<sets>\S+), (?<named>\d+) named inclusions, (?<excluded>\d+) exclusions/u.exec(
       seen.startup,
     )?.groups;
   expect(startup, `${where}: startup line was ${JSON.stringify(seen.startup)}`).toBeDefined();
   expect(startup?.["version"], where).toBe(manifest.version);
   expect(startup?.["sets"], where).toBe(toolsets.join(",") || "none");
-  const socket = launch.env["LIBTMUX_SOCKET"];
-  if (socket !== undefined) expect(startup?.["socket"], where).toBe(socket);
+  // The path beats the name, and with neither the line names tmux's default.
+  const socket = launch.env["LIBTMUX_SOCKET_PATH"] ?? launch.env["LIBTMUX_SOCKET"] ?? "default";
+  expect(startup?.["socket"], where).toBe(socket);
   if (launch.printed !== undefined) expect(seen.startup, where).toBe(launch.printed);
 
   const named = (launch.env["LIBTMUX_TOOLS"] ?? "").split(",").filter((name) => name !== "");
@@ -292,7 +292,7 @@ test("a launch a reader could not reproduce fails here", async () => {
   ).toThrow("not a launch");
   // A transcript that disagrees with the startup line is a different server.
   await expect(
-    assertLaunch({ ...launch, printed: "libtmux-mcp 0.0.0 serving new x, toolsets inspect" }),
+    assertLaunch({ ...launch, printed: "libtmux-mcp 0.0.0 serving existing x, toolsets inspect" }),
   ).rejects.toThrow();
   // A retired variable stops startup, as the README says.
   await expect(assertLaunch({ ...launch, env: { LIBTMUX_SAFETY: "readonly" } })).rejects.toThrow();

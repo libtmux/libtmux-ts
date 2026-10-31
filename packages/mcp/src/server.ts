@@ -2,11 +2,10 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
-import { randomUUID } from "node:crypto";
 import { realpathSync } from "node:fs";
 import { constants as osConstants } from "node:os";
 import { isAbsolute } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { pathToFileURL } from "node:url";
 
 import { TmuxTransportError } from "libtmux/errors";
 import { Server } from "libtmux/server";
@@ -14,7 +13,7 @@ import { Server } from "libtmux/server";
 import { readCallerEnvironment } from "./caller.js";
 import { createContext } from "./context.js";
 import { buildInstructions } from "./instructions.js";
-import { resolvePolicy, snapshotPolicy, TOOLSETS, type Policy } from "./policy.js";
+import { resolvePolicy, snapshotPolicy, type Policy } from "./policy.js";
 import { boundRequestIds } from "./protocol_transport.js";
 import { assertKnownPolicyTools, ToolRegistry } from "./register.js";
 import { assertSafeRouteValue } from "./route.js";
@@ -33,7 +32,6 @@ import {
   attachCommand,
   describeStartup,
   inspectServerStartup,
-  MINIMAL_OWNER_ENVIRONMENT,
   type ServerStartup,
 } from "./startup.js";
 
@@ -43,7 +41,6 @@ export type { Policy, Toolset } from "./policy.js";
 
 /** The version this server reports, taken from the manifest so it cannot drift. */
 const PACKAGE_VERSION: string = manifest.version;
-const MINIMAL_CONFIG_PATH = fileURLToPath(new URL("../src/minimal.conf", import.meta.url));
 
 /**
  * An MCP server exposing a tmux server through libtmux.
@@ -70,12 +67,8 @@ export function createTmuxMcpServer(
       serverState: "unprobed",
     },
   );
-  const defaultToolsets =
-    startup.serverState === "created" && startup.configurationProvenance === "minimal"
-      ? TOOLSETS
-      : TOOLSETS.filter((toolset) => toolset !== "teardown");
   const policy = snapshotPolicy(
-    options.policy ?? resolvePolicy(options.environment ?? process.env, defaultToolsets),
+    options.policy ?? resolvePolicy(options.environment ?? process.env),
   );
   const context = createContext(tmux, policy, caller);
   const catalog = new ToolRegistry();
@@ -103,11 +96,12 @@ export function createTmuxMcpServer(
     mcp.server.setRequestHandler(ListToolsRequestSchema, () => ({ tools: [] }));
   }
   const socketSelector = context.route.selector;
-  const defaultDedicated =
-    context.route.socketPath === undefined &&
-    context.route.socketName === "libtmux-mcp" &&
-    startup.configurationProvenance === "minimal";
-  const selectionProvenance = defaultDedicated ? "default-dedicated" : "operator-current";
+  const selectionProvenance =
+    context.route.socketPath !== undefined
+      ? "socket-path"
+      : context.route.socketName !== undefined
+        ? "socket-name"
+        : "tmux-choice";
   const disclosedSocketPath = startup.resolvedSocketPath ?? context.route.socketPath ?? null;
   const capabilityReport = Object.freeze({
     boundary: Object.freeze({
@@ -184,9 +178,10 @@ export function createTmuxMcpServer(
  *
  * An MCP client launches this with an environment and a command line, and
  * nothing else, so the environment is the only place a socket can come from.
- * The library itself never reads these — a library that picks up ambient
- * configuration is a library that surprises its caller — which is why the
- * reading happens out here, at the edge that has a process to belong to.
+ * The library reads `LIBTMUX_SOCKET_PATH`, else `LIBTMUX_SOCKET`, from it; with
+ * neither set no socket is passed and tmux picks the server, which inside tmux
+ * is the one `TMUX` names. What the library chose is checked here, at the edge
+ * that has a process to answer for it.
  */
 export function serverFromEnvironment(
   environment: Readonly<Record<string, string | undefined>> = process.env,
@@ -194,67 +189,43 @@ export function serverFromEnvironment(
   if (Object.prototype.hasOwnProperty.call(environment, "LIBTMUX_SOCKET_NAME")) {
     throw new TypeError("LIBTMUX_SOCKET_NAME is retired; use LIBTMUX_SOCKET");
   }
-  const hasSocketName = Object.prototype.hasOwnProperty.call(environment, "LIBTMUX_SOCKET");
-  const hasSocketPath = Object.prototype.hasOwnProperty.call(environment, "LIBTMUX_SOCKET_PATH");
-  if (hasSocketName && hasSocketPath) {
-    throw new TypeError("set only one of LIBTMUX_SOCKET and LIBTMUX_SOCKET_PATH");
-  }
-  const socketName = environment.LIBTMUX_SOCKET ?? "libtmux-mcp";
-  const socketPath = environment.LIBTMUX_SOCKET_PATH;
   const tmuxBin = environment.LIBTMUX_TMUX_BIN;
   const policy = resolvePolicy(environment);
   assertKnownPolicyTools(policy);
-  if (hasSocketName && socketName === "") {
-    throw new TypeError("LIBTMUX_SOCKET must not be empty");
-  }
   assertSafeRouteValue(
     "LIBTMUX_TMUX_BIN",
     tmuxBin === undefined || tmuxBin === "" ? "tmux" : tmuxBin,
   );
-  if (socketPath === undefined) assertSafeRouteValue("LIBTMUX_SOCKET", socketName);
-  else assertSafeRouteValue("LIBTMUX_SOCKET_PATH", socketPath);
-  if (socketPath !== undefined && !isAbsolute(socketPath)) {
-    throw new TypeError("LIBTMUX_SOCKET_PATH must be absolute");
-  }
-  const configured = environment.LIBTMUX_TMUX_CONFIG;
-  if (configured !== undefined && !isAbsolute(configured)) {
+  const configFile = environment.LIBTMUX_TMUX_CONFIG;
+  if (configFile !== undefined && !isAbsolute(configFile)) {
     throw new TypeError("LIBTMUX_TMUX_CONFIG must be a nonempty absolute path");
   }
-  const defaultDedicatedMinimal = !hasSocketName && !hasSocketPath && configured === undefined;
-  const configFile = configured ?? (defaultDedicatedMinimal ? MINIMAL_CONFIG_PATH : undefined);
-  return new Server({
+  const server = new Server({
     // Bounded here rather than in the library: this process answers a client
     // that is waiting, so "wait as long as tmux takes" is not an option it has.
     timeoutMs: policy.commandTimeoutMs,
     ...(configFile === undefined ? {} : { configFile }),
-    ...(socketPath === undefined ? { socketName } : { socketPath }),
     environment,
     ...(tmuxBin === undefined || tmuxBin === "" ? {} : { tmuxBin }),
   });
+  if (server.socketPath !== undefined) {
+    assertSafeRouteValue("LIBTMUX_SOCKET_PATH", server.socketPath);
+    if (!isAbsolute(server.socketPath)) {
+      throw new TypeError("LIBTMUX_SOCKET_PATH must be absolute");
+    }
+  } else if (server.socketName !== undefined) {
+    assertSafeRouteValue("LIBTMUX_SOCKET", server.socketName);
+  }
+  return server;
 }
 
 /** Serve until stdin or the protocol closes, then join the backend. */
 export async function main(): Promise<void> {
   // Resolved once and handed to both, so the line cannot describe a policy
   // other than the one the tools were registered under.
-  const explicitSelection =
-    Object.prototype.hasOwnProperty.call(process.env, "LIBTMUX_SOCKET") ||
-    Object.prototype.hasOwnProperty.call(process.env, "LIBTMUX_SOCKET_PATH") ||
-    Object.prototype.hasOwnProperty.call(process.env, "LIBTMUX_TMUX_CONFIG");
-  const launchEnvironment = explicitSelection
-    ? process.env
-    : { ...process.env, [MINIMAL_OWNER_ENVIRONMENT]: randomUUID() };
-  const tmux = serverFromEnvironment(launchEnvironment);
-  const startup = await inspectServerStartup(
-    tmux,
-    explicitSelection ? "user-configured" : "minimal",
-    launchEnvironment,
-  );
-  const defaultToolsets =
-    startup.serverState === "created" && startup.configurationProvenance === "minimal"
-      ? TOOLSETS
-      : TOOLSETS.filter((toolset) => toolset !== "teardown");
-  const policy = resolvePolicy(process.env, defaultToolsets);
+  const tmux = serverFromEnvironment(process.env);
+  const startup = await inspectServerStartup(tmux, process.env);
+  const policy = resolvePolicy(process.env);
   const mcp = createTmuxMcpServer(tmux, { policy, startup });
   // stderr, because stdout is the protocol: a byte written there that is not
   // a JSON-RPC frame ends the session. Once, before serving, so a later
@@ -263,6 +234,7 @@ export async function main(): Promise<void> {
   process.stderr.write(
     `${describeStartup({
       caller: readCallerEnvironment(),
+      environment: process.env,
       policy,
       server: tmux,
       serverState: startup.serverState,

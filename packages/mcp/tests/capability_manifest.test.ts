@@ -348,11 +348,11 @@ test("one manifest governs every toolset subset, selection, metadata, and report
   // 5s default and fails or passes by machine speed rather than by behaviour.
 }, 30_000);
 
-test("target inventory pins a dedicated socket and commandless spawn schemas", async () => {
+test("target inventory pins an unselected socket and commandless spawn schemas", async () => {
   const selected = serverFromEnvironment({});
-  expect(selected.socketName).toBe("libtmux-mcp");
+  expect(selected.socketName).toBeUndefined();
   expect(selected.socketPath).toBeUndefined();
-  expect(readFileSync(selected.configFile ?? "", "utf8")).toContain("minimal tmux configuration");
+  expect(selected.configFile).toBeUndefined();
 
   await withClient(
     { LIBTMUX_MCP_LIVE: "0", LIBTMUX_TOOLSETS: "inspect,manage,execute,teardown" },
@@ -724,12 +724,37 @@ test("startup env uses the shared socket name, socket path, and config contract"
       /LIBTMUX_TMUX_CONFIG.*absolute path/u,
     );
   }
-  expect(() =>
-    serverFromEnvironment({
-      LIBTMUX_SOCKET: "literal-name",
-      LIBTMUX_SOCKET_PATH: "/tmp/libtmux-mcp.sock",
-    }),
-  ).toThrow(/only one.*LIBTMUX_SOCKET.*LIBTMUX_SOCKET_PATH|LIBTMUX_SOCKET.*only one/u);
+
+  // tmux ignores -L beside -S, and libtmux-mcp in Python lets the path win.
+  const both = serverFromEnvironment({
+    LIBTMUX_SOCKET: "literal-name",
+    LIBTMUX_SOCKET_PATH: "/tmp/libtmux-mcp.sock",
+  });
+  expect(both.socketPath).toBe("/tmp/libtmux-mcp.sock");
+  expect(both.socketName).toBeUndefined();
+
+  // A blank variable is unset, each one alone.
+  for (const blank of ["", "  "]) {
+    const unset = serverFromEnvironment({ LIBTMUX_SOCKET: blank, LIBTMUX_SOCKET_PATH: blank });
+    expect(unset.socketName).toBeUndefined();
+    expect(unset.socketPath).toBeUndefined();
+    expect(
+      serverFromEnvironment({ LIBTMUX_SOCKET: "literal-name", LIBTMUX_SOCKET_PATH: blank })
+        .socketName,
+    ).toBe("literal-name");
+  }
+
+  // No socket is chosen for the caller, and TMUX is left for tmux to follow.
+  const inside = serverFromEnvironment({ TMUX: "/tmp/tmux-1000/work,123,0", TMUX_PANE: "%0" });
+  expect(inside.socketName).toBeUndefined();
+  expect(inside.socketPath).toBeUndefined();
+
+  expect(() => serverFromEnvironment({ LIBTMUX_SOCKET_PATH: "relative.sock" })).toThrow(
+    /LIBTMUX_SOCKET_PATH must be absolute/u,
+  );
+  expect(() => serverFromEnvironment({ LIBTMUX_SOCKET_NAME: "old" })).toThrow(
+    /LIBTMUX_SOCKET_NAME is retired/u,
+  );
 });
 
 test("startup route rejects only ASCII controls and DEL", () => {
@@ -763,68 +788,63 @@ test("startup route rejects only ASCII controls and DEL", () => {
   }
 });
 
-test("minimal startup authenticates the daemon creator after start-server", async () => {
-  const observedOwner = "01234567-89ab-cdef-0123-456789abcdef";
-  const commands: (readonly string[])[] = [];
-  const engine: TmuxEngine = checkedEngine((request) => {
+/** An engine whose daemon answers `list-sessions` or refuses, and reports a socket path. */
+function daemonEngine(alive: boolean, reported: string, commands: (readonly string[])[]) {
+  return checkedEngine((request) => {
     const command = request.commands[0];
     commands.push(command);
-    const stdout =
-      command[0] === "show-options"
-        ? `${observedOwner}\n`
-        : command[0] === "display-message"
-          ? "/tmp/libtmux-owned.sock\n"
-          : "";
+    const stdout = command[0] === "display-message" ? `${reported}\n` : "";
     return Promise.resolve({
       cmd: [],
-      exitCode: 0,
+      exitCode: alive || command[0] === "display-message" ? 0 : 1,
       signal: null,
-      stderr: new Uint8Array(),
+      stderr: alive ? new Uint8Array() : new TextEncoder().encode("no server running\n"),
       stdout: new TextEncoder().encode(stdout),
     });
   });
-  const environment = { LIBTMUX_MCP_LAUNCH_NONCE: observedOwner };
-  const startup = await inspectServerStartup(
-    new Server({ engine, environment, socketPath: "/tmp/libtmux-owned.sock" }),
-    "minimal",
-    environment,
+}
+
+test("startup inspection starts no server and reports what tmux would pick", async () => {
+  const commands: (readonly string[])[] = [];
+  const absent = await inspectServerStartup(
+    new Server({
+      engine: daemonEngine(false, "", commands),
+      environment: { TMUX_TMPDIR: "/tmp/ltx-inspect" },
+    }),
+    { TMUX_TMPDIR: "/tmp/ltx-inspect" },
+  );
+  expect(commands.map(([name]) => name)).not.toContain("start-server");
+  expect(absent).toMatchObject({
+    configurationProvenance: "user-configured",
+    serverState: "absent",
+  });
+  expect(absent.resolvedSocketPath).toBe(
+    `/tmp/ltx-inspect/tmux-${String(process.getuid?.())}/default`,
   );
 
-  expect(commands.map(([name]) => name)).toEqual([
-    "start-server",
-    "show-options",
-    "display-message",
-  ]);
-  expect(startup).toMatchObject({
-    configurationProvenance: "minimal",
-    resolvedSocketPath: "/tmp/libtmux-owned.sock",
-    serverState: "created",
+  // Inside tmux the socket is the one TMUX names, not tmux's default.
+  const environment = {
+    TMUX: "/tmp/ltx-inspect/pane-socket,123,0",
+    TMUX_TMPDIR: "/tmp/ltx-inspect",
+  };
+  const inside = await inspectServerStartup(
+    new Server({ engine: daemonEngine(false, "", []), environment }),
+    environment,
+  );
+  expect(inside).toMatchObject({
+    resolvedSocketPath: "/tmp/ltx-inspect/pane-socket",
+    serverState: "absent",
   });
 
-  const losingEngine: TmuxEngine = checkedEngine((request) =>
-    Promise.resolve({
-      cmd: [],
-      exitCode: 0,
-      signal: null,
-      stderr: new Uint8Array(),
-      stdout: new TextEncoder().encode(
-        request.commands[0][0] === "show-options" ? "another-launch\n" : "",
-      ),
-    }),
+  const existing = await inspectServerStartup(
+    new Server({ engine: daemonEngine(true, "/tmp/ltx-inspect/live.sock", []), environment: {} }),
+    {},
   );
-  const raced = await inspectServerStartup(
-    new Server({ engine: losingEngine, environment, socketName: "libtmux-mcp" }),
-    "minimal",
-    environment,
-  );
-  expect(raced).toMatchObject({
+  expect(existing).toMatchObject({
     configurationProvenance: "unknown",
+    resolvedSocketPath: "/tmp/ltx-inspect/live.sock",
     serverState: "existing",
   });
-
-  const minimalConfig = readFileSync(new URL("../src/minimal.conf", import.meta.url), "utf8");
-  expect(minimalConfig).toContain('set-option -g @libtmux-mcp-owner "$LIBTMUX_MCP_LAUNCH_NONCE"');
-  expect(minimalConfig).toContain("set-environment -gu LIBTMUX_MCP_LAUNCH_NONCE");
 });
 
 test("synchronize-panes resolves the effective configured cohort", async () => {
@@ -1034,36 +1054,20 @@ test("read batch capability unions follow its effective nested authority", async
   );
 });
 
-test("startup provenance controls the implicit teardown surface", async () => {
+test("no startup state puts teardown in the implicit surface", async () => {
   const cases = [
-    {
-      configurationProvenance: "minimal",
-      hasTeardown: true,
-      serverState: "created",
-      toolCount: 50,
-    },
-    {
-      configurationProvenance: "unknown",
-      hasTeardown: false,
-      serverState: "existing",
-      toolCount: 46,
-    },
-    {
-      configurationProvenance: "user-configured",
-      hasTeardown: false,
-      serverState: "absent",
-      toolCount: 46,
-    },
+    { configurationProvenance: "unknown", serverState: "existing" },
+    { configurationProvenance: "user-configured", serverState: "absent" },
   ] as const;
 
   for (const startup of cases) {
-    // eslint-disable-next-line no-await-in-loop -- each provenance case owns one server lifecycle.
+    // eslint-disable-next-line no-await-in-loop -- each state case owns one server lifecycle.
     await withClient(
       { LIBTMUX_MCP_LIVE: "0" },
       async (client) => {
         const names = (await client.listTools()).tools.map(({ name }) => name);
-        expect(names.includes("kill_session")).toBe(startup.hasTeardown);
-        expect(names).toHaveLength(startup.toolCount);
+        expect(names.includes("kill_session")).toBe(false);
+        expect(names).toHaveLength(46);
 
         const resource = await client.readResource({ uri: "tmux://capabilities" });
         const content = resource.contents[0];
@@ -1077,8 +1081,50 @@ test("startup provenance controls the implicit teardown surface", async () => {
         expect(report.socket.configurationProvenance).toBe(startup.configurationProvenance);
         expect(report.socket.serverState).toBe(startup.serverState);
       },
-      new Server({ socketName: "libtmux-mcp" }),
+      new Server({ environment: {} }),
       { startup },
+    );
+  }
+});
+
+test("the capability report names what chose the socket", async () => {
+  const cases = [
+    { provenance: "tmux-choice", selector: "tmux-choice", server: new Server({ environment: {} }) },
+    {
+      provenance: "socket-name",
+      selector: "name:ltx-report",
+      server: new Server({ environment: { LIBTMUX_SOCKET: "ltx-report" } }),
+    },
+    {
+      provenance: "socket-path",
+      selector: "path:/tmp/ltx-report.sock",
+      server: new Server({ environment: { LIBTMUX_SOCKET_PATH: "/tmp/ltx-report.sock" } }),
+    },
+  ] as const;
+
+  for (const { provenance, selector, server } of cases) {
+    // eslint-disable-next-line no-await-in-loop -- each case owns one server lifecycle.
+    await withClient(
+      { LIBTMUX_MCP_LIVE: "0" },
+      async (client) => {
+        const resource = await client.readResource({ uri: "tmux://capabilities" });
+        const content = resource.contents[0];
+        const text = content !== undefined && "text" in content ? content.text : undefined;
+        const report = JSON.parse(text as string) as {
+          readonly connection: {
+            readonly socketProvenance: string;
+            readonly socketSelector: string;
+          };
+          readonly socket: { readonly selectionProvenance: string; readonly selector: string };
+        };
+        expect(report.connection).toMatchObject({
+          socketProvenance: provenance,
+          socketSelector: selector,
+        });
+        expect(report.socket).toMatchObject({ selectionProvenance: provenance, selector });
+        expect(text).not.toContain("default-dedicated");
+      },
+      server,
     );
   }
 });
