@@ -9,6 +9,11 @@
  * does a decoy the command killed. Both detectors fire once before the command
  * starts, so a pass means the command touched neither.
  *
+ * A failure names the commands the decoy saw and counts sockets, and never
+ * prints a value from the environment the command gets. The decoy's `-vv` log
+ * records each client's environment; it stays in this run's private directory
+ * and goes with it.
+ *
  *     bun scripts/check-tmux-isolation.ts bun run test:docs
  */
 import { spawnSync } from "node:child_process";
@@ -78,7 +83,7 @@ try {
   if ((await clients()) === before)
     throw new Error("the decoy logged no client for a bare `tmux list-sessions`");
   spawnSync(tmux, ["-L", "isolation-probe", "list-sessions"], { env: inside, stdio: "ignore" });
-  if (!(await exists(named))) throw new Error(`\`tmux -L\` made nothing under ${sandbox}`);
+  if (!(await exists(named))) throw new Error("`tmux -L` made nothing under TMUX_TMPDIR");
   await rm(named, { force: true, recursive: true });
 
   const mark = (await read()).length;
@@ -98,15 +103,20 @@ try {
     problems.push("the server TMUX names did not survive it");
   }
   if (await exists(named)) {
-    const sockets = await readdir(named);
+    // A count, not the names: a name can come from a variable the caller set.
+    const left = (await readdir(named)).length;
     problems.push(
-      `it resolved tmux sockets by name under TMUX_TMPDIR: ${sockets.join(", ") || "(none left)"}`,
+      `it resolved a tmux socket by name under TMUX_TMPDIR (${String(left)} still there)`,
     );
   }
 } catch (error) {
   problems.push(`the isolation check could not run: ${(error as Error).message}`);
 } finally {
-  spawnSync(tmux, ["-S", decoy, "kill-server"], { env: outside, stdio: "ignore" });
+  // A server the command started by name outlives its socket's directory unless stopped.
+  const leftovers = (await exists(named)) ? await readdir(named) : [];
+  for (const socket of [decoy, ...leftovers.map((name) => join(named, name))]) {
+    spawnSync(tmux, ["-S", socket, "kill-server"], { env: outside, stdio: "ignore" });
+  }
   await rm(base, { force: true, recursive: true });
 }
 
