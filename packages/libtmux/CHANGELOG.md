@@ -57,6 +57,11 @@ release is always `latest`, so `npm i libtmux` fetches it. Releases before
 - `Program.stream()` closes its copy of the output once a reader that dropped
   it unfinished lets it be collected, even while the program runs, where Bun
   raised `A FileHandle object was closed during garbage collection`. (#129)
+- A program that ends before its lease first renews no longer kills another
+  program when that lease runs out. The program in an attached client's
+  current pane could end by `SIGKILL`, about 30 s after an MCP
+  `start_program` ended or 60 s after a `Server.run`. `Program.kill` likewise
+  signals only its own program. (#140)
 
 #### Pane waits
 
@@ -93,6 +98,15 @@ release is always `latest`, so `npm i libtmux` fetches it. Releases before
   (#129)
 - `start_program` no longer leaves a directory in the tmux server's `TMPDIR`
   for each program where `stdbuf` is uutils'. (#129)
+- `run_shell_command` returns what the command printed before its pane died,
+  where `pane_died` came back with empty `output`. (#140)
+- `run_shell_command` removes a command's script, which holds its text, once
+  the pane is gone, also when the call timed out before the shell read it.
+  (#140)
+- `read_program` returns pages of up to about 24,000 characters, ending on a
+  line break, so each result stays under the 50,000 characters Claude Code
+  shows inline, and takes `maxLines` for a page of fewer lines. Read on with
+  the returned cursor as before. (#140)
 
 ### Documentation
 
