@@ -17,6 +17,7 @@ import { createEventStream } from "../src/_internal/control/stream.js";
 import { parsePaneId } from "../src/_internal/runtime/ids.js";
 import {
   assertOwnedSocketPath,
+  enterSandbox,
   sweepStaleRunRoots,
   TestServer,
   withOwnedRunRoot,
@@ -338,6 +339,7 @@ function render(rows: readonly Row[]): string {
 async function main(): Promise<void> {
   if (process.platform !== "linux") throw new Error("the live control benchmark requires Linux");
   const tmuxBin = process.env.LIBTMUX_TMUX_BIN ?? "tmux";
+  const sandbox = await enterSandbox();
   await sweepStaleRunRoots();
   const { rows, tmuxVersion } = await withOwnedRunRoot(
     "ltx-benchcontrol-",
@@ -355,6 +357,7 @@ async function main(): Promise<void> {
     },
     tmuxBin,
   );
+  await sandbox.release();
 
   process.stdout.write(`${render(rows)}\n`);
   process.stdout.write(

@@ -30,6 +30,7 @@ const REPOSITORY_GATES: Readonly<Record<string, string>> = {
   "unit/publish_release": "the release workflow",
   "unit/sandbox_control":
     "starts bun test from each directory whose bunfig.toml enters the sandbox",
+  "unit/sandbox_entry": "the sandbox-entry gate over the repository's scripts",
   "unit/source_map_gate": "builds and inspects source maps with bun",
   "unit/thrown_exports": "scans source text",
   "unit/type_performance_gate": "measures tsc",
