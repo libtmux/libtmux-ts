@@ -100,7 +100,8 @@ The loop runs one way. Edit the example, run it, then bring the excerpt across;
 never edit the block and expect the example to follow, because only the example
 is executed.
 
-Compiling a snippet proves it typechecks. Only this marker proves it works.
+Compiling a snippet proves it typechecks. The marker checks that its lines come
+from an example the integration suite executes.
 
 ## Where to go next
 

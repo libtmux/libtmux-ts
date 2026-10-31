@@ -39,9 +39,9 @@ const found = snapshot.windows.where({ name: "editor" }).one();
 const paneCount = found.panes.length;
 ```
 
-`.snapshot()` is the only call here that talks to tmux — everything reachable
-from it, including `.where()` and `.panes`, resolves against the snapshot
-already in memory. `quickstart.ts` also shows a criterion object, a relation
+The mutations above send commands to tmux. After `.snapshot()` returns,
+`.where()` and `.panes` resolve against the snapshot already in memory.
+`quickstart.ts` also shows a criterion object, a relation
 walked with no `await`, a literal `sendKeys`, and a failed command caught as a
 typed `TmuxCommandError`.
 

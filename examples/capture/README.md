@@ -32,8 +32,9 @@ an empty string and reports success anyway, so a buffer whose content is
 computed can be absent while the call that made it looked fine. What fails is
 the next call to read it, which points at the wrong line.
 
-`capture` reads a pane without asking it to print anything, scrollback
-included: `start: -100` means the last hundred lines, or as many as there are.
+`capture` reads a pane without asking it to print anything. `start: -100`
+starts a hundred lines above the top of the visible screen, or at the beginning
+of retained history if fewer lines remain.
 A pane that has printed nothing answers with nothing rather than with blanks.
 
 ## Where to go next
