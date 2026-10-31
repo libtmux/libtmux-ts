@@ -110,8 +110,9 @@ const blocks = fencedBlocks(readme, (line) => `${OUTPUT}:${String(line)}`);
 if (blocks.length === 0) throw new Error(`no \`\`\`ts blocks found in ${OUTPUT}`);
 
 // A block that builds its own `new Server()` reaches tmux's default socket.
-// Pointing TMUX_TMPDIR somewhere disposable is what keeps it off the server the
-// person running this is sitting in.
+// Pointing TMUX_TMPDIR somewhere disposable, and dropping the `TMUX` that tmux
+// reads before it, is what keeps it off the server the person running this is
+// sitting in.
 const { STAYS_UP_COMMANDS } = await import("./readme_world.js");
 const supplied = new Set([...STAYS_UP_COMMANDS, "make"]);
 const unsupplied = blocks
@@ -137,6 +138,8 @@ await sweepStaleRunRoots();
 
 const isolated = await mkdtemp(join(tmpdir(), "ltx-readme-runs-"));
 process.env["TMUX_TMPDIR"] = isolated;
+delete process.env["TMUX"];
+delete process.env["TMUX_PANE"];
 
 const directory = join(packageRoot, "node_modules", ".examples-runs");
 await mkdir(directory, { recursive: true });
