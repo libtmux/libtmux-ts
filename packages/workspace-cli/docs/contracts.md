@@ -46,6 +46,10 @@ counts as unset. With none of the four, the command passes tmux no socket, and
 tmux picks the server: the one `TMUX` names inside tmux, otherwise its default
 socket.
 
+tmux reads `TMUX` up to its first comma, so a socket path that holds a comma is
+cut there: a bare `load -d` inside tmux reaches the truncated path, as `tmux`
+does from that pane. Pass `-S` with the whole path to reach such a server.
+
 `TMUX` is read as the current pane's server only where a command acts on that
 pane: an attached `load` inside tmux, `load --append`, and `freeze` without a
 session name. Each refuses a selected server that is not the one `TMUX` names.

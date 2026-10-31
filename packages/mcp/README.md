@@ -202,9 +202,8 @@ Start it on a socket of its own:
 $ tmux -L agent new-session -d -s work
 ```
 
-Naming the socket attaches to that server instead of starting one. The startup
-line on stderr says `serving existing`, and the toolsets default to
-`inspect,manage,execute`:
+Naming the socket points the server at that tmux. The startup line on stderr
+says `serving existing`, and the toolsets default to `inspect,manage,execute`:
 
 ```console
 $ LIBTMUX_SOCKET=agent npx -y @libtmux/mcp@0.1.1

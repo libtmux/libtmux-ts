@@ -17,7 +17,9 @@ absolute.
 
 With neither variable set, the server passes tmux no socket and starts no
 server of its own, so tmux picks: the server `TMUX` names when the executable is
-launched from a tmux pane, otherwise its default socket.
+launched from a tmux pane, otherwise its default socket. tmux reads `TMUX` up to
+its first comma, so a socket path that holds one is cut there; set
+`LIBTMUX_SOCKET_PATH` to the whole path to reach it.
 
 The executable and socket selector are validated and frozen before any tmux
 connection. ASCII control characters and DEL are refused there; apostrophes and
