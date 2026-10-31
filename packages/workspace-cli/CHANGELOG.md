@@ -46,6 +46,14 @@ session name still refuse a selected server that is not the one `TMUX` names.
 - `tmux-workspace shell` and Python extension loads pass tmuxp `-S` or `-L` for
   a socket a variable chose, which tmuxp does not read. (#164)
 
+### Development
+
+`tests/tmuxp-examples.test.ts` runs `tmux-workspace load -d` on every
+workspace in tmuxp's `examples/` directory, kept unmodified in
+`tests/fixtures/tmuxp-examples/`, and checks the windows and panes each builds.
+`plugin-system.yaml` is the one the CLI refuses: its `plugins` key needs a
+tmuxp 1.74.0 runtime and a package the example does not ship. (#165)
+
 ## 0.1.1 (2026-10-31)
 
 No entries for `@libtmux/workspace-cli`.
