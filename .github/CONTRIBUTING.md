@@ -148,6 +148,16 @@ $ bun run test:docs
 All three start real tmux servers, and each fails on a server that outlives the
 block or example that made it.
 
+CI runs them, and every suite that starts tmux, under
+`scripts/check-tmux-isolation.ts`. It hands the command `TMUX` and `TMUX_PANE`
+naming a decoy server, as a shell inside tmux does, and `TMUX_TMPDIR` at an
+empty directory, then fails the run if the decoy logged a client, did not
+survive, or a socket was resolved by name. Run a command the same way locally:
+
+```console
+$ bun scripts/check-tmux-isolation.ts bun run test:docs
+```
+
 ### Writing an example a gate can see
 
 The fence decides whether a block is compiled. Only ` ```ts ` is collected; a

@@ -102,12 +102,14 @@ jobs:
       - run: bun run docs:runnable
       # Compiling a snippet proves it typechecks; only running it proves the
       # target exists and the recipe terminates. This starts real tmux servers,
-      # so it also has to leave none behind, and it says so if it does.
-      - run: bun run --cwd packages/libtmux test:readme
+      # so it also has to leave none behind, and it says so if it does. Every
+      # step here that starts tmux runs under check-tmux-isolation, as from a
+      # shell inside tmux, so a run that reaches a server it did not start fails.
+      - run: bun scripts/check-tmux-isolation.ts bun run --cwd packages/libtmux test:readme
       # Compiling the example on every public symbol proved it typechecks and
       # never once ran it; a one-liner that reads a property is still a claim
       # about what that property answers.
-      - run: bun run --cwd packages/libtmux test:symbols
+      - run: bun scripts/check-tmux-isolation.ts bun run --cwd packages/libtmux test:symbols
       # Every temporary directory the suites create is named for this
       # package, so a sweep can never reap another libtmux port's servers.
       - run: bun run test:namespace
@@ -154,7 +156,7 @@ jobs:
           # pane's methods are proven against a real server, so a floor
           # measured on the unit suite alone would push work towards mocking
           # one. This runs them, so `test:unit` is not run separately here.
-          bun run test:coverage
+          bun ../../scripts/check-tmux-isolation.ts bun run test:coverage
 
       # In-repo consumers prove the published surface is enough to build on.
       # `test:package` runs here and not only at publish: the packaging
@@ -162,28 +164,28 @@ jobs:
       # gate that only runs while releasing finds them after the release.
       - name: Gate the MCP server
         working-directory: packages/mcp
-        run: bun run typecheck && bun run test && bun run test:package && bun run test:install
+        run: bun run typecheck && bun ../../scripts/check-tmux-isolation.ts bun run test && bun run test:package && bun run test:install
 
       - name: Gate the workspace builder
         working-directory: packages/workspace
-        run: bun run typecheck && bun run test && bun run test:package && bun run test:install
+        run: bun run typecheck && bun ../../scripts/check-tmux-isolation.ts bun run test && bun run test:package && bun run test:install
 
       - name: Gate the workspace CLI
         working-directory: packages/workspace-cli
-        run: bun run typecheck && bun run test && bun run test:install
+        run: bun run typecheck && bun ../../scripts/check-tmux-isolation.ts bun run test && bun run test:install
 
       # The recipes above the library package, reaching across it to the
       # workspace builder and the MCP server. After those gates because each
       # runs from inside the package that owns its document, so an import means
       # what a reader's would — including what those steps just emitted.
-      - run: bun run test:docs
+      - run: bun scripts/check-tmux-isolation.ts bun run test:docs
 
       # One step for all of them. Each example is a package of its own now, and
       # the umbrella typechecks and runs every sibling — so adding an example
       # does not mean remembering to add a step here.
       - name: Gate the examples
         working-directory: examples
-        run: bun run typecheck && bun run test
+        run: bun run typecheck && bun ../scripts/check-tmux-isolation.ts bun run test
 
   # Every tmux release the package claims to support, not a sample of them.
   # "3.3a or newer" is a claim about 3.5 and 3.6 as much as about the ends, and a matrix of the

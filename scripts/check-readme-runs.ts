@@ -107,9 +107,12 @@ const blocks = documents.flatMap(({ blocks: found }) => found);
 if (blocks.length === 0) throw new Error("no ```ts blocks found above the library package");
 
 // A default socket of this run's own, so `new Server()` reaches something that
-// is not the tmux the person running this is sitting in.
+// is not the tmux the person running this is sitting in. tmux reads an
+// inherited `TMUX` before `TMUX_TMPDIR`, so that goes too.
 const isolated = await mkdtemp(join(tmpdir(), "ltx-doc-runs-"));
 process.env["TMUX_TMPDIR"] = isolated;
+delete process.env["TMUX"];
+delete process.env["TMUX_PANE"];
 const binary = join(isolated, "bin");
 await mkdir(binary, { recursive: true });
 for (const name of STUBS) {
