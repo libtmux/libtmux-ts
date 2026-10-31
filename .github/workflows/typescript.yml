@@ -1,33 +1,121 @@
 name: typescript
 
+# A push or pull request runs the oldest and the newest released tmux. A call
+# from the publish workflow, and a dispatch with scope=full, run the whole
+# table. scripts/plan-ci.ts decides, from .github/ci-matrix.txt, and every tmux
+# lane below takes its matrix from that plan.
 on:
   push:
     branches: [master]
   pull_request:
   workflow_call:
+    inputs:
+      # A release proves every lane, so the publish workflow asks for them all
+      # and never inherits the edges.
+      scope:
+        description: edges runs the oldest and newest tmux, full the whole table
+        type: string
+        default: full
+  workflow_dispatch:
+    inputs:
+      scope:
+        description: edges runs the oldest and newest tmux, full the whole table, custom the tmux-ref list
+        type: choice
+        options: [edges, full, custom]
+        default: edges
+      tmux-ref:
+        description: With scope=custom, comma-separated tmux versions, tags, branches or commits
+        type: string
+        default: ""
+      bun:
+        description: Comma-separated Bun versions; empty runs the normal ones
+        type: string
+        default: ""
+      os:
+        description: Runner image for the gates and tmux jobs
+        type: choice
+        options: [ubuntu-latest, ubuntu-24.04, ubuntu-22.04]
+        default: ubuntu-latest
+      tmate:
+        description: Open a tmate session on the one tmux lane, which needs a single tmux-ref
+        type: choice
+        options: [off, before-tests, on-failure]
+        default: "off"
 
 permissions:
   contents: read
 
+# A dispatch is a request for that run, so its run id keeps one from cancelling
+# another or the push run of the same branch.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}${{ github.event_name == 'workflow_dispatch' && format('-{0}', github.run_id) || '' }}
   cancel-in-progress: true
 
 jobs:
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      tmux: ${{ steps.plan.outputs.tmux }}
+      rejected: ${{ steps.plan.outputs.rejected }}
+      bun-versions: ${{ steps.plan.outputs.bun-versions }}
+      os: ${{ steps.plan.outputs.os }}
+      skip: ${{ steps.plan.outputs.skip }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.4.0
+
+      # Inputs reach the script through the environment, never inline.
+      - name: Plan the tmux lanes
+        id: plan
+        env:
+          INPUT_SCOPE: ${{ inputs.scope }}
+          INPUT_TMUX_REF: ${{ inputs.tmux-ref }}
+          INPUT_BUN: ${{ inputs.bun }}
+          INPUT_OS: ${{ inputs.os }}
+          INPUT_TMATE: ${{ inputs.tmate }}
+        run: bun scripts/plan-ci.ts
+
+  # One check to require. A job the plan left out of scope may be skipped; every
+  # other job has to have passed. Matrices shrink through the plan, not through
+  # an `if` on a matrix leg, so a skipped leg cannot read as a pass.
+  required:
+    name: required
+    if: ${{ always() }}
+    needs: [plan, gates, tmux, tmux-rejected]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.4.0
+
+      - name: Require every planned job to have passed
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+          ALLOW_SKIPPED: ${{ needs.plan.outputs.skip }}
+        run: bun scripts/plan-ci.ts verify
+
   # Everything that does not depend on which tmux is installed. Split out
   # because it used to run once per tmux release: a lint rule and a doc link do
   # not become truer on 3.5 than on 3.3a, and paying for them per version is
   # what kept the version matrix down to a sample of the range it claims.
   gates:
     name: Gates (Bun ${{ matrix.bun-version }})
-    runs-on: ubuntu-latest
+    needs: plan
+    runs-on: ${{ needs.plan.outputs.os }}
     timeout-minutes: 15
     # Runtime compatibility crosses every package, example and executed document.
     # Keep that axis complete while the tmux job below varies only tmux.
     strategy:
       fail-fast: false
       matrix:
-        bun-version: ["1.3.14", "1.4.0", "1.4.2"]
+        bun-version: ${{ fromJSON(needs.plan.outputs.bun-versions) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
@@ -48,26 +136,15 @@ jobs:
       # is the version job's question. 3.8, because the documented examples
       # drive control mode and `runShell` output, which need 3.7 and 3.5; the
       # floor and each release between are the version job's.
-      - name: Setup tmux build cache for tmux 3.8
-        id: tmux-build-cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
-        with:
-          path: ~/tmux-builds/tmux-3.8
-          key: tmux-3.8
-
       - name: Build tmux 3.8
-        if: steps.tmux-build-cache.outputs.cache-hit != 'true'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libevent-dev libncurses5-dev libtinfo-dev libutempter-dev bison
-          mkdir -p ~/tmux-builds ~/tmux-src
-          git clone https://github.com/tmux/tmux.git ~/tmux-src/tmux-3.8
-          cd ~/tmux-src/tmux-3.8
-          git checkout 3.8
-          sh autogen.sh
-          ./configure --prefix=$HOME/tmux-builds/tmux-3.8 && make && make install
+        id: tmux
+        uses: ./.github/actions/build-tmux
+        with:
+          ref: "3.8"
 
-      - run: echo "$HOME/tmux-builds/tmux-3.8/bin" >> "$GITHUB_PATH"
+      - run: echo "$TMUX_PREFIX/bin" >> "$GITHUB_PATH"
+        env:
+          TMUX_PREFIX: ${{ steps.tmux.outputs.prefix }}
       - run: tmux -V
 
       # fish proves non-POSIX-shell refusal; zsh exercises trap preservation.
@@ -185,56 +262,45 @@ jobs:
         working-directory: examples
         run: bun run typecheck && bun run test
 
-  # Every tmux release the package claims to support, not a sample of them.
-  # "3.3a or newer" is a claim about 3.5 and 3.6 as much as about the ends, and a matrix of the
-  # ends and two favourites proves it for none of them — 3.7 already turned out
-  # to be the one release that accepts `break-pane -n` and ignores it.
+  # Every tmux release the package claims to support is proven before it ships:
+  # "3.3a or newer" is a claim about 3.5 and 3.6 as much as about the ends, and
+  # 3.7 already turned out to be the one release that accepts `break-pane -n`
+  # and ignores it. A push runs the two ends; a release runs every one.
   #
   # The CLI also exercises version-sensitive loading, capture and terminal handoff.
   tmux:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+    name: tmux (${{ matrix.name }})
+    needs: plan
+    if: ${{ needs.plan.outputs.tmux != '[]' }}
+    runs-on: ${{ needs.plan.outputs.os }}
+    # A tmate session needs longer than a test run does.
+    timeout-minutes: ${{ matrix.tmate == 'off' && 15 || 60 }}
     # Only the master lane: it tracks tmux's own branch, so a commit upstream
     # must be able to report a regression without failing this repository's
     # checks. Every tagged version stays blocking.
-    continue-on-error: ${{ matrix.tmux-version == 'master' }}
+    continue-on-error: ${{ matrix.advisory }}
     strategy:
       fail-fast: false
       matrix:
-        # 3.8 is here for the layout format: it emits the v2 JSON
-        # window_layout and every earlier release the classic string, so the
-        # version gate deciding between them has a real binary behind it.
+        # The lanes are the plan's. 3.8 is in the table for the layout format:
+        # it emits the v2 JSON window_layout and every earlier release the
+        # classic string, so the version gate deciding between them has a real
+        # binary behind it.
         #
         # master reports `next-X.Y`, which the version ranking treats as a
-        # build that has not shipped the release it names — the one branch of
+        # build that has not shipped the release it names -- the one branch of
         # that logic no tagged binary can exercise. It tracks someone else's
         # branch, so it reports without blocking; see `continue-on-error`.
         #
         # 3.8a has no tag upstream: it is released from the `release_3.8a`
-        # branch, which the resolve step below reads as a branch.
-        tmux-version:
-          [
-            "3.3a",
-            "3.4",
-            "3.5",
-            "3.5a",
-            "3.6",
-            "3.6a",
-            "3.6b",
-            "3.7",
-            "3.7a",
-            "3.7b",
-            "3.7c",
-            "3.8",
-            "release_3.8a",
-            "master",
-          ]
+        # branch, which the build action reads as a branch.
+        include: ${{ fromJSON(needs.plan.outputs.tmux) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
-          bun-version: 1.4.0
+          bun-version: ${{ matrix.bun-version }}
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
@@ -272,24 +338,6 @@ jobs:
       - name: Warm the oracle environment
         run: uv sync --project "$RUNNER_TEMP/libtmux-python"
 
-      # A tag resolves to the same commit forever and a branch does not, so the
-      # key carries the commit rather than the ref. `ls-remote` sorts by ref
-      # name, so an annotated tag's `^{}` line comes last and is the commit;
-      # a branch prints one line, which is also the commit. Keyed on the ref alone,
-      # `master` would be built once and then served from the cache for good,
-      # which is the one thing a master lane exists to avoid.
-      - name: Resolve tmux ${{ matrix.tmux-version }}
-        id: tmux-ref
-        run: |
-          sha="$(git ls-remote https://github.com/tmux/tmux.git \
-            "refs/tags/${{ matrix.tmux-version }}^{}" \
-            "refs/tags/${{ matrix.tmux-version }}" \
-            "refs/heads/${{ matrix.tmux-version }}" | tail -n1 | cut -f1)"
-          if [ -z "$sha" ]; then
-            echo "no tmux ref named ${{ matrix.tmux-version }}" >&2
-            exit 1
-          fi
-          echo "sha=$sha" >> "$GITHUB_OUTPUT"
       - name: Install the optional workspace Python test runtime
         run: |
           uv venv --python 3.13 "$RUNNER_TEMP/workspace-python"
@@ -297,30 +345,36 @@ jobs:
           echo "LIBTMUX_TEST_PYTHON=$RUNNER_TEMP/workspace-python/bin/python" >> "$GITHUB_ENV"
           echo "TMUX_WORKSPACE_PYTHON=$RUNNER_TEMP/workspace-python/bin/python" >> "$GITHUB_ENV"
 
-      - name: Setup tmux build cache for tmux ${{ matrix.tmux-version }}
-        id: tmux-build-cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
-        with:
-          path: ~/tmux-builds/tmux-${{ matrix.tmux-version }}
-          key: tmux-${{ matrix.tmux-version }}-${{ steps.tmux-ref.outputs.sha }}
-
+      # A tag resolves to the same commit forever and a branch does not, so the
+      # action keys its cache on the commit rather than the ref. Keyed on the
+      # ref alone, `master` would be built once and then served from the cache
+      # for good, which is the one thing a master lane exists to avoid.
       - name: Build tmux ${{ matrix.tmux-version }}
-        if: steps.tmux-build-cache.outputs.cache-hit != 'true'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libevent-dev libncurses5-dev libtinfo-dev libutempter-dev bison
-          mkdir -p ~/tmux-builds ~/tmux-src
-          git clone https://github.com/tmux/tmux.git ~/tmux-src/tmux-${{ matrix.tmux-version }}
-          cd ~/tmux-src/tmux-${{ matrix.tmux-version }}
-          git checkout ${{ steps.tmux-ref.outputs.sha }}
-          sh autogen.sh
-          ./configure --prefix=$HOME/tmux-builds/tmux-${{ matrix.tmux-version }} && make && make install
+        id: tmux
+        uses: ./.github/actions/build-tmux
+        with:
+          ref: ${{ matrix.tmux-version }}
+
+      - name: Open a tmate session before the tests
+        if: ${{ matrix.tmate == 'before-tests' }}
+        uses: mxschmitt/action-tmate@35b54afac29c97fb54faba5b513f8fbd1882f113 # v3.24
+        with:
+          limit-access-to-actor: true
 
       - name: Use tmux ${{ matrix.tmux-version }}
+        env:
+          TMUX_PREFIX: ${{ steps.tmux.outputs.prefix }}
+          TMUX_EXPECT: ${{ matrix.expect }}
         run: |
-          echo "$HOME/tmux-builds/tmux-${{ matrix.tmux-version }}/bin" >> "$GITHUB_PATH"
-
-      - run: tmux -V
+          echo "$TMUX_PREFIX/bin" >> "$GITHUB_PATH"
+          actual_version=$("$TMUX_PREFIX/bin/tmux" -V)
+          printf '%s\n' "$actual_version"
+          # The expected version is a glob: master reports next-X.Y.
+          # shellcheck disable=SC2254
+          case "$actual_version" in
+            $TMUX_EXPECT) ;;
+            *) echo "::error::expected $TMUX_EXPECT, got $actual_version" >&2; exit 1 ;;
+          esac
 
       - run: bun install --frozen-lockfile
 
@@ -342,17 +396,25 @@ jobs:
           sudo apt-get install -y fish zsh
           bun run test
 
+      - name: Open a tmate session after a failure
+        if: ${{ failure() && matrix.tmate == 'on-failure' }}
+        uses: mxschmitt/action-tmate@35b54afac29c97fb54faba5b513f8fbd1882f113 # v3.24
+        with:
+          limit-access-to-actor: true
+
   # The releases just below the floor, which the package must refuse before any
   # effect. 3.3a is the client, so a refusal here is the daemon's version
-  # speaking, not the executable's.
+  # speaking, not the executable's. They run with the whole table.
   tmux-rejected:
     name: tmux ${{ matrix.rejected-version }} is refused
-    runs-on: ubuntu-latest
+    needs: plan
+    if: ${{ needs.plan.outputs.rejected != '[]' }}
+    runs-on: ${{ needs.plan.outputs.os }}
     timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
-        rejected-version: ["3.0a", "3.1c", "3.2a", "3.3"]
+        rejected-version: ${{ fromJSON(needs.plan.outputs.rejected) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
@@ -360,34 +422,17 @@ jobs:
         with:
           bun-version: 1.4.0
 
-      - name: Setup tmux build cache
-        id: tmux-build-cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+      - name: Build the supported floor tmux
+        id: floor
+        uses: ./.github/actions/build-tmux
         with:
-          path: ~/tmux-version-check-builds
-          key: tmux-version-check-3.3a-${{ matrix.rejected-version }}
+          ref: "3.3a"
 
-      # A cached build still loads libevent and ncurses at run time.
-      - name: Install tmux build and runtime libraries
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libevent-dev libncurses5-dev libtinfo-dev libutempter-dev bison
-
-      - name: Build the supported and the rejected tmux
-        if: steps.tmux-build-cache.outputs.cache-hit != 'true'
-        env:
-          REJECTED_VERSION: ${{ matrix.rejected-version }}
-        run: |
-          for release in 3.3a "$REJECTED_VERSION"; do
-            git clone --depth 1 --branch "$release" \
-              https://github.com/tmux/tmux.git "$RUNNER_TEMP/tmux-$release"
-            (
-              cd "$RUNNER_TEMP/tmux-$release"
-              sh autogen.sh
-              ./configure --prefix="$HOME/tmux-version-check-builds/$release"
-              make && make install
-            )
-          done
+      - name: Build the rejected tmux ${{ matrix.rejected-version }}
+        id: rejected
+        uses: ./.github/actions/build-tmux
+        with:
+          ref: ${{ matrix.rejected-version }}
 
       - run: bun install --frozen-lockfile
 
@@ -395,9 +440,11 @@ jobs:
         working-directory: packages/libtmux
         env:
           REJECTED_VERSION: ${{ matrix.rejected-version }}
+          FLOOR_PREFIX: ${{ steps.floor.outputs.prefix }}
+          REJECTED_PREFIX: ${{ steps.rejected.outputs.prefix }}
         run: |
-          export PATH="$HOME/tmux-version-check-builds/3.3a/bin:$PATH"
-          export LIBTMUX_REJECTED_TMUX="$HOME/tmux-version-check-builds/$REJECTED_VERSION/bin/tmux"
+          export PATH="$FLOOR_PREFIX/bin:$PATH"
+          export LIBTMUX_REJECTED_TMUX="$REJECTED_PREFIX/bin/tmux"
           export LIBTMUX_REQUIRE_REJECTED=1
           test "$(tmux -V)" = 'tmux 3.3a'
           test "$("$LIBTMUX_REJECTED_TMUX" -V)" = "tmux $REJECTED_VERSION"

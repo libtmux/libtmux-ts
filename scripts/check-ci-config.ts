@@ -57,7 +57,10 @@ interface WorkflowJob {
   readonly needs?: unknown;
   readonly permissions?: unknown;
   readonly steps?: unknown;
+  readonly strategy?: { readonly matrix?: Readonly<Record<string, unknown>> };
+  readonly "timeout-minutes"?: unknown;
   readonly uses?: unknown;
+  readonly with?: Readonly<Record<string, unknown>>;
 }
 
 function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
@@ -196,7 +199,13 @@ if (workflows.length === 0) {
   process.exit(1);
 }
 
-for (const workflow of workflows) {
+// A local action's own steps run what the workflows delegate to it, so they
+// are pinned the same way.
+const localActions = await Array.fromAsync(
+  new Bun.Glob("actions/*/action.yml").scan({ cwd: join(repositoryRoot, ".github"), dot: true }),
+);
+
+for (const workflow of [...workflows, ...localActions]) {
   // eslint-disable-next-line no-await-in-loop -- each workflow gets an exact diagnostic.
   const source = await Bun.file(join(repositoryRoot, ".github", workflow)).text();
   for (const [index, reference] of source.split("\n").entries()) {
@@ -270,12 +279,109 @@ if (
 
 const typescriptPath = join(repositoryRoot, ".github/workflows/typescript.yml");
 const typescriptDocument = Bun.YAML.parse(await Bun.file(typescriptPath).text()) as {
+  readonly concurrency?: { readonly group?: unknown };
+  readonly jobs?: Readonly<Record<string, WorkflowJob>>;
   readonly on?: Readonly<Record<string, unknown>>;
 };
 if (!Object.hasOwn(typescriptDocument.on ?? {}, "workflow_call")) {
   failures.push(
     ".github/workflows/typescript.yml: the full workflow must accept calls from the publish workflow",
   );
+}
+const typescriptJobs = typescriptDocument.jobs ?? {};
+
+// A release proves every tmux lane. The publish workflow asks for the full
+// scope by name, and a call that names none defaults to it, so neither can
+// inherit the push-and-pull-request edges.
+const callScope = (
+  typescriptDocument.on?.workflow_call as
+    | { readonly inputs?: { readonly scope?: { readonly default?: unknown } } }
+    | undefined
+)?.inputs?.scope?.default;
+if (callScope !== "full" || verifyJob?.with?.scope !== "full") {
+  failures.push(
+    ".github/workflows/publish.yml: publication must call the reusable workflow with scope full, which is also its default",
+  );
+}
+
+// The tmux lanes, the refused releases and the Bun versions come from the
+// plan, which reads .github/ci-matrix.txt: a list written here would be a
+// second one.
+for (const [job, key, output] of [
+  ["gates", "bun-version", "bun-versions"],
+  ["tmux", "include", "tmux"],
+  ["tmux-rejected", "rejected-version", "rejected"],
+] as const) {
+  const taken = typescriptJobs[job]?.strategy?.matrix?.[key];
+  if (taken !== `\${{ fromJSON(needs.plan.outputs.${output}) }}`) {
+    failures.push(
+      `.github/workflows/typescript.yml: ${job} must take its ${key} matrix from the plan's ${output}, not list versions itself`,
+    );
+  }
+}
+
+// A dispatch is a request for that run: its run id keeps one from cancelling
+// another run of the same branch.
+const typescriptGroup = typescriptDocument.concurrency?.group;
+if (
+  typeof typescriptGroup !== "string" ||
+  !typescriptGroup.includes("workflow_dispatch") ||
+  !typescriptGroup.includes("github.run_id")
+) {
+  failures.push(
+    ".github/workflows/typescript.yml: a dispatch run must add github.run_id to the concurrency group",
+  );
+}
+
+// One stable check stands for the workflow, so it has to wait for every job in
+// it, or a job added later can fail without failing the check.
+const requiredJob = typescriptJobs.required;
+const otherJobs = Object.keys(typescriptJobs)
+  .filter((name) => name !== "required")
+  .toSorted();
+const requiredNeeds = Array.isArray(requiredJob?.needs)
+  ? requiredJob.needs.map(String).toSorted()
+  : [];
+if (
+  requiredJob?.if !== "${{ always() }}" ||
+  JSON.stringify(requiredNeeds) !== JSON.stringify(otherJobs)
+) {
+  failures.push(
+    `.github/workflows/typescript.yml: required must run under always() and need every other job (${otherJobs.join(", ")}), not ${requiredNeeds.join(", ")}`,
+  );
+}
+
+// A tmate session is a way into the runner. Only the tmux job may open one,
+// pinned, limited to the account that dispatched the run, and under a timeout;
+// no other workflow may.
+for (const [name, job] of Object.entries(typescriptJobs)) {
+  const steps = Array.isArray(job.steps) ? (job.steps as readonly WorkflowStep[]) : [];
+  for (const step of steps) {
+    if (typeof step.uses !== "string" || !step.uses.startsWith("mxschmitt/action-tmate@")) continue;
+    if (name !== "tmux") {
+      failures.push(
+        `.github/workflows/typescript.yml: ${name} opens a tmate session; only tmux may`,
+      );
+    }
+    if (step.with?.["limit-access-to-actor"] !== true) {
+      failures.push(
+        `.github/workflows/typescript.yml: the tmate step in ${name} must set limit-access-to-actor: true`,
+      );
+    }
+    if (job["timeout-minutes"] === undefined) {
+      failures.push(
+        `.github/workflows/typescript.yml: ${name} opens tmate with no timeout-minutes`,
+      );
+    }
+  }
+}
+for (const workflow of workflows) {
+  if (workflow === "workflows/typescript.yml") continue;
+  // eslint-disable-next-line no-await-in-loop -- each workflow gets an exact diagnostic.
+  const source = await Bun.file(join(repositoryRoot, ".github", workflow)).text();
+  if (source.includes("action-tmate")) {
+    failures.push(`.github/${workflow}: must not open a tmate session`);
+  }
 }
 
 const setupNodeStep = (step: WorkflowStep, version: string): boolean =>

@@ -38,6 +38,15 @@ release is always `latest`, so `npm i libtmux` fetches it. Releases before
 
 ## Unreleased
 
+### Development
+
+A push or pull request runs the `tmux` job on tmux 3.3a and 3.8. The whole
+table, `release_3.8a`, tmux master and the refused releases run for a release
+and for a dispatch with `scope=full`. `workflow_dispatch` takes `scope`,
+`tmux-ref`, `bun`, `os` and `tmate`, so any branch can run against any tmux
+version, tag, branch or commit. `.github/ci-matrix.txt` lists the releases and
+Bun versions once. The tmux badge names 3.3a–3.8, because 3.8a has no tag.
+
 ## 0.1.1 (2026-10-31)
 
 ### `libtmux`

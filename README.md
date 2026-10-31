@@ -358,7 +358,7 @@ $ bun packages/libtmux/scripts/bench-modes.ts
 ## What this project promises
 
 - **The library ships zero runtime dependencies.** [A test](packages/libtmux/tests/unit/package_contract.test.ts) holds it. `@libtmux/mcp` and `@libtmux/workspace` declare their own.
-- **Real tmux, every commit.** [CI](.github/workflows/typescript.yml) runs the suite against every tmux release from 3.3a to 3.8a — no mocks stand in for a server.
+- **Real tmux, every commit.** [CI](.github/workflows/typescript.yml) runs the suite against tmux 3.3a and 3.8 on each push, and against every release from 3.3a to 3.8, the `release_3.8a` branch and tmux master before each release — no mocks stand in for a server.
 - **Documentation is a gate.** Every public symbol carries a compiled example, [the API reference](packages/libtmux/docs/api.md) is generated from the source that implements it, and every link, install command and recipe on this page is checked on each run.
 - **Softly tracks Python [libtmux](https://github.com/tmux-python/libtmux).** Names and shapes follow 0.62.0 where TypeScript agrees with them; each departure is a decision a gate holds to the code.
 

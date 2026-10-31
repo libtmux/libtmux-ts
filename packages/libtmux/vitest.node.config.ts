@@ -17,6 +17,9 @@ import { defineConfig } from "vitest/config";
 const REPOSITORY_GATES: Readonly<Record<string, string>> = {
   "integration/test_runners": "the repository's own runners, spawned under bun",
   "unit/bounded_process": "a repository script's process helper",
+  "unit/build_tmux": "builds tmux from a fixture repository with a repository script",
+  "unit/ci_matrix": "the CI manifest the workflow plans from",
+  "unit/ci_plan": "the CI plan script, spawned under bun",
   "unit/error_identity": "bundles a consumer with Bun.build",
   "unit/mcp_swap": "swaps the MCP package's library under bun",
   "unit/npm_pack": "packs the published tarball",
