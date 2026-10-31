@@ -33,6 +33,7 @@ Part of [libtmux for Bun and TypeScript](https://github.com/libtmux/libtmux-ts#r
 > Releases are numbered `0.1.N`, and each release increments `N`. The API is not
 > settled: any release may change or remove exported identifiers, and the
 > changelog marks each break. Pin an exact version to avoid one.
+> Read the [changelog](CHANGELOG.md) before you upgrade.
 
 This repository's README checks compile each `ts` example on this page and run
 it against a real tmux server. The CLI package's README test runs the
@@ -414,6 +415,7 @@ $ bun test examples/workspace
 - **Releases.** Releases are numbered `0.1.N`, and each release increments `N`. The API is not
   settled: any release may change or remove exported identifiers, and the
   changelog marks each break. Pin an exact version to avoid one.
+  Read the [changelog](CHANGELOG.md) before you upgrade.
 
 ## See also
 
@@ -423,6 +425,7 @@ $ bun test examples/workspace
   failures.
 - [`docs/contracts.md`](docs/contracts.md): the full contracts behind the rules
   above.
+- [`CHANGELOG.md`](CHANGELOG.md): what each release changed.
 - [Workspaces][concept-workspaces]: build one imperatively or declaratively.
 - [`@libtmux/workspace-cli`](https://github.com/libtmux/libtmux-ts/tree/master/packages/workspace-cli):
   the [`tmux-workspace`][cli-tmux-workspace] command.

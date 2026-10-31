@@ -91,8 +91,9 @@ compiler matches against. Neither is edited by hand. The prose around
 the snippets is checked too — `docs:links` resolves every relative link and
 `#anchor` in every tracked Markdown file, `docs:claims` holds the ` ```console `
 blocks to paths and packages that exist, requires public install examples that
-name a prerelease to pin it exactly, and pins any tmux badge to the supported
-releases in `.github/ci-matrix.txt`.
+name a prerelease to pin it exactly, pins any tmux badge to the supported
+releases in `.github/ci-matrix.txt`, and holds each published package to a
+`CHANGELOG.md` with an `Unreleased` section that its `files` ships.
 `docs:runnable` requires a block marked
 
 ```
@@ -467,7 +468,9 @@ identifiers. The changelog marks each break, and the README tells readers to
 pin an exact version.
 
 The packages keep one release number. A tag names the tested state of the
-library, MCP server, workspace builder, and workspace CLI together.
+library, MCP server, workspace builder, and workspace CLI together. Each keeps
+its own `CHANGELOG.md`, and the coordinator stops a release whose tarball does
+not carry it.
 
 `test:package` reads the tarball and `test:install` uses it — a clean
 directory, `npm install` of the packed file, and a Node 22 process that imports

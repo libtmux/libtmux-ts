@@ -32,9 +32,13 @@
 
 > [!WARNING]
 > Releases are numbered `0.1.N`, and each release increments `N`. The API is not
-> settled: any release may change or remove exported identifiers, and the
-> changelog marks each break. Pin an exact version to avoid one.
-> Read the [changelog](packages/libtmux/CHANGELOG.md) before you upgrade.
+> settled: any release may change or remove exported identifiers, and each
+> package's changelog marks its breaks. Pin an exact version to avoid one.
+> Read the changelog of each package you use before you upgrade:
+> [`libtmux`](packages/libtmux/CHANGELOG.md),
+> [`@libtmux/mcp`](packages/mcp/CHANGELOG.md),
+> [`@libtmux/workspace`](packages/workspace/CHANGELOG.md) and
+> [`@libtmux/workspace-cli`](packages/workspace-cli/CHANGELOG.md).
 
 ## Is this for you?
 
@@ -169,7 +173,8 @@ The library: [`Server`][ref-server], [`Session`][ref-session], [`Window`][ref-wi
 immutable snapshot of tmux.
 
 [API reference][ref-reference] ·
-[npm](https://www.npmjs.com/package/libtmux)
+[npm](https://www.npmjs.com/package/libtmux) ·
+[Changelog](packages/libtmux/CHANGELOG.md)
 
 ```console
 $ bun add libtmux
@@ -202,7 +207,8 @@ pane, send keys, and **wait for output** rather than polling for it.
 
 [API reference][mcpref-reference] ·
 [Tools][mcp-tools] ·
-[npm](https://www.npmjs.com/package/@libtmux/mcp)
+[npm](https://www.npmjs.com/package/@libtmux/mcp) ·
+[Changelog](packages/mcp/CHANGELOG.md)
 
 With no configuration it starts its own tmux server on the `libtmux-mcp`
 socket:
@@ -259,7 +265,8 @@ Read next: [Why it exists](packages/mcp/README.md#why-this-exists) ·
 Describe a session; apply it. Applying twice converges rather than duplicating.
 
 [API reference][wsref-reference] ·
-[npm](https://www.npmjs.com/package/@libtmux/workspace)
+[npm](https://www.npmjs.com/package/@libtmux/workspace) ·
+[Changelog](packages/workspace/CHANGELOG.md)
 
 ```console
 $ bun add @libtmux/workspace libtmux
@@ -289,7 +296,8 @@ Read next: [The config shape](packages/workspace/README.md#describe-a-session) �
 Bun. Ordinary loads start no Python.
 
 [Command reference][cli-reference] ·
-[npm](https://www.npmjs.com/package/@libtmux/workspace-cli)
+[npm](https://www.npmjs.com/package/@libtmux/workspace-cli) ·
+[Changelog](packages/workspace-cli/CHANGELOG.md)
 
 Save this document as `workspace.yaml`:
 
