@@ -45,6 +45,23 @@ here.
 
 ## Unreleased
 
+### `libtmux`
+
+`new Server()` now reads `LIBTMUX_SOCKET_PATH`, else `LIBTMUX_SOCKET`, when it
+is given no `socketName` or `socketPath`, and passes tmux `-S` or `-L` for it.
+The path wins when both are set, and a variable that is empty or only
+whitespace counts as unset.
+
+Before: `new Server()` passed tmux no socket whatever the environment held.
+
+After: it passes none only when neither variable is set. A `socketName` or
+`socketPath` you give is never overridden. To keep a server off the variables,
+give one of those, or pass an `environment` without them.
+
+The variables are read from `environment`, or from the process when none is
+given. The `TMUX` socket is still never passed as a default `-S`: tmux itself
+follows `TMUX` when it is given no socket. (#164)
+
 ### Development
 
 A push or pull request runs the `tmux` job on tmux 3.3a and 3.8. The whole
