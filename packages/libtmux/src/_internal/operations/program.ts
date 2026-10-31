@@ -363,7 +363,8 @@ export async function programOutput(
 
 /**
  * Signal a live pane's process group on the tmux server's machine. tmux reads
- * `pane_dead` and `pane_pid` as it runs this, so a dead pane's reused pid is spared.
+ * `pane_dead` and `pane_pid` as it runs this, so a dead pane's reused pid is spared,
+ * and the pane id must match, since a `-t` naming a pane that is gone reads another.
  */
 async function signalPane(
   runtime: RuntimeContext,
@@ -374,7 +375,12 @@ async function signalPane(
   // `-s NAME` is POSIX's form, and dash takes no other: it refuses `-NAME -- -PID`.
   await runCommand(
     runtime,
-    ["run-shell", "-t", paneId, `#{?pane_dead,:,kill -s ${signal} -- -#{pane_pid} 2>/dev/null}; :`],
+    [
+      "run-shell",
+      "-t",
+      paneId,
+      `#{?#{==:#{pane_id},${paneId}},#{?pane_dead,:,kill -s ${signal} -- -#{pane_pid} 2>/dev/null},:}; :`,
+    ],
     { daemon },
   ).catch(() => undefined);
 }
