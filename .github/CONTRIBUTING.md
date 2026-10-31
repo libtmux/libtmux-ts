@@ -91,7 +91,8 @@ compiler matches against. Neither is edited by hand. The prose around
 the snippets is checked too — `docs:links` resolves every relative link and
 `#anchor` in every tracked Markdown file, `docs:claims` holds the ` ```console `
 blocks to paths and packages that exist, requires public install examples that
-name a prerelease to pin it exactly, and pins any tmux badge to the CI matrix.
+name a prerelease to pin it exactly, and pins any tmux badge to the supported
+releases in `.github/ci-matrix.txt`.
 `docs:runnable` requires a block marked
 
 ```
@@ -303,6 +304,32 @@ One tmux grammar note that costs an afternoon: an adjustment like
 Written next to its direction it turns any later flag into surplus arguments
 and tmux rejects the command.
 
+### Running CI against any tmux
+
+A push or pull request runs the `tmux` job on the oldest and the newest
+released tmux, 3.3a and 3.8. Every release, the `release_3.8a` branch, tmux
+master and the refused releases run for a release and for a dispatch with
+`scope=full`. `.github/ci-matrix.txt` lists the releases and Bun versions, and
+`scripts/plan-ci.ts` turns it into the workflow's matrices. The `required` job
+is the one check that passes only when every planned job did.
+
+Dispatch the `typescript` workflow on any branch to run it against tmux
+versions, tags, branches or commits of github.com/tmux/tmux, and against other
+Bun versions:
+
+```console
+$ gh workflow run typescript.yml \
+    --ref my-branch \
+    -f scope=custom \
+    -f tmux-ref=a1b2c3d4e5f60718293a4b5c6d7e8f9012345678 \
+    -f bun=1.4.0 \
+    -f tmate=on-failure
+```
+
+`tmux-ref` takes a comma-separated list. `tmate` opens a session on the one
+lane that runs, so it needs a single `tmux-ref` and at most one `bun`, and it
+connects only the account that started the run.
+
 ## The parity ledger
 
 `parity/python-0.62.0.json` records a decision for every public symbol of the
@@ -377,7 +404,7 @@ requested that way uses `latest` until a version without a prerelease
 identifier has held that tag; later prereleases use their first identifier, such as `rc` in
 `0.1.5-rc.1`. The credentialed workflow accepts only `v*` tag
 pushes and waits for that commit to pass the full Bun, Node, tmux, and package
-matrix. Set `GITHUB_EVENT_NAME=workflow_dispatch` when running the coordinator
+matrix, which it asks for with `scope: full`. Set `GITHUB_EVENT_NAME=workflow_dispatch` when running the coordinator
 locally to use its dry-run mode without an npm identity.
 
 The release coordinator first requires every package version and internal
