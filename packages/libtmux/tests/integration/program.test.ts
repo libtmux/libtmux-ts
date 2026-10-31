@@ -1341,6 +1341,38 @@ setInterval(() => undefined, 1000);`,
   );
 
   testProgram(
+    "a lease that expires after its pane is gone ends no other program",
+    async () => {
+      await withServer(async (server, _directory, fixture) => {
+        // Ended before its first renewal, the run leaves one timer behind, at token 0.
+        await server.run(["true"], { orphanAfterMs: 1000 });
+        await using other = await server.spawn(["sleep", "30"]);
+        const [session = ""] = await server.cmd("display-message", [
+          "-p",
+          "-t",
+          other.pane.id,
+          "#{session_id}",
+        ]);
+        // tmux takes an attached client as current when the timer runs.
+        const client = spawn(
+          fixture.tmuxExecutable,
+          ["-S", fixture.socketPath, "-C", "attach", "-t", session],
+          { env: fixture.controllerEnvironment, stdio: ["pipe", "ignore", "ignore"] },
+        );
+        try {
+          await new Promise((resolve) => setTimeout(resolve, 2000));
+          expect(
+            await server.cmd("display-message", ["-p", "-t", other.pane.id, "#{pane_dead}"]),
+          ).toEqual(["0"]);
+        } finally {
+          client.kill();
+        }
+      });
+    },
+    40_000,
+  );
+
+  testProgram(
     "a split beside a pane leaves its window, its options and its focus as they were",
     async () => {
       await withServer(async (server) => {

@@ -32,7 +32,13 @@ export function leaseTimer(
   const clear = files ? "(sleep 1; rm -rf -- ##{q:@libtmux-files}) >/dev/null 2>&1 &" : ":";
   // Targets are single-quoted: a window's `$N:=name` would otherwise read as a variable.
   const remove = keep ? "" : ` ; kill-${owned.kind} -t '${owned.target}'`;
-  const expire = `if-shell -F -t '${paneId}' "##{==:##{@libtmux-lease},${String(token)}}" "run-shell -t '${paneId}' '${kill}; ${clear}'${remove}"`;
+  // A target that is gone resolves to the client's current pane, so the timer also checks it
+  // landed on what it was armed for: the pane, or before the pane exists, its session or window.
+  const [format, value] = paneId.startsWith("%")
+    ? ["pane_id", paneId]
+    : [`${owned.kind}_name`, owned.target.slice(owned.target.indexOf("=") + 1)];
+  const live = `##{&&:##{==:##{${format}},${value}},##{==:##{@libtmux-lease},${String(token)}}}`;
+  const expire = `if-shell -F -t '${paneId}' "${live}" "run-shell -t '${paneId}' '${kill}; ${clear}'${remove}"`;
   // The timer first: a renewal that stops between the two leaves the last token's timer standing.
   return [
     ["run-shell", "-b", "-d", seconds.toFixed(3), "-C", expire],

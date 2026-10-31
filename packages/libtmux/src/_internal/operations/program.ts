@@ -66,7 +66,7 @@ export interface StreamFiles {
 /** A session of the program's own, or the window or split it added to someone else's. */
 export interface Owned {
   readonly kind: "pane" | "session" | "window";
-  /** `=name` for a session, `@N` for a window, `%N` for a pane. */
+  /** `=name` for a session, `@N` for a window (`$N:=name` while it is made), `%N` for a pane. */
   readonly target: string;
 }
 
