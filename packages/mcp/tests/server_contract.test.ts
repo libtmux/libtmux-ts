@@ -484,6 +484,58 @@ test("a run past its timeout no longer needs its private directory", async () =>
   });
 }, 20_000);
 
+test("a run its shell never read takes its private directory once the pane goes", async () => {
+  await withServer(async (fixture) => {
+    await fixture.executeText(["set-option", "-g", "default-command", "sh"]);
+    const scratchTmp = await mkdtemp(join(tmpdir(), "ltxscratch-"));
+    const scripts = async (): Promise<string[]> =>
+      (await readdir(scratchTmp)).filter((name) => name.startsWith("ltx-"));
+    try {
+      await withClient(
+        fixture,
+        async (client) => {
+          const created = structured<{ paneId: string }>(
+            await client.callTool({
+              arguments: { height: 24, name: "unread", width: 80 },
+              name: "create_session",
+            }),
+          );
+          // A shell busy with builtins still reads as a shell, so the command is typed and
+          // waits unread: it may yet run, and its script must stay while the pane does.
+          await fixture.executeText([
+            "send-keys",
+            "-t",
+            created.paneId,
+            "while :; do :; done",
+            "Enter",
+          ]);
+          await new Promise((resolve) => setTimeout(resolve, 300));
+          const result = structured<{ outcome: string; stillRunning: boolean }>(
+            await client.callTool({
+              arguments: { command: "true", paneId: created.paneId, timeoutMs: 1_000 },
+              name: "run_shell_command",
+            }),
+          );
+          expect(result).toMatchObject({ outcome: "timed_out", stillRunning: true });
+          expect(await scripts()).toHaveLength(1);
+
+          await fixture.executeText(["kill-pane", "-t", created.paneId]);
+          const deadline = performance.now() + 8_000;
+          // eslint-disable-next-line no-await-in-loop -- each poll follows the previous observation.
+          while ((await scripts()).length > 0 && performance.now() < deadline) {
+            // eslint-disable-next-line no-await-in-loop -- the monitor samples liveness over time.
+            await new Promise((resolve) => setTimeout(resolve, 200));
+          }
+          expect(await scripts()).toEqual([]);
+        },
+        { TMPDIR: scratchTmp },
+      );
+    } finally {
+      await rm(scratchTmp, { force: true, recursive: true });
+    }
+  });
+}, 20_000);
+
 test("a pane killed mid-run returns what it printed and takes its private directory", async () => {
   await withServer(async (fixture) => {
     await fixture.executeText(["set-option", "-g", "default-command", "sh"]);

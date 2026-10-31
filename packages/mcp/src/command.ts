@@ -232,13 +232,17 @@ async function fallbackStream(
     .catch(() => undefined);
 }
 
-/** Keep a timed-out pane reserved until its wrapper ends or its pane dies. */
+/**
+ * Keep a timed-out pane reserved until its wrapper ends or its pane dies. A pane
+ * that dies can no longer read the script, so `whenGone` removes it.
+ */
 async function waitForSettlement(
   context: ToolContext,
   pane: Pane,
   id: string,
   cursor: string | undefined,
   initialTail: Awaited<ReturnType<ToolContext["hub"]["tail"]>>,
+  whenGone: () => Promise<void>,
   authority?: InputAuthority,
 ): Promise<void> {
   let tail = initialTail;
@@ -257,7 +261,7 @@ async function waitForSettlement(
     if (Date.now() - askedAlive >= SETTLEMENT_LIVENESS_MS) {
       askedAlive = Date.now();
       // eslint-disable-next-line no-await-in-loop -- liveness is sampled over time.
-      if ((await capturedPaneState(context, pane.id, authority)) === "gone") return;
+      if ((await capturedPaneState(context, pane.id, authority)) === "gone") break;
     }
 
     if (tail === undefined) {
@@ -275,6 +279,7 @@ async function waitForSettlement(
       tail = undefined;
     }
   }
+  await whenGone();
 }
 
 /** The script name inside its own private directory. */
@@ -538,7 +543,7 @@ export async function runFramedCommand(
       outcome: "cancelled",
       output: "",
       outputComplete: false,
-      settled: waitForSettlement(context, pane, id, cursor, tail, authority),
+      settled: waitForSettlement(context, pane, id, cursor, tail, removeScript, authority),
     };
   }
 
@@ -570,7 +575,7 @@ export async function runFramedCommand(
     output: cleaned.text,
     outputComplete: startAt >= 0 && missedBytes === 0 && !usedFallback,
     settled: alive
-      ? waitForSettlement(context, pane, id, cursor, tail, authority)
+      ? waitForSettlement(context, pane, id, cursor, tail, removeScript, authority)
       : Promise.resolve(),
   };
 }
