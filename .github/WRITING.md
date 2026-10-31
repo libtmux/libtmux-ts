@@ -117,6 +117,12 @@ discovery.
 Entries land under `## Unreleased`. The maintainer assigns the version when
 cutting a release, so nothing here predicts one.
 
+Each release package keeps its own `CHANGELOG.md`, and an entry goes in the file
+of the package it changes. A change that spans packages, such as documentation,
+CI or release tooling, goes in the `libtmux` file. The packages share one
+version, so every file has a heading for every release, and a release with
+nothing for a package says ``No entries for `@libtmux/mcp`.`` under it.
+
 ## Release notes
 
 The changelog is the permanent ledger; a release page is editorial. Lead with

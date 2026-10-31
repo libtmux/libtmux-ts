@@ -8,6 +8,7 @@ import {
   extractVersionLiterals,
 } from "./bun_version_pins.js";
 import { slugify } from "../packages/libtmux/scripts/markdown_anchors.js";
+import { changelogFailures, readPackageChangelogs } from "./changelog_policy.js";
 import { parseCiMatrix } from "./ci_matrix.js";
 
 /**
@@ -31,6 +32,8 @@ import { parseCiMatrix } from "./ci_matrix.js";
  * - the Bun versions recorded in the CI matrix, the regex corpus, the
  *   `packageManager` pin, every manifest's `engines.bun` floor, and the
  *   CONTRIBUTING prose all agree;
+ * - every published package keeps its own CHANGELOG.md, opening with its name,
+ *   holding an Unreleased section, and shipped by the manifest's `files`;
  * - the README and CHANGELOG tables of contents list exactly the headings
  *   each file has, in order, with the anchor GitHub would mint for each; and
  * - the MCP tool count the root README gives matches the registry; and
@@ -265,9 +268,13 @@ for (const file of packageReadmes) {
   }
 }
 
+const changelogs = await readPackageChangelogs(repositoryRoot);
+failures.push(...changelogFailures(changelogs));
+
 /**
- * The two long documents this repository ships get a table of contents,
- * checked against the headings each file actually has rather than hand-kept.
+ * The long documents this repository ships get a table of contents, the
+ * library README and every package's changelog among them, checked against the
+ * headings each file actually has rather than hand-kept.
  * The README's previous, hand-grouped index had already drifted — it silently
  * dropped five headings a themed grouping missed — which is the failure mode
  * a mechanical listing cannot reproduce.
@@ -279,8 +286,10 @@ for (const file of packageReadmes) {
  */
 const tablesOfContents = [
   { depth: 3, file: "packages/libtmux/README.md" },
-  { depth: 2, file: "packages/libtmux/CHANGELOG.md" },
-] as const;
+  ...changelogs
+    .filter(({ changelog }) => changelog !== undefined)
+    .map(({ directory }) => ({ depth: 2, file: `packages/${directory}/CHANGELOG.md` })),
+];
 
 interface DocHeading {
   readonly level: number;
@@ -356,7 +365,7 @@ function tocEntries(markdown: string): readonly TocEntry[] | undefined {
 let tocEntriesChecked = 0;
 
 for (const { depth, file } of tablesOfContents) {
-  // eslint-disable-next-line no-await-in-loop -- two documents, reported in list order.
+  // eslint-disable-next-line no-await-in-loop -- a handful of documents, reported in list order.
   const markdown = await Bun.file(join(repositoryRoot, file)).text();
   const entries = tocEntries(markdown);
   if (entries === undefined) {

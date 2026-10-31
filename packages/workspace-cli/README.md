@@ -569,6 +569,7 @@ For automation, `--json` and `--ndjson` wrap the script in a structured result.
 | [Runtime and configuration support][wsref-compatibility]                         | Node, Bun, tmux and Python requirements                         |
 | [`docs/contracts.md`](docs/contracts.md)                                         | The rules behind the sections above                             |
 | [`docs/command-reference.md`](docs/command-reference.md)                         | Every option, generated from the parser                         |
+| [`CHANGELOG.md`](CHANGELOG.md)                                                   | What each release changed                                       |
 | [`@libtmux/mcp`](https://github.com/libtmux/libtmux-ts/tree/master/packages/mcp) | Inspect a loaded workspace                                      |
 | [`libtmux`](https://github.com/libtmux/libtmux-ts/tree/master/packages/libtmux)  | The library this builds on                                      |
 

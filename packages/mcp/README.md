@@ -35,6 +35,7 @@ Built on
 > Releases are numbered `0.1.N`, and each release increments `N`. The API is not
 > settled: any release may change or remove exported identifiers, and the
 > changelog marks each break. Pin an exact version to avoid one.
+> Read the [changelog](CHANGELOG.md) before you upgrade.
 
 Every launch line and printed startup line on this page is started and compared
 by [`tests/readme_launch.test.ts`](tests/readme_launch.test.ts).
@@ -988,6 +989,7 @@ const mcp = createTmuxMcpServer(serverFromEnvironment());
 - **Releases.** Releases are numbered `0.1.N`, and each release increments `N`. The API is not
   settled: any release may change or remove exported identifiers, and the
   changelog marks each break. Pin an exact version to avoid one.
+  Read the [changelog](CHANGELOG.md) before you upgrade.
 
 ## See also
 
@@ -1000,6 +1002,7 @@ const mcp = createTmuxMcpServer(serverFromEnvironment());
 | [Examples][mcp-examples]                   | Calls and a complete in-memory program          |
 | [`docs/contracts.md`](docs/contracts.md)   | The long contracts behind the short rules above |
 | [`AGENTS.md`](AGENTS.md)                   | Rules for working on this package               |
+| [`CHANGELOG.md`](CHANGELOG.md)             | What each release changed                       |
 | [`../libtmux/`](../libtmux/)               | The library this serves                         |
 
 ## License

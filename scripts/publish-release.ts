@@ -355,6 +355,9 @@ export async function coordinateRelease(
     if (!artifact.entries.some((entry) => entry.startsWith("dist/"))) {
       throw new Error(`${artifact.name}@${artifact.version} tarball has no dist output`);
     }
+    if (!artifact.entries.includes("CHANGELOG.md")) {
+      throw new Error(`${artifact.name}@${artifact.version} tarball has no CHANGELOG.md`);
+    }
   }
 
   const firstPublication = options.firstPublication ?? FIRST_PUBLICATION_NAME;

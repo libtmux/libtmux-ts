@@ -63,7 +63,11 @@ stated twice, the file listed above is the one that governs.
 
 - [API reference](packages/libtmux/docs/api.md) — generated from the doc
   comments that implement it
-- [Changelog](packages/libtmux/CHANGELOG.md)
+- Changelogs, one per release package:
+  [`libtmux`](packages/libtmux/CHANGELOG.md),
+  [`@libtmux/mcp`](packages/mcp/CHANGELOG.md),
+  [`@libtmux/workspace`](packages/workspace/CHANGELOG.md),
+  [`@libtmux/workspace-cli`](packages/workspace-cli/CHANGELOG.md)
 - Python library, which this ports: https://libtmux.git-pull.com/
 - tmux manual: http://man.openbsd.org/OpenBSD-current/man1/tmux.1
 - TSDoc, the doc-comment syntax: https://tsdoc.org/

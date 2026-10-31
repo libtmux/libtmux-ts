@@ -26,6 +26,7 @@
   },
   "files": [
     "assets",
+    "CHANGELOG.md",
     "dist",
     "src"
   ],
