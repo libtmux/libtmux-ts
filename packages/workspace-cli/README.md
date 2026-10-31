@@ -37,7 +37,7 @@ Install the command globally, which puts [`tmux-workspace`][cli-index] on
 `PATH`. [Install](#install) lists the other runners:
 
 ```console
-$ npm install --global @libtmux/workspace-cli@0.1.1-alpha.1
+$ npm install --global @libtmux/workspace-cli@0.1.1-alpha.2
 ```
 
 Save this document as `workspace.yaml`:
@@ -73,46 +73,46 @@ demo server with `tmux -L workspace-cli-demo kill-server`.
 Run the command without installing it. With Node:
 
 ```console
-$ npx -y @libtmux/workspace-cli@0.1.1-alpha.1 --help
+$ npx -y @libtmux/workspace-cli@0.1.1-alpha.2 --help
 ```
 
 With Bun. The command names `node` in its shebang, so `bunx` runs it on Node
 when Node is installed; `--bun` runs it on Bun:
 
 ```console
-$ bunx --bun @libtmux/workspace-cli@0.1.1-alpha.1 --help
+$ bunx --bun @libtmux/workspace-cli@0.1.1-alpha.2 --help
 ```
 
 With pnpm:
 
 ```console
-$ pnpm dlx @libtmux/workspace-cli@0.1.1-alpha.1 --help
+$ pnpm dlx @libtmux/workspace-cli@0.1.1-alpha.2 --help
 ```
 
 With Yarn. Yarn refuses a release younger than its `npmMinimalAgeGate`, one
 day by default:
 
 ```console
-$ yarn dlx @libtmux/workspace-cli@0.1.1-alpha.1 --help
+$ yarn dlx @libtmux/workspace-cli@0.1.1-alpha.2 --help
 ```
 
 Or install it globally, which puts [`tmux-workspace`][cli-index] on `PATH`.
 With npm:
 
 ```console
-$ npm install --global @libtmux/workspace-cli@0.1.1-alpha.1
+$ npm install --global @libtmux/workspace-cli@0.1.1-alpha.2
 ```
 
 With pnpm:
 
 ```console
-$ pnpm add --global @libtmux/workspace-cli@0.1.1-alpha.1
+$ pnpm add --global @libtmux/workspace-cli@0.1.1-alpha.2
 ```
 
 With Bun:
 
 ```console
-$ bun add --global @libtmux/workspace-cli@0.1.1-alpha.1
+$ bun add --global @libtmux/workspace-cli@0.1.1-alpha.2
 ```
 
 The rest of this page runs the installed `tmux-workspace`. A runner passes the
@@ -412,7 +412,7 @@ detached load, add it to your MCP client with that socket and the `inspect`
   "mcpServers": {
     "tmux": {
       "command": "npx",
-      "args": ["-y", "@libtmux/mcp@0.1.1-alpha.1"],
+      "args": ["-y", "@libtmux/mcp@0.1.1-alpha.2"],
       "env": { "LIBTMUX_SOCKET": "workspace-cli-demo", "LIBTMUX_TOOLSETS": "inspect" }
     }
   }
