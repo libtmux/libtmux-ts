@@ -6,8 +6,8 @@ import { Server, TmuxCommandError, type ServerSnapshot } from "libtmux";
  * Every step here appears in README.md.
  */
 export async function quickstart(server: Server): Promise<ServerSnapshot> {
-  // Nothing is read until you ask. `snapshot()` is the only step that talks to
-  // tmux; everything reachable from it resolves locally.
+  // Acquire the snapshot after the mutations so it includes the editor window.
+  // Its fields and queries then resolve locally.
   const session = await server.newSession({ name: "quickstart" });
   const editor = await session.newWindow({ name: "editor" });
   await editor.split();
