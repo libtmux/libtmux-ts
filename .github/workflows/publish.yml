@@ -15,9 +15,12 @@ concurrency:
 
 jobs:
   # A same-repository workflow call resolves from this run's commit. Publishing
-  # cannot start until that exact tree passes every supported Bun and tmux lane.
+  # cannot start until that exact tree passes every supported Bun and tmux lane,
+  # so it asks for the full scope rather than the edges a push runs.
   verify:
     uses: ./.github/workflows/typescript.yml
+    with:
+      scope: full
 
   publish:
     needs: verify

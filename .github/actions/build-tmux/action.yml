@@ -1,0 +1,50 @@
+name: Build tmux
+description: Build tmux from a release, tag, branch or commit of github.com/tmux/tmux, cached by the commit it resolves to.
+
+inputs:
+  ref:
+    description: A tmux version, tag, branch or 40-hex commit.
+    required: true
+
+outputs:
+  commit:
+    description: The commit the ref resolved to.
+    value: ${{ steps.resolve.outputs.commit }}
+  prefix:
+    description: The directory tmux is installed under; its bin/ holds tmux.
+    value: ${{ steps.resolve.outputs.prefix }}
+
+runs:
+  using: composite
+  steps:
+    # The cache key is the commit, so a branch name never serves a stale build.
+    # The image name is in it because a build links the libraries of the image
+    # that made it.
+    - name: Resolve tmux ${{ inputs.ref }}
+      id: resolve
+      shell: bash
+      env:
+        TMUX_REF: ${{ inputs.ref }}
+      run: |
+        commit=$("$GITHUB_WORKSPACE/scripts/build-tmux.sh" resolve "$TMUX_REF")
+        echo "commit=$commit" >> "$GITHUB_OUTPUT"
+        echo "prefix=$HOME/tmux-builds/$commit" >> "$GITHUB_OUTPUT"
+
+    - name: Cache the tmux build for ${{ inputs.ref }}
+      id: cache
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+      with:
+        path: ${{ steps.resolve.outputs.prefix }}
+        key: tmux-${{ env.ImageOS }}-${{ steps.resolve.outputs.commit }}
+
+    - name: Build tmux ${{ inputs.ref }}
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        TMUX_REF: ${{ inputs.ref }}
+        TMUX_PREFIX: ${{ steps.resolve.outputs.prefix }}
+      run: |
+        sudo apt-get update
+        sudo apt-get install --yes libevent-dev libncurses5-dev libtinfo-dev \
+          libutempter-dev bison autoconf automake pkg-config
+        "$GITHUB_WORKSPACE/scripts/build-tmux.sh" build "$TMUX_REF" "$TMUX_PREFIX"
