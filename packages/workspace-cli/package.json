@@ -13,6 +13,7 @@
   },
   "files": [
     "assets",
+    "CHANGELOG.md",
     "dist",
     "docs",
     "THIRD-PARTY-NOTICES.md"
