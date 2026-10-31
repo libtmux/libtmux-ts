@@ -28,8 +28,8 @@ Usage: `tmux-workspace load [options] <workspace_files...>`
 
 - `workspace_files`: filepath to session or filename of session in tmuxp workspace directory
 
-- `-L <socket_name>`: passthru to tmux(1) -L
-- `-S <socket_path>`: passthru to tmux(1) -S
+- `-L <socket_name>`: passthru to tmux(1) -L; with neither -L nor -S, LIBTMUX_SOCKET_PATH then LIBTMUX_SOCKET select the socket, else tmux picks the server
+- `-S <socket_path>`: passthru to tmux(1) -S; takes precedence over -L
 - `-f <tmux_config_file>`: passthru to tmux(1) -f
 - `-s <new_session_name>`: start new session with new session name
 - `-y, --yes`: always answer yes Default: `false`.
@@ -55,8 +55,8 @@ Usage: `tmux-workspace shell [options] [session_name] [window_name]`
 - `session_name`
 - `window_name`
 
-- `-S <socket_path>`: pass-through for tmux -S
-- `-L <socket_name>`: pass-through for tmux -L
+- `-S <socket_path>`: pass-through for tmux -S; takes precedence over -L
+- `-L <socket_name>`: pass-through for tmux -L; with neither -L nor -S, LIBTMUX_SOCKET_PATH then LIBTMUX_SOCKET select the socket, else tmux picks the server
 - `-c <command>`: instead of opening shell, execute python code in libtmux and exit
 - `--best`: use best shell available in site packages Default: `"best"`.
 - `--pdb`: use plain pdb
@@ -201,8 +201,8 @@ Usage: `tmux-workspace freeze [options] [session_name]`
 
 - `session_name`
 
-- `-S <socket_path>`: pass-through for tmux -S
-- `-L <socket_name>`: pass-through for tmux -L
+- `-S <socket_path>`: pass-through for tmux -S; takes precedence over -L
+- `-L <socket_name>`: pass-through for tmux -L; with neither -L nor -S, LIBTMUX_SOCKET_PATH then LIBTMUX_SOCKET select the socket, else tmux picks the server
 - `-f, --workspace-format <workspace_format>`: format to save in Choices: `yaml`, `json`.
 - `-o, --save-to <save_to>`: file to save to
 - `-y, --yes`: always answer yes Default: `false`.

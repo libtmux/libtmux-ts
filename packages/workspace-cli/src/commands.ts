@@ -130,17 +130,15 @@ export async function shell(request: Request, context: CLIContext): Promise<numb
     );
   }
   // tmuxp runs the `tmux` on PATH, so that is the executable to judge.
-  await requireSupportedTmux(
-    new Server({
-      environment: context.env,
-      ...(typeof request.values.socket_path === "string" && request.values.socket_path
-        ? { socketPath: request.values.socket_path }
-        : typeof request.values.socket_name === "string" && request.values.socket_name
-          ? { socketName: request.values.socket_name }
-          : {}),
-    }),
-    context,
-  );
+  const selected = new Server({
+    environment: context.env,
+    ...(typeof request.values.socket_path === "string" && request.values.socket_path
+      ? { socketPath: request.values.socket_path }
+      : typeof request.values.socket_name === "string" && request.values.socket_name
+        ? { socketName: request.values.socket_name }
+        : {}),
+  });
+  await requireSupportedTmux(selected, context);
   const args = [
     python,
     "-u",
@@ -157,6 +155,15 @@ export async function shell(request: Request, context: CLIContext): Promise<numb
   ] as const) {
     const value = request.values[name];
     if (value !== null && value !== undefined) args.push(flag, scalarText(value));
+  }
+  // tmuxp reads neither variable, so a socket one chose is passed as a flag. With
+  // none chosen, tmuxp follows TMUX, as it does for every `shell`.
+  const flagged = ["socket_path", "socket_name"].some(
+    (name) => request.values[name] !== null && request.values[name] !== undefined,
+  );
+  if (!flagged) {
+    if (selected.socketPath !== undefined) args.push("-S", selected.socketPath);
+    else if (selected.socketName !== undefined) args.push("-L", selected.socketName);
   }
   if (request.values.shell) args.push(`--${scalarText(request.values.shell)}`);
   args.push(

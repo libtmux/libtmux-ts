@@ -145,7 +145,10 @@ Each [`tmux-workspace`][cli-index] command has a page in the command reference.
 
 [`load`][cli-load] builds sessions from workspace files; [`freeze`][cli-freeze]
 writes a running session back to a file. Both take `-L` for a socket name or
-`-S` for a socket path.
+`-S` for a socket path. With neither, they use `LIBTMUX_SOCKET_PATH`, else
+`LIBTMUX_SOCKET`, and with none of the four they pass tmux no socket, so tmux
+picks the server: the one `TMUX` names inside tmux, otherwise its default
+socket. [The full rule](docs/contracts.md#choosing-the-server).
 
 ### [`tmux-workspace load`][cli-load]: build a session from a file
 

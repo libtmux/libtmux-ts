@@ -17,7 +17,7 @@ import { expand, normalize, workspaceName } from "./normalize.ts";
 import { CliError, type OperationOutput, write } from "./output.ts";
 import { processRun } from "./process.ts";
 import { requireSupportedTmux } from "./supported.ts";
-import type { LoadResult } from "./tmux.ts";
+import { serverEnvironment, type LoadResult } from "./tmux.ts";
 
 export type ExtensionSpec = { data: Document; name: string };
 export type BorrowedSession = { session: Session; daemon: DaemonIdentity };
@@ -255,7 +255,7 @@ export async function buildExtension(
     try {
       result.script_output = await processRun([python, "-u", "-c", adapter], {
         cwd: context.cwd,
-        env: { ...context.env, TMUX: undefined, TMUX_PANE: undefined },
+        env: serverEnvironment(server, context),
         ...(context.signal ? { signal: context.signal } : {}),
         input: JSON.stringify({
           config: spec.data,
