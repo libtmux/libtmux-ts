@@ -53,14 +53,14 @@ nothing needs installing ahead of time or keeping running.
 ### `npx`: start the server
 
 ```console
-$ npx -y @libtmux/mcp@0.1.1-alpha.1
+$ npx -y @libtmux/mcp@0.1.1-alpha.2
 ```
 
 With no socket or config variable set, the server starts a tmux server of its
 own on a socket named `libtmux-mcp`. To pin the package in a project instead:
 
 ```console
-$ bun add --exact @libtmux/mcp@0.1.1-alpha.1
+$ bun add --exact @libtmux/mcp@0.1.1-alpha.2
 ```
 
 Closing the subprocess's stdin cancels pending waits and joins its control
@@ -73,7 +73,7 @@ a nonzero exit status.
 
 ```console
 $ claude mcp add tmux --env LIBTMUX_SOCKET=agent -- \
-    npx -y @libtmux/mcp@0.1.1-alpha.1
+    npx -y @libtmux/mcp@0.1.1-alpha.2
 ```
 
 ### `mcpServers`: tell any other client about it
@@ -83,7 +83,7 @@ $ claude mcp add tmux --env LIBTMUX_SOCKET=agent -- \
   "mcpServers": {
     "tmux": {
       "command": "npx",
-      "args": ["-y", "@libtmux/mcp@0.1.1-alpha.1"],
+      "args": ["-y", "@libtmux/mcp@0.1.1-alpha.2"],
       "env": { "LIBTMUX_SOCKET": "agent" }
     }
   }
@@ -204,8 +204,8 @@ line on stderr says `serving existing`, and the toolsets default to
 `inspect,manage,execute`:
 
 ```console
-$ LIBTMUX_SOCKET=agent npx -y @libtmux/mcp@0.1.1-alpha.1
-libtmux-mcp 0.1.1-alpha.1 serving existing agent, toolsets execute,inspect,manage, 0 named inclusions, 0 exclusions
+$ LIBTMUX_SOCKET=agent npx -y @libtmux/mcp@0.1.1-alpha.2
+libtmux-mcp 0.1.1-alpha.2 serving existing agent, toolsets execute,inspect,manage, 0 named inclusions, 0 exclusions
 ```
 
 ### Let it start a server of its own
@@ -222,15 +222,15 @@ made a session, watch it with `tmux -L libtmux-mcp attach`.
 
 ### Tune waits, results, and tool selection
 
-| Variable                         | Default               | Effect                                                                            | Policy field                                                      |
-| -------------------------------- | --------------------- | --------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| `LIBTMUX_TOOLSETS`               | depends on the server | Comma-separated toolsets to include                                               | [`toolsets`][mcpref-mcp-policy-policy-toolsets]                   |
-| `LIBTMUX_TOOLS`                  | none                  | Comma-separated tools to add                                                      | [`tools`][mcpref-mcp-policy-policy-tools]                         |
-| `LIBTMUX_EXCLUDE_TOOLS`          | none                  | Comma-separated tools to remove last                                              | [`excludeTools`][mcpref-mcp-policy-policy-excludetools]           |
-| `LIBTMUX_MCP_WAIT_MAX_MS`        | 30000                 | Ceiling on a wait that blocks the caller                                          | [`blockingWaitMaxMs`][mcpref-mcp-policy-policy-blockingwaitmaxms] |
-| `LIBTMUX_MCP_COMMAND_TIMEOUT_MS` | 30000                 | Deadline for each internal tmux request                                           | [`commandTimeoutMs`][mcpref-mcp-policy-policy-commandtimeoutms]   |
-| `LIBTMUX_MCP_MAX_RESULT_LINES`   | 200                   | Lines a result may carry before it trims and links; `read_program` pages by bytes | [`maxResultLines`][mcpref-mcp-policy-policy-maxresultlines]       |
-| `LIBTMUX_MCP_LIVE`               | on                    | Set to `0` to forbid control-mode connections                                     | [`liveEnabled`][mcpref-mcp-policy-policy-liveenabled]             |
+| Variable                         | Default               | Effect                                                                           | Policy field                                                      |
+| -------------------------------- | --------------------- | -------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| `LIBTMUX_TOOLSETS`               | depends on the server | Comma-separated toolsets to include                                              | [`toolsets`][mcpref-mcp-policy-policy-toolsets]                   |
+| `LIBTMUX_TOOLS`                  | none                  | Comma-separated tools to add                                                     | [`tools`][mcpref-mcp-policy-policy-tools]                         |
+| `LIBTMUX_EXCLUDE_TOOLS`          | none                  | Comma-separated tools to remove last                                             | [`excludeTools`][mcpref-mcp-policy-policy-excludetools]           |
+| `LIBTMUX_MCP_WAIT_MAX_MS`        | 30000                 | Ceiling on a wait that blocks the caller                                         | [`blockingWaitMaxMs`][mcpref-mcp-policy-policy-blockingwaitmaxms] |
+| `LIBTMUX_MCP_COMMAND_TIMEOUT_MS` | 30000                 | Deadline for each internal tmux request                                          | [`commandTimeoutMs`][mcpref-mcp-policy-policy-commandtimeoutms]   |
+| `LIBTMUX_MCP_MAX_RESULT_LINES`   | 200                   | Lines a result may carry before it trims and links; `read_program` pages by size | [`maxResultLines`][mcpref-mcp-policy-policy-maxresultlines]       |
+| `LIBTMUX_MCP_LIVE`               | on                    | Set to `0` to forbid control-mode connections                                    | [`liveEnabled`][mcpref-mcp-policy-policy-liveenabled]             |
 
 - With `LIBTMUX_MCP_LIVE=0`, [`wait_for_text`][tool-wait_for_text] stays in the
   selected surface but returns a `no_stream` tool error;
@@ -267,7 +267,7 @@ For an agent that can inspect and run pane commands but cannot rearrange or end
 topology:
 
 ```console
-$ LIBTMUX_TOOLSETS=inspect,execute npx -y @libtmux/mcp@0.1.1-alpha.1
+$ LIBTMUX_TOOLSETS=inspect,execute npx -y @libtmux/mcp@0.1.1-alpha.2
 ```
 
 - Unknown names, empty list entries, and the retired `LIBTMUX_SAFETY` variable
@@ -282,7 +282,7 @@ $ LIBTMUX_TOOLSETS=inspect,execute npx -y @libtmux/mcp@0.1.1-alpha.1
 inclusions makes a smaller purpose-built surface:
 
 ```console
-$ LIBTMUX_TOOLSETS= LIBTMUX_TOOLS=list_sessions,capture_pane npx -y @libtmux/mcp@0.1.1-alpha.1
+$ LIBTMUX_TOOLSETS= LIBTMUX_TOOLS=list_sessions,capture_pane npx -y @libtmux/mcp@0.1.1-alpha.2
 ```
 
 - Exclusions always win, including inside
@@ -326,7 +326,7 @@ On a fresh default socket, that diagnostic is:
 
 ```console
 $ libtmux-mcp
-libtmux-mcp 0.1.1-alpha.1 serving new libtmux-mcp, toolsets execute,inspect,manage,teardown, 0 named inclusions, 0 exclusions
+libtmux-mcp 0.1.1-alpha.2 serving new libtmux-mcp, toolsets execute,inspect,manage,teardown, 0 named inclusions, 0 exclusions
 ```
 
 ## The tools
@@ -564,6 +564,11 @@ try {
 - Each `read_program` waits up to its `timeoutMs` for new output or the exit
   and returns a `cursor`. A read that times out returns no text; the next one
   with the same cursor carries on, past any wait ceiling.
+- A page holds up to about 24,000 characters of JSON, ending on a line break
+  when it has one, or `maxLines` lines when that is fewer. The budget holds
+  the whole result, which carries the text twice, under the 50,000 characters
+  Claude Code shows inline. `cursor` is a byte offset and never splits a
+  character; call again with it for the rest.
 - The text is the byte stream with escape sequences removed, as
   `capture_since` gives it, and a carriage return on its own starts a new
   line: a progress bar that rewrites its line reads as a line for each state,
@@ -813,7 +818,7 @@ set_history_limit  lines=10000
 explicitly selected server does not get by default. Name it to opt in:
 
 ```console
-$ LIBTMUX_SOCKET=agent LIBTMUX_TOOLSETS=inspect,teardown npx -y @libtmux/mcp@0.1.1-alpha.1
+$ LIBTMUX_SOCKET=agent LIBTMUX_TOOLSETS=inspect,teardown npx -y @libtmux/mcp@0.1.1-alpha.2
 ```
 
 - These tools refuse to end the pane hosting the MCP process unless `force`

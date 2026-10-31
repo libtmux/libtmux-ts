@@ -7,6 +7,7 @@ import { expect, test } from "bun:test";
 
 import { serverFor, structured, withClient, withServer } from "./support/server_harness.js";
 import { tmuxReaches } from "../../libtmux/tests/support/tmux_release.js";
+import { MAX_RESULT_BYTES } from "../src/policy.js";
 import { readable } from "../src/tools/programs.js";
 
 interface Started {
@@ -193,7 +194,7 @@ testProgram(
         const flood = structured<Started>(
           await call({ arguments: { argv: ["seq", "1", "1000000"] }, name: "start_program" }),
         );
-        // 4 MiB arrives a megabyte per read at most, and a read may come before it all has.
+        // 4 MiB arrives in pages of about 24,000 characters, and a read may come before it all has.
         const reads = await readAll(call, flood.programId, 10_000, 1000);
         expect(reads.at(-1)).toMatchObject({ exitStatus: 0, ended: true, outputComplete: false });
         await call({ arguments: { programId: flood.programId }, name: "stop_program" });
@@ -386,11 +387,62 @@ testProgram(
         const started = structured<Started>(
           await call({ arguments: { argv, lifetimeMs: 30_000 }, name: "start_program" }),
         );
-        const reads = await readAll(call, started.programId, 5000);
+        const reads = await readAll(call, started.programId, 5000, 400);
         const kept = reads.reduce((total, read) => total + Buffer.byteLength(read.text), 0);
         expect(kept).toBeLessThanOrEqual(4 * 1024 * 1024);
         expect(reads.at(-1)).toMatchObject({ ended: true, outputComplete: false, outputCut: true });
         await call({ arguments: { programId: started.programId }, name: "stop_program" });
+      });
+    });
+  },
+  60_000,
+);
+
+testProgram(
+  "read_program pages by a budget that keeps the whole result inline, and by maxLines",
+  async () => {
+    await withServer(async (fixture) => {
+      await withClient(fixture, async (client) => {
+        const call: Call = (request) => client.callTool(request);
+        const firstPage = async (
+          script: string,
+          extra: Record<string, unknown> = {},
+        ): Promise<{ page: Read; size: number }> => {
+          const started = structured<Started>(
+            await call({
+              arguments: { argv: ["sh", "-c", script], lifetimeMs: 30_000 },
+              name: "start_program",
+            }),
+          );
+          // Read once it has ended, so the first page is a full one.
+          await new Promise((resolve) => setTimeout(resolve, 1500));
+          const answer = await call({
+            arguments: { programId: started.programId, timeoutMs: 5000, ...extra },
+            name: "read_program",
+          });
+          await call({ arguments: { programId: started.programId }, name: "stop_program" });
+          return { page: structured<Read>(answer), size: JSON.stringify(answer).length };
+        };
+
+        // Short lines: the budget, not a line count, ends the page, on a line break.
+        const numbers = await firstPage("seq 1 200000");
+        expect(numbers.page.text.endsWith("\n")).toBe(true);
+        expect(numbers.page.text.split("\n").length).toBeGreaterThan(1000);
+        expect(numbers.size).toBeLessThanOrEqual(50_000);
+        // Long lines: the budget stops the page, on a line break.
+        const wide = await firstPage("yes \"$(printf '%1000s' '' | tr ' ' x)\" | head -300");
+        expect(wide.page.text.endsWith("\n")).toBe(true);
+        expect(wide.page.text.length).toBeLessThan(25_000);
+        expect(wide.size).toBeLessThanOrEqual(50_000);
+        // Every character escaped to two: the bound is on the JSON, not the raw text.
+        const quotes = await firstPage("yes \"$(printf '%200s' '' | tr ' ' '\"')\" | head -200");
+        expect(quotes.page.text.length).toBeLessThan(12_500);
+        expect(quotes.size).toBeLessThanOrEqual(50_000);
+        // maxLines: that many lines, and a cursor that resumes after them.
+        const three = await firstPage("seq 1 10", { maxLines: 3 });
+        expect(three.page).toMatchObject({ cursor: 6, ended: false, text: "1\n2\n3\n" });
+        const after = await firstPage("seq 1 10", { cursor: 6, maxLines: 2 });
+        expect(after.page).toMatchObject({ cursor: 10, ended: false, text: "4\n5\n" });
       });
     });
   },
@@ -421,6 +473,8 @@ testProgram(
           })) as { content: { text: string }[]; structuredContent: Read };
           const shown = answer.content[0]?.text ?? "";
           expect(shown).not.toContain("omitted by the result ceiling");
+          // The whole result, both copies of the text included, stays within the ceiling.
+          expect(Buffer.byteLength(JSON.stringify(answer))).toBeLessThanOrEqual(MAX_RESULT_BYTES);
           modelText += shown.slice(0, shown.lastIndexOf("\n\n["));
           structuredText += answer.structuredContent.text;
           cursor = answer.structuredContent.cursor;

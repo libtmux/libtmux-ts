@@ -215,7 +215,7 @@ const INPUT_KEYS = Object.freeze({
   resize_pane: ["amount", "direction", "height", "paneId", "width", "zoom"],
   resize_window: ["height", "width", "windowId"],
   respawn_pane: ["force", "killFirst", "paneId", "startDirectory"],
-  read_program: ["cursor", "programId", "timeoutMs"],
+  read_program: ["cursor", "maxLines", "programId", "timeoutMs"],
   run_program: [
     "argv",
     "fromPaneId",
@@ -327,7 +327,7 @@ const INPUT_SINKS = Object.freeze({
     paneId: LOOKUP,
     startDirectory: LITERAL_STATE,
   },
-  read_program: { cursor: NONE, programId: LOOKUP, timeoutMs: NONE },
+  read_program: { cursor: NONE, maxLines: NONE, programId: LOOKUP, timeoutMs: NONE },
   run_program: {
     argv: sink("process-argv"),
     fromPaneId: LOOKUP,

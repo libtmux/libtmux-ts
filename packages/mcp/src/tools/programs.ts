@@ -16,7 +16,7 @@ import {
 import { z } from "zod";
 
 import type { ToolContext } from "../context.js";
-import { DEFAULT_BLOCKING_WAIT_MS, effectiveWaitMs, MAX_RESULT_BYTES } from "../policy.js";
+import { DEFAULT_BLOCKING_WAIT_MS, effectiveWaitMs, INLINE_RESULT_CHARS } from "../policy.js";
 import { type ToolRegistrar } from "../register.js";
 import { fail, ok } from "../results.js";
 import { inlineRequestText, paneIdSchema } from "../schemas.js";
@@ -32,6 +32,8 @@ const MAX_LIVE_PROGRAMS = 16;
 const MAX_ENDED_PROGRAMS = 16;
 /** How soon tmux ends a program after this server stops renewing its lease. */
 const ORPHAN_AFTER_MS = 30_000;
+/** What a read's result carries besides its text: the other fields and the protocol envelope. */
+const ENVELOPE_CHARS = 1_000;
 /** Each program's copy and readable text stop here; the program runs on. */
 const MAX_COPY_BYTES = 4 * 1024 * 1024;
 
@@ -151,7 +153,7 @@ export function readable(
   chunks: readonly Buffer[],
   size: number,
   start: number,
-  limit: number = MAX_RESULT_BYTES,
+  limit: number,
 ): { readonly end: number; readonly text: string } {
   let end = Math.min(size, start + limit);
   // Step back while the byte the cut would start the next read on continues a character.
@@ -159,6 +161,33 @@ export function readable(
     end -= 1;
   }
   return { end, text: slice(chunks, start, end).toString("utf8") };
+}
+
+/** Characters a page's text takes in a JSON result, which is also what a client counts. */
+function jsonWidth(char: string): number {
+  return JSON.stringify(char).length - 2;
+}
+
+/**
+ * Where in `text` a page ends: after `maxLines` lines, or before the text takes more than
+ * `room` characters of JSON. A page cut by `room` ends on a line break when it has one.
+ */
+function pageCut(text: string, maxLines: number, room: number): number {
+  let cost = 0;
+  let lines = 0;
+  let index = 0;
+  let lineEnd = 0;
+  for (const char of text) {
+    cost += jsonWidth(char);
+    if (cost > room) return lineEnd > 0 ? lineEnd : index;
+    index += char.length;
+    if (char === "\n") {
+      lineEnd = index;
+      lines += 1;
+      if (lines === maxLines) return index;
+    }
+  }
+  return index;
 }
 
 /** Ends every live started program; the server calls it as it closes. */
@@ -352,7 +381,9 @@ export function registerPrograms(mcp: ToolRegistrar, context: ToolContext): Star
       description:
         "Read what a started program printed after cursor, waiting up to timeoutMs for new " +
         "output or its end, and report whether it has ended and how. Omit cursor on the " +
-        "first read and pass back the one returned; a read that times out returns no text, " +
+        "first read and pass back the one returned; a read returns up to about 24,000 " +
+        "characters of text, ending on a line break, or maxLines lines when fewer, so call " +
+        "again with the cursor for the rest; a read that times out returns no text, " +
         "and the next read with the same cursor carries on. The text is the byte stream " +
         "with escape sequences removed, in write order, and a carriage return on its own " +
         "starts a new line, so each state of a progress line is a line; capture_pane on " +
@@ -367,6 +398,15 @@ export function registerPrograms(mcp: ToolRegistrar, context: ToolContext): Star
           .nonnegative()
           .optional()
           .describe("The cursor the previous read_program returned. Omit to read from the start."),
+        maxLines: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe(
+            "Return at most this many lines from cursor. A page also stops at about " +
+              "24,000 characters, so fewer lines come back when they are long.",
+          ),
         programId: z.string().min(1).max(64).describe("The id start_program returned."),
         timeoutMs: z
           .number()
@@ -431,7 +471,7 @@ export function registerPrograms(mcp: ToolRegistrar, context: ToolContext): Star
       },
       title: "Read a started program",
     },
-    async ({ cursor, programId, timeoutMs }, extra) => {
+    async ({ cursor, maxLines, programId, timeoutMs }, extra) => {
       const entry = entries.get(programId);
       if (entry === undefined) {
         return fail({
@@ -452,15 +492,19 @@ export function registerPrograms(mcp: ToolRegistrar, context: ToolContext): Star
         // eslint-disable-next-line no-await-in-loop -- each wait follows the last change.
         await changed(entry, left, extra.signal);
       }
-      // A cursor past the text read so far stays put rather than starting over. The page
-      // leaves room for the status line after it, so the ceiling never trims the page.
-      const status = 256 + Buffer.byteLength(entry.startError?.message ?? "");
-      const { end, text } = readable(
-        entry.chunks,
-        entry.size,
-        Math.min(after, entry.size),
-        MAX_RESULT_BYTES - status,
+      // A cursor past the text read so far stays put rather than starting over. The text is sent
+      // twice, in structuredContent and in the content block, so a page takes half of what a
+      // client shows inline, less the status line and the rest of the envelope.
+      const status = 256 + JSON.stringify(entry.startError?.message ?? "").length;
+      const room = Math.floor((INLINE_RESULT_CHARS - ENVELOPE_CHARS - status) / 2);
+      const start = Math.min(after, entry.size);
+      // A character takes at most four bytes, so this window holds every page.
+      const window = readable(entry.chunks, entry.size, start, room * 4);
+      const text = window.text.slice(
+        0,
+        pageCut(window.text, maxLines ?? Number.POSITIVE_INFINITY, room),
       );
+      const end = start + Buffer.byteLength(text);
       // How it ended is known once the copy settles; ended waits for every byte as well.
       const over = settled();
       const finished = over && end === entry.size;

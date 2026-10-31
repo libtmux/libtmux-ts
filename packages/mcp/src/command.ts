@@ -210,11 +210,14 @@ async function capturedPaneState(
   }
 }
 
-/** Read a bounded tail of the rendered grid when no live stream is available. */
+/**
+ * Read a bounded tail of the rendered grid when no live stream is available,
+ * or `undefined` when the capture fails, as it does for a pane that is gone.
+ */
 async function fallbackStream(
   pane: Pane,
   options: { readonly signal?: AbortSignal; readonly timeoutMs?: number } = {},
-): Promise<string> {
+): Promise<string | undefined> {
   const height =
     pane.height !== null && Number.isSafeInteger(pane.height) && pane.height > 0 ? pane.height : 1;
   return captureGridBounded(pane, {
@@ -226,16 +229,20 @@ async function fallbackStream(
     ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
   })
     .then(({ lines }) => lines.join("\n"))
-    .catch(() => "");
+    .catch(() => undefined);
 }
 
-/** Keep a timed-out pane reserved until its wrapper ends or its pane dies. */
+/**
+ * Keep a timed-out pane reserved until its wrapper ends or its pane dies. A pane
+ * that dies can no longer read the script, so `whenGone` removes it.
+ */
 async function waitForSettlement(
   context: ToolContext,
   pane: Pane,
   id: string,
   cursor: string | undefined,
   initialTail: Awaited<ReturnType<ToolContext["hub"]["tail"]>>,
+  whenGone: () => Promise<void>,
   authority?: InputAuthority,
 ): Promise<void> {
   let tail = initialTail;
@@ -244,7 +251,7 @@ async function waitForSettlement(
     let stream: string;
     if (tail === undefined) {
       // eslint-disable-next-line no-await-in-loop -- each capture follows the previous observation.
-      stream = await fallbackStream(pane, { timeoutMs: context.policy.commandTimeoutMs });
+      stream = (await fallbackStream(pane, { timeoutMs: context.policy.commandTimeoutMs })) ?? "";
     } else {
       stream = tail.read(cursor).text;
       if (tail.endReason !== undefined) tail = undefined;
@@ -254,7 +261,7 @@ async function waitForSettlement(
     if (Date.now() - askedAlive >= SETTLEMENT_LIVENESS_MS) {
       askedAlive = Date.now();
       // eslint-disable-next-line no-await-in-loop -- liveness is sampled over time.
-      if ((await capturedPaneState(context, pane.id, authority)) === "gone") return;
+      if ((await capturedPaneState(context, pane.id, authority)) === "gone") break;
     }
 
     if (tail === undefined) {
@@ -272,6 +279,7 @@ async function waitForSettlement(
       tail = undefined;
     }
   }
+  await whenGone();
 }
 
 /** The script name inside its own private directory. */
@@ -432,15 +440,17 @@ export async function runFramedCommand(
     // proves otherwise.
     commandStarted = true;
   }
+  // The last text read stays the answer for a pane that dies, which nothing can read again.
+  let stream = "";
   for (;;) {
-    let stream: string;
     if (tail === undefined) {
       usedFallback = true;
       // eslint-disable-next-line no-await-in-loop -- each read follows the last.
-      stream = await fallbackStream(pane, {
+      const read = await fallbackStream(pane, {
         ...(signal === undefined ? {} : { signal }),
         timeoutMs: Math.max(1, deadline - Date.now()),
       });
+      stream = read ?? stream;
     } else {
       const reading = tail.read(cursor);
       stream = reading.text;
@@ -533,7 +543,7 @@ export async function runFramedCommand(
       outcome: "cancelled",
       output: "",
       outputComplete: false,
-      settled: waitForSettlement(context, pane, id, cursor, tail, authority),
+      settled: waitForSettlement(context, pane, id, cursor, tail, removeScript, authority),
     };
   }
 
@@ -541,7 +551,7 @@ export async function runFramedCommand(
   // only one where calling again would wait on something that cannot arrive.
   const partial =
     tail === undefined
-      ? await fallbackStream(pane, { timeoutMs: context.policy.commandTimeoutMs })
+      ? ((await fallbackStream(pane, { timeoutMs: context.policy.commandTimeoutMs })) ?? stream)
       : tail.read(cursor).text;
   const startAt = partial.indexOf(`${id}_S`);
   const afterStart = startAt < 0 ? -1 : partial.indexOf("\n", startAt);
@@ -565,7 +575,7 @@ export async function runFramedCommand(
     output: cleaned.text,
     outputComplete: startAt >= 0 && missedBytes === 0 && !usedFallback,
     settled: alive
-      ? waitForSettlement(context, pane, id, cursor, tail, authority)
+      ? waitForSettlement(context, pane, id, cursor, tail, removeScript, authority)
       : Promise.resolve(),
   };
 }

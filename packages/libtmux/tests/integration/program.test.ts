@@ -1341,6 +1341,92 @@ setInterval(() => undefined, 1000);`,
   );
 
   testProgram(
+    "a lease that expires after its pane is gone ends no other program",
+    async () => {
+      await withServer(async (server, _directory, fixture) => {
+        // Ended before its first renewal, the run leaves one timer behind, at token 0.
+        await server.run(["true"], { orphanAfterMs: 1000 });
+        await using other = await server.spawn(["sleep", "30"]);
+        const [session = ""] = await server.cmd("display-message", [
+          "-p",
+          "-t",
+          other.pane.id,
+          "#{session_id}",
+        ]);
+        // tmux takes an attached client as current when the timer runs.
+        const client = spawn(
+          fixture.tmuxExecutable,
+          ["-S", fixture.socketPath, "-C", "attach", "-t", session],
+          { env: fixture.controllerEnvironment, stdio: ["pipe", "ignore", "ignore"] },
+        );
+        try {
+          await new Promise((resolve) => setTimeout(resolve, 2000));
+          expect(
+            await server.cmd("display-message", ["-p", "-t", other.pane.id, "#{pane_dead}"]),
+          ).toEqual(["0"]);
+        } finally {
+          client.kill();
+        }
+      });
+    },
+    40_000,
+  );
+
+  testProgram(
+    "a kill whose pane goes after its liveness read signals no other program",
+    async () => {
+      await withServer(async (server, _directory, fixture) => {
+        let paneId = "";
+        const observed = new Server({
+          environment: fixture.controllerEnvironment,
+          // Removes the pane the moment the kill has read it alive, before it signals.
+          onInvocation: (report) => {
+            const read = (c: readonly string[]): boolean =>
+              c.includes(paneId) && c.some((arg) => arg.endsWith("\t#{pane_dead}"));
+            if (paneId !== "" && report.commands.some(read)) {
+              spawnSync(
+                fixture.tmuxExecutable,
+                ["-S", fixture.socketPath, "kill-pane", "-t", paneId],
+                {
+                  env: fixture.controllerEnvironment,
+                },
+              );
+              paneId = "";
+            }
+          },
+          socketPath: fixture.socketPath,
+          tmuxBin: fixture.tmuxExecutable,
+        });
+        const program = await observed.spawn(["sleep", "30"]);
+        await using other = await server.spawn(["sleep", "30"]);
+        const [session = ""] = await server.cmd("display-message", [
+          "-p",
+          "-t",
+          other.pane.id,
+          "#{session_id}",
+        ]);
+        const client = spawn(
+          fixture.tmuxExecutable,
+          ["-S", fixture.socketPath, "-C", "attach", "-t", session],
+          { env: fixture.controllerEnvironment, stdio: ["pipe", "ignore", "ignore"] },
+        );
+        try {
+          await new Promise((resolve) => setTimeout(resolve, 300));
+          paneId = program.pane.id;
+          await program.kill().catch(() => undefined);
+          await new Promise((resolve) => setTimeout(resolve, 300));
+          expect(
+            await server.cmd("display-message", ["-p", "-t", other.pane.id, "#{pane_dead}"]),
+          ).toEqual(["0"]);
+        } finally {
+          client.kill();
+        }
+      });
+    },
+    40_000,
+  );
+
+  testProgram(
     "a split beside a pane leaves its window, its options and its focus as they were",
     async () => {
       await withServer(async (server) => {
