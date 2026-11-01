@@ -149,7 +149,7 @@ jobs:
 
       # fish proves non-POSIX-shell refusal; zsh exercises trap preservation.
       - name: Install test shells
-        run: sudo apt-get install -y fish zsh
+        run: ./scripts/apt-get.sh install -y fish zsh
 
       - run: bun install --frozen-lockfile
 
@@ -393,7 +393,7 @@ jobs:
       - name: Exercise the workspace CLI on this tmux
         working-directory: packages/workspace-cli
         run: |
-          sudo apt-get install -y fish zsh
+          "$GITHUB_WORKSPACE/scripts/apt-get.sh" install -y fish zsh
           bun run test
 
       - name: Open a tmate session after a failure
