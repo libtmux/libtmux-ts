@@ -117,11 +117,16 @@ discovery.
 Entries land under `## Unreleased`. The maintainer assigns the version when
 cutting a release, so nothing here predicts one.
 
-Each release package keeps its own `CHANGELOG.md`, and an entry goes in the file
-of the package it changes. A change that spans packages, such as documentation,
-CI or release tooling, goes in the `libtmux` file. The packages share one
-version, so every file has a heading for every release, and a release with
-nothing for a package says ``No entries for `@libtmux/mcp`.`` under it.
+The repository keeps a root `CHANGELOG.md` and each release package keeps its
+own. The root file is the product-level history: for each release, a dated
+heading with a short summary of what it brought across the packages, linking
+the package entries, and the version each package shipped at. It also holds the
+changes that span packages, such as documentation, CI, tests and release
+tooling. A package's file holds that package's details and migrations, and a
+change to one package goes in that package's file. The packages share one
+version, so every package file has a heading for every release, and a release with
+nothing for a package says ``No entries for `@libtmux/mcp`.`` under it. A
+summary in the root file says only what the package entries it links say.
 
 ## Release notes
 

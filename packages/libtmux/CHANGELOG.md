@@ -11,9 +11,10 @@ release is always `latest`, so `npm i libtmux` fetches it. Releases before
 The other release packages keep their own changelogs:
 [`@libtmux/mcp`](../mcp/CHANGELOG.md),
 [`@libtmux/workspace`](../workspace/CHANGELOG.md) and
-[`@libtmux/workspace-cli`](../workspace-cli/CHANGELOG.md). Changes that
-span packages, such as documentation, CI and release tooling, are listed
-here.
+[`@libtmux/workspace-cli`](../workspace-cli/CHANGELOG.md). The
+[root changelog](../../CHANGELOG.md) carries the release-level notes and the
+changes that span packages, such as documentation, CI and release tooling.
+Entries of that kind from before it existed are listed below.
 
 <!-- KEEP THIS PLACEHOLDER: new work lands under "Unreleased" until a release is cut. -->
 
@@ -45,17 +46,6 @@ here.
 <!-- /toc -->
 
 ## Unreleased
-
-### Development
-
-Every test entry point runs in a sandbox: an owner-only directory that becomes
-`TMUX_TMPDIR`, with `TMUX`, `TMUX_PANE`, `LIBTMUX_SOCKET` and
-`LIBTMUX_SOCKET_PATH` removed, so a test, doctest or example that names no
-socket reaches a server of the run's own. `bun test` enters it from the
-`bunfig.toml` in the repository root, each package and each example; the
-runners, the documentation and install gates and the Node lane enter it
-themselves. A server a run leaves on any socket under the sandbox is stopped,
-and fails the run. (#176)
 
 ## 0.1.2 (2026-10-31)
 

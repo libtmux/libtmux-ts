@@ -93,7 +93,9 @@ the snippets is checked too — `docs:links` resolves every relative link and
 blocks to paths and packages that exist, requires public install examples that
 name a prerelease to pin it exactly, pins any tmux badge to the supported
 releases in `.github/ci-matrix.txt`, and holds each published package to a
-`CHANGELOG.md` with an `Unreleased` section that its `files` ships.
+`CHANGELOG.md` with an `Unreleased` section that its `files` ships, and the
+repository to a root `CHANGELOG.md` with an `Unreleased` section that links
+every package's.
 `docs:runnable` requires a block marked
 
 ```
@@ -505,7 +507,12 @@ pin an exact version.
 The packages keep one release number. A tag names the tested state of the
 library, MCP server, workspace builder, and workspace CLI together. Each keeps
 its own `CHANGELOG.md`, and the coordinator stops a release whose tarball does
-not carry it.
+not carry it. A change to one package goes in that package's file. The root
+`CHANGELOG.md` holds the release-level notes and the changes that span
+packages, such as documentation, CI, tests and release tooling; it is not
+packed into a tarball, and the coordinator stops a release whose version has no
+`## X.Y.Z (YYYY-MM-DD)` heading there, so write that heading in the release
+commit.
 
 `test:package` reads the tarball and `test:install` uses it — a clean
 directory, `npm install` of the packed file, and a Node 22 process that imports

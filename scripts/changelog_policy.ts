@@ -2,11 +2,15 @@ import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 
 /**
- * Every published package keeps its own `CHANGELOG.md`.
+ * The repository keeps a root `CHANGELOG.md` and every published package keeps
+ * its own.
  *
- * One file once held all four packages' history, and nothing noticed a package
- * without one: its tarball simply carried none. Each claim below is answerable
- * from the package directory:
+ * The root file carries the release-level notes, which version each package
+ * shipped at and what the release brought, and the changes that span packages:
+ * documentation, CI, tests and release tooling. A package's file carries that
+ * package's details. One file once held all four packages' history, and
+ * nothing noticed a package without one: its tarball simply carried none. Each
+ * claim below is answerable from the package directory:
  *
  * - the file exists;
  * - it opens with the name of the package it sits in, so a copy of another
@@ -24,6 +28,9 @@ export interface PackageChangelog {
   /** The package's npm name. */
   readonly name: string;
 }
+
+/** The name the root changelog opens with: "Notable changes to `libtmux-ts`." */
+export const ROOT_CHANGELOG_NAME = "libtmux-ts";
 
 const OPENING = /^Notable changes to `([^`]+)`\.$/mu;
 
@@ -59,6 +66,66 @@ export function changelogFailures(packages: readonly PackageChangelog[]): readon
     }
   }
   return failures;
+}
+
+/**
+ * Every way the root `CHANGELOG.md` falls short: it exists, opens with the name
+ * of the repository, has an `Unreleased` section and links each package's
+ * changelog. It is not a package file, so no manifest ships it.
+ */
+export function rootChangelogFailures(
+  changelog: string | undefined,
+  packages: readonly Pick<PackageChangelog, "directory">[],
+): readonly string[] {
+  if (changelog === undefined) {
+    return ["CHANGELOG.md: the repository has no root changelog"];
+  }
+  const failures: string[] = [];
+  const opening = OPENING.exec(changelog)?.[1];
+  if (opening !== ROOT_CHANGELOG_NAME) {
+    failures.push(
+      `CHANGELOG.md: does not open with "Notable changes to \`${ROOT_CHANGELOG_NAME}\`."`,
+    );
+  }
+  if (!hasHeading(changelog, "## Unreleased")) {
+    failures.push('CHANGELOG.md: has no "## Unreleased" section');
+  }
+  for (const { directory } of packages) {
+    if (!changelog.includes(`(packages/${directory}/CHANGELOG.md)`)) {
+      failures.push(`CHANGELOG.md: does not link packages/${directory}/CHANGELOG.md`);
+    }
+  }
+  return failures;
+}
+
+/**
+ * The reason the root changelog has no heading for `version`, or `undefined`
+ * when it has one. A release heading reads `## 0.1.2 (2026-10-31)`.
+ */
+export function releaseHeadingFailure(
+  changelog: string | undefined,
+  version: string,
+): string | undefined {
+  if (changelog === undefined) {
+    return `CHANGELOG.md: the repository has no root changelog, so no heading for ${version}`;
+  }
+  let fenced = false;
+  for (const line of changelog.split("\n")) {
+    if (/^\s*```/u.test(line)) fenced = !fenced;
+    else if (
+      !fenced &&
+      line.startsWith(`## ${version} (`) &&
+      /\(\d{4}-\d{2}-\d{2}\)$/u.test(line)
+    ) {
+      return undefined;
+    }
+  }
+  return `CHANGELOG.md: has no "## ${version} (YYYY-MM-DD)" heading for this release`;
+}
+
+/** The root `CHANGELOG.md`'s text, or `undefined` when the repository has none. */
+export async function readRootChangelog(repositoryRoot: string): Promise<string | undefined> {
+  return await readFile(join(repositoryRoot, "CHANGELOG.md"), "utf8").catch(() => undefined);
 }
 
 /** The changelog state of every non-private package under `packages/`, in directory order. */
