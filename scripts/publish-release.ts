@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { runBoundedCommand, type BoundedCommandTermination } from "./bounded_process.js";
+import { readRootChangelog, releaseHeadingFailure } from "./changelog_policy.js";
 import { npmPack } from "./npm_pack.js";
 import {
   assertMinimumNpm,
@@ -338,6 +339,13 @@ export async function coordinateRelease(
   if (options.eventName === "push" && options.refName !== `v${version}`) {
     throw new Error(`release tag ${options.refName ?? "is missing"}; expected v${version}`);
   }
+  // The root changelog is not a package file and no tarball carries it, but a
+  // release without its notes there is not one the repository can describe.
+  const headingFailure = releaseHeadingFailure(
+    await readRootChangelog(options.repositoryRoot),
+    version,
+  );
+  if (headingFailure !== undefined) throw new Error(headingFailure);
   const artifacts = await Promise.all(
     manifests.map(
       async ({ directory }) =>

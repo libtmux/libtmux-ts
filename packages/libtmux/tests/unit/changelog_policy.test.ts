@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 
 import { describe, expect, test } from "bun:test";
@@ -5,6 +6,9 @@ import { describe, expect, test } from "bun:test";
 import {
   changelogFailures,
   readPackageChangelogs,
+  readRootChangelog,
+  releaseHeadingFailure,
+  rootChangelogFailures,
   type PackageChangelog,
 } from "../../../../scripts/changelog_policy.js";
 import { RELEASE_PACKAGES } from "../../../../scripts/release_policy.js";
@@ -103,5 +107,112 @@ describe("the repository's packages", () => {
       ),
     );
     expect(changelogFailures(packages)).toEqual([]);
+  });
+});
+
+const rootPackages = [{ directory: "libtmux" }, { directory: "mcp" }];
+
+function rootChangelog(): string {
+  return [
+    "# Changelog",
+    "",
+    "Notable changes to `libtmux-ts`.",
+    "",
+    "- [`libtmux`](packages/libtmux/CHANGELOG.md)",
+    "- [`@libtmux/mcp`](packages/mcp/CHANGELOG.md)",
+    "",
+    "## Unreleased",
+    "",
+    "## 1.0.0 (2026-01-02)",
+    "",
+  ].join("\n");
+}
+
+describe("rootChangelogFailures", () => {
+  test("accepts a root changelog that opens with the repository, links every package and has an Unreleased section", () => {
+    expect(rootChangelogFailures(rootChangelog(), rootPackages)).toEqual([]);
+  });
+
+  test("fails a repository with no root CHANGELOG.md", () => {
+    expect(rootChangelogFailures(undefined, rootPackages)).toEqual([
+      "CHANGELOG.md: the repository has no root changelog",
+    ]);
+  });
+
+  test("fails a root changelog with no Unreleased section", () => {
+    const changelog = rootChangelog().replace("## Unreleased\n\n", "");
+
+    expect(rootChangelogFailures(changelog, rootPackages)).toEqual([
+      'CHANGELOG.md: has no "## Unreleased" section',
+    ]);
+  });
+
+  test("does not read an Unreleased heading out of a code block", () => {
+    const changelog = rootChangelog().replace("## Unreleased", "```\n## Unreleased\n```");
+
+    expect(rootChangelogFailures(changelog, rootPackages)).toEqual([
+      'CHANGELOG.md: has no "## Unreleased" section',
+    ]);
+  });
+
+  test("fails a root changelog that names a package instead of the repository", () => {
+    const changelog = rootChangelog().replace("`libtmux-ts`", "`libtmux`");
+
+    expect(rootChangelogFailures(changelog, rootPackages)).toEqual([
+      'CHANGELOG.md: does not open with "Notable changes to `libtmux-ts`."',
+    ]);
+  });
+
+  test("fails a root changelog that leaves out a package's changelog", () => {
+    const changelog = rootChangelog().replace(
+      "- [`@libtmux/mcp`](packages/mcp/CHANGELOG.md)\n",
+      "",
+    );
+
+    expect(rootChangelogFailures(changelog, rootPackages)).toEqual([
+      "CHANGELOG.md: does not link packages/mcp/CHANGELOG.md",
+    ]);
+  });
+});
+
+describe("releaseHeadingFailure", () => {
+  test("accepts a dated heading for the release", () => {
+    expect(releaseHeadingFailure(rootChangelog(), "1.0.0")).toBeUndefined();
+  });
+
+  test.each(["1.0.1", "1.0", "0.0.0"])("fails a release, %s, with no heading", (version) => {
+    expect(releaseHeadingFailure(rootChangelog(), version)).toBe(
+      `CHANGELOG.md: has no "## ${version} (YYYY-MM-DD)" heading for this release`,
+    );
+  });
+
+  test("fails a heading with no date", () => {
+    expect(releaseHeadingFailure("## 1.0.0\n", "1.0.0")).toContain("has no");
+  });
+
+  test("does not read a heading out of a code block", () => {
+    expect(releaseHeadingFailure("```\n## 1.0.0 (2026-01-02)\n```\n", "1.0.0")).toContain("has no");
+  });
+
+  test("fails a repository with no root changelog", () => {
+    expect(releaseHeadingFailure(undefined, "1.0.0")).toContain("no root changelog");
+  });
+});
+
+describe("the repository's root changelog", () => {
+  test("exists, links every package's changelog and has an Unreleased section", async () => {
+    const packages = await readPackageChangelogs(repositoryRoot);
+
+    expect(rootChangelogFailures(await readRootChangelog(repositoryRoot), packages)).toEqual([]);
+  });
+
+  test("has a heading for the release the packages are at", async () => {
+    const manifest = JSON.parse(
+      await readFile(`${repositoryRoot}packages/libtmux/package.json`, "utf8"),
+    ) as { readonly version: string };
+
+    expect(
+      releaseHeadingFailure(await readRootChangelog(repositoryRoot), manifest.version),
+    ).toBeUndefined();
   });
 });

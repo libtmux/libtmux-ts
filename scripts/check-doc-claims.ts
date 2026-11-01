@@ -8,7 +8,12 @@ import {
   extractVersionLiterals,
 } from "./bun_version_pins.js";
 import { slugify } from "../packages/libtmux/scripts/markdown_anchors.js";
-import { changelogFailures, readPackageChangelogs } from "./changelog_policy.js";
+import {
+  changelogFailures,
+  readPackageChangelogs,
+  readRootChangelog,
+  rootChangelogFailures,
+} from "./changelog_policy.js";
 import { parseCiMatrix } from "./ci_matrix.js";
 
 /**
@@ -33,7 +38,9 @@ import { parseCiMatrix } from "./ci_matrix.js";
  *   `packageManager` pin, every manifest's `engines.bun` floor, and the
  *   CONTRIBUTING prose all agree;
  * - every published package keeps its own CHANGELOG.md, opening with its name,
- *   holding an Unreleased section, and shipped by the manifest's `files`;
+ *   holding an Unreleased section, and shipped by the manifest's `files`, and
+ *   the repository keeps a root CHANGELOG.md with an Unreleased section that
+ *   links them all;
  * - the README and CHANGELOG tables of contents list exactly the headings
  *   each file has, in order, with the anchor GitHub would mint for each; and
  * - the MCP tool count the root README gives matches the registry; and
@@ -270,6 +277,8 @@ for (const file of packageReadmes) {
 
 const changelogs = await readPackageChangelogs(repositoryRoot);
 failures.push(...changelogFailures(changelogs));
+const rootChangelog = await readRootChangelog(repositoryRoot);
+failures.push(...rootChangelogFailures(rootChangelog, changelogs));
 
 /**
  * The long documents this repository ships get a table of contents, the
@@ -286,6 +295,7 @@ failures.push(...changelogFailures(changelogs));
  */
 const tablesOfContents = [
   { depth: 3, file: "packages/libtmux/README.md" },
+  ...(rootChangelog === undefined ? [] : [{ depth: 2, file: "CHANGELOG.md" }]),
   ...changelogs
     .filter(({ changelog }) => changelog !== undefined)
     .map(({ directory }) => ({ depth: 2, file: `packages/${directory}/CHANGELOG.md` })),

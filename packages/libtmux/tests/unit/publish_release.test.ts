@@ -64,6 +64,10 @@ async function makeReleaseFixture(version: string): Promise<{
       );
     }),
   );
+  await writeFile(
+    join(root, "CHANGELOG.md"),
+    `# Changelog\n\n## Unreleased\n\n## ${version} (2026-01-01)\n`,
+  );
   const artifacts = join(root, "artifacts");
   await mkdir(artifacts);
   return { artifacts, root };
@@ -611,6 +615,73 @@ describe("coordinated release", () => {
       }
     },
   );
+
+  test("rejects a release whose root CHANGELOG.md has no heading for it before packing", async () => {
+    const fixture = await makeReleaseFixture("1.0.0");
+    await writeFile(join(fixture.root, "CHANGELOG.md"), "# Changelog\n\n## Unreleased\n");
+    const { io, packed, publishes } = makeReleaseIO(makeRegistry());
+    try {
+      await expect(
+        coordinateRelease(
+          {
+            artifactDirectory: fixture.artifacts,
+            dryRun: false,
+            eventName: "push",
+            refName: "v1.0.0",
+            repositoryRoot: fixture.root,
+          },
+          io,
+        ),
+      ).rejects.toThrow('CHANGELOG.md: has no "## 1.0.0 (YYYY-MM-DD)" heading for this release');
+      expect(packed).toEqual([]);
+      expect(publishes).toEqual([]);
+    } finally {
+      await rm(fixture.root, { force: true, recursive: true });
+    }
+  });
+
+  test("rejects a release with no root CHANGELOG.md before packing", async () => {
+    const fixture = await makeReleaseFixture("1.0.0");
+    await rm(join(fixture.root, "CHANGELOG.md"));
+    const { io, packed } = makeReleaseIO(makeRegistry());
+    try {
+      await expect(
+        coordinateRelease(
+          {
+            artifactDirectory: fixture.artifacts,
+            dryRun: false,
+            eventName: "push",
+            refName: "v1.0.0",
+            repositoryRoot: fixture.root,
+          },
+          io,
+        ),
+      ).rejects.toThrow("no root changelog");
+      expect(packed).toEqual([]);
+    } finally {
+      await rm(fixture.root, { force: true, recursive: true });
+    }
+  });
+
+  test("never packs the root CHANGELOG.md as a tarball", async () => {
+    const fixture = await makeReleaseFixture("1.0.0");
+    const { io, packed } = makeReleaseIO(makeRegistry());
+    try {
+      await coordinateRelease(
+        {
+          artifactDirectory: fixture.artifacts,
+          dryRun: true,
+          eventName: "push",
+          refName: "v1.0.0",
+          repositoryRoot: fixture.root,
+        },
+        io,
+      );
+      expect(packed.toSorted()).toEqual(packages.map(([, name]) => name).toSorted());
+    } finally {
+      await rm(fixture.root, { force: true, recursive: true });
+    }
+  });
 
   test("rejects tag disagreement before packing", async () => {
     const fixture = await makeReleaseFixture("1.0.0");
