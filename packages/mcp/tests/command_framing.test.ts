@@ -18,7 +18,7 @@ import {
   withoutForeignFraming,
 } from "../src/command_frame.js";
 import type { InputAuthority, ToolContext } from "../src/context.js";
-import { PaneTail } from "../src/pane_tail.js";
+import { PaneTail, type PaneTailChange } from "../src/pane_tail.js";
 import { resolvePolicy } from "../src/policy.js";
 
 describe("command framing", () => {
@@ -121,6 +121,17 @@ describe("command framing", () => {
     };
   }
 
+  /** A tail that reports the first time a reader parks on it to wait for output. */
+  class ParkingTail extends PaneTail {
+    readonly #parked = Promise.withResolvers<void>();
+    readonly parked = this.#parked.promise;
+
+    override changed(timeoutMs: number, signal?: AbortSignal): Promise<PaneTailChange> {
+      this.#parked.resolve();
+      return super.changed(timeoutMs, signal);
+    }
+  }
+
   async function startCancelledCommand(
     paneId: string,
     observeInput: ToolContext["observeInput"],
@@ -128,10 +139,10 @@ describe("command framing", () => {
   ): Promise<{
     readonly id: string;
     readonly result: Awaited<ReturnType<typeof runFramedCommand>>;
-    readonly tail: PaneTail;
+    readonly tail: ParkingTail;
   }> {
     const controller = new AbortController();
-    const tail = new PaneTail(paneId);
+    const tail = new ParkingTail(paneId);
     const buffers = fakeBuffers();
     let id = "";
     const pane = {
@@ -162,17 +173,19 @@ describe("command framing", () => {
     return { id, result, tail };
   }
 
+  /**
+   * Whether settlement finished without the marker. Settlement parks on the
+   * tail only when its liveness sample cannot end it, so parking answers no.
+   */
   async function settlesBeforeMarker(
     result: Awaited<ReturnType<typeof runFramedCommand>>,
-    tail: PaneTail,
+    tail: ParkingTail,
     id: string,
   ): Promise<boolean> {
-    let settled = false;
-    void result.settled.then(() => {
-      settled = true;
-    });
-    await new Promise((resolve) => setTimeout(resolve, 1));
-    const beforeMarker = settled;
+    const beforeMarker = await Promise.race([
+      result.settled.then(() => true),
+      tail.parked.then(() => false),
+    ]);
     tail.append(`${id}_E 0 ${id}_D\n`);
     await result.settled;
     return beforeMarker;
