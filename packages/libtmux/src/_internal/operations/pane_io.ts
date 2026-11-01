@@ -1,6 +1,7 @@
 import type { CaptureOptions, SendKeysOptions } from "../../types.js";
+import type { CommandResult } from "../../common.js";
 import type { RuntimeContext } from "../runtime/context.js";
-import { runCommand, runCommands } from "./command.js";
+import { runCommand, runCommandResult, runCommandsResult } from "./command.js";
 
 /**
  * Send keys to a pane.
@@ -23,16 +24,25 @@ export async function sendKeys(
   keys: string,
   options: SendKeysOptions = {},
 ): Promise<void> {
+  await sendKeysWithResult(runtime, paneId, keys, options);
+}
+
+/** Submit the same input invocation and retain the command result for group reports. */
+export async function sendKeysWithResult(
+  runtime: RuntimeContext,
+  paneId: string | null,
+  keys: string,
+  options: SendKeysOptions = {},
+): Promise<CommandResult> {
   const at = paneId == null ? [] : ["-t", paneId];
   // tmux stops reading flags at the first positional, so a lone `--` before
   // the caller's text is what keeps a value starting with `-` (`-R` resets
   // the terminal) from being read as one of send-keys's own flags.
   const text = ["send-keys", ...at, ...(options.literal === true ? ["-l"] : []), "--", keys];
   if (options.enter === false) {
-    await runCommand(runtime, text, options);
-    return;
+    return runCommandResult(runtime, text, options);
   }
-  await runCommands(runtime, [text, ["send-keys", ...at, "Enter"]], options);
+  return runCommandsResult(runtime, [text, ["send-keys", ...at, "Enter"]], options);
 }
 
 /** Capture a pane's contents as lines, without the trailing blank line tmux emits. */
@@ -41,7 +51,16 @@ export async function capturePane(
   paneId: string | null,
   options: CaptureOptions = {},
 ): Promise<readonly string[]> {
-  const lines = await runCommand(
+  return (await capturePaneWithResult(runtime, paneId, options)).value;
+}
+
+/** Capture using the ordinary flags and retain the underlying command result. */
+export async function capturePaneWithResult(
+  runtime: RuntimeContext,
+  paneId: string | null,
+  options: CaptureOptions = {},
+): Promise<{ readonly result: CommandResult; readonly value: readonly string[] }> {
+  const result = await runCommandResult(
     runtime,
     [
       "capture-pane",
@@ -55,9 +74,10 @@ export async function capturePane(
     ],
     options,
   );
+  const lines = result.stdout;
   let end = lines.length;
   while (lines[end - 1] === "") end -= 1;
-  return end === lines.length ? lines : Object.freeze(lines.slice(0, end));
+  return { result, value: end === lines.length ? lines : Object.freeze(lines.slice(0, end)) };
 }
 
 /** Discard a pane's scrollback history. */

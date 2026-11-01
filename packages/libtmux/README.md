@@ -760,6 +760,24 @@ await pane.respawn("htop", { kill: true });
 await pane.displayMessage("#{pane_current_command}");
 ```
 
+Use `PaneSet` when every requested slot needs its own result, including
+duplicate panes and panes that disappear:
+
+```ts
+import { PaneSet } from "libtmux";
+
+const group = new PaneSet([pane, pane], { concurrency: 2 });
+const captures = await group.capture({ start: -100 });
+const text = captures.map((slot) => slot.value?.join("\n"));
+const submissions = await group.sendKeys("go", { literal: true });
+```
+
+Captures are separate samples. A successful input result proves submission,
+not application completion. Each immutable slot retains its index, native
+pane reference, delivery status, result or original error, and separate reason.
+An interrupted submitted command can be `unknown`; the group never retries it.
+See [group limits and cancellation](docs/contracts.md#pane-groups).
+
 ### [`Pane.enterCopyMode`][ref-pane-entercopymode]: copy mode needs no client
 
 A detached pane enters and leaves copy mode like any other:
@@ -2118,7 +2136,7 @@ $ npx -y @libtmux/workspace-cli@0.1.2 load ./workspace.yaml \
 The root export carries the everyday handle, query, operation, error, and
 constant surface. Each model is also its own subpath:
 
-- `libtmux/server`, `libtmux/session`, `libtmux/window`, `libtmux/pane`,
+- `libtmux/server`, `libtmux/session`, `libtmux/window`, `libtmux/pane`, `libtmux/pane-set`,
   `libtmux/program`, `libtmux/client` and `libtmux/selection`.
 - `libtmux/formats`, `libtmux/constants`, `libtmux/common` and
   `libtmux/errors`, as supporting subpaths.
