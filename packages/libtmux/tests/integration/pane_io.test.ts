@@ -13,6 +13,7 @@ import {
 } from "../../src/_internal/test/testkit.js";
 
 import { Server } from "../../src/server.js";
+import { PaneSet, TmuxCommandError } from "../../src/index.js";
 
 function serverFor(fixture: TestServer): Server {
   return new Server({
@@ -64,6 +65,24 @@ async function captureUntil(
 }
 
 describe("pane input and capture", () => {
+  test("reports duplicate input slots, a missing pane and borrowed-server survival", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const pane = (await server.snapshot()).panes.one();
+      const disposable = await pane.split({ shellCommand: "cat" });
+      await disposable.kill();
+      const group = new PaneSet([pane, disposable, pane], { concurrency: 1 });
+      const submitted = await group.sendKeys("duplicate-marker", { enter: false, literal: true });
+      expect(submitted.map(({ status }) => status)).toEqual(["complete", "failed", "complete"]);
+      expect(submitted[1]?.error).toBeInstanceOf(TmuxCommandError);
+      expect(submitted[0]?.result?.cmd).toContain("send-keys");
+      expect(submitted[2]?.target).toEqual(submitted[0]?.target);
+      const captures = await group.capture();
+      expect(captures.map(({ status }) => status)).toEqual(["complete", "failed", "complete"]);
+      expect(await server.isAlive()).toBe(true);
+    });
+  });
+
   test("sends literal text and captures it back", async () => {
     await withServer(async (fixture) => {
       const pane = (await serverFor(fixture).snapshot()).panes.one();

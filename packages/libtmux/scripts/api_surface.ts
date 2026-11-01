@@ -19,6 +19,7 @@ export const SOURCES = [
   "src/session.ts",
   "src/window.ts",
   "src/pane.ts",
+  "src/pane_set.ts",
   "src/program.ts",
   "src/client.ts",
   "src/selection.ts",
