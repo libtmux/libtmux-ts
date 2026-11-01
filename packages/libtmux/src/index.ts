@@ -33,6 +33,7 @@ export type {
   HookScope,
   IfShellOptions,
   JoinOptions,
+  LocateTextOptions,
   MenuEntry,
   MenuItem,
   MoveWindowOptions,
@@ -83,6 +84,9 @@ export type {
   TmuxWindowLifecycleEvent,
   TmuxWindowPaneChangedEvent,
   TmuxWindowRenamedEvent,
+  TextLocation,
+  TextLocatorObservation,
+  TextLocatorResult,
   WatchOptions,
   WindowTarget,
 } from "./types.js";

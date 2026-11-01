@@ -760,6 +760,21 @@ await pane.respawn("htop", { kill: true });
 await pane.displayMessage("#{pane_current_command}");
 ```
 
+Locate text in one capture and retain the observation with its positions:
+
+```ts
+const located = await pane.locateText("ready", { maxMatches: 16 });
+if (located.status === "unique") {
+  const offset = located.match.startUtf16;
+  const captured = located.observation.lines;
+}
+```
+
+The result distinguishes missing, unique and ambiguous matches. It keeps its
+captured text after a redraw; it never follows later pane state. Offsets count
+UTF-16 code units in capture lines joined with LF. See [text locations](docs/contracts.md#text-locations)
+for bounds, multiline matching and capture provenance.
+
 ### [`Pane.enterCopyMode`][ref-pane-entercopymode]: copy mode needs no client
 
 A detached pane enters and leaves copy mode like any other:

@@ -138,6 +138,33 @@ const testProgram = supported ? test : test.skip;
 const testWithVim = supported && onPath("vim") ? test : test.skip;
 
 describe("program runs", () => {
+  testProgram(
+    "locates literal text in a completed producer and retains it after cleanup",
+    async () => {
+      await withServer(async (server) => {
+        await using program = await server.spawn(
+          ["printf", "界 alpha alpha\n0123456789ABCDEFGH\n"],
+          { width: 16, height: 8 },
+        );
+        await program.wait({ timeoutMs: 500 });
+        const located = await program.pane.locateText("alpha", { start: -100 });
+        expect(located.status).toBe("ambiguous");
+        expect(located.matches).toHaveLength(2);
+        expect(located.observation.lines.some((line) => line.includes("界 alpha alpha"))).toBe(
+          true,
+        );
+        const wrapped = await program.pane.locateText("EFGH", { start: -100 });
+        const joined = await program.pane.locateText("EFGH", { start: -100, joinWrapped: true });
+        expect(wrapped.status).toBe("missing");
+        expect(joined.status).toBe("unique");
+        await program.kill();
+        expect(located.observation.lines.some((line) => line.includes("界 alpha alpha"))).toBe(
+          true,
+        );
+        expect(Object.isFrozen(located.matches)).toBe(true);
+      });
+    },
+  );
   test("refuses below tmux 3.8 and creates nothing", async () => {
     await withServer(async (server) => {
       if (supported) return;
