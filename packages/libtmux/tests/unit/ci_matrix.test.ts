@@ -26,11 +26,16 @@ describe("the manifest", () => {
     ["a lane Bun the gates do not run", `${valid}bun 1.4.2\nlane-bun 1.3.14\n`, "one Bun version"],
     ["a lane Bun outside the matrix", "supported 3.3a\nbun 1.4.0\nlane-bun 1.3.14\n", "does not"],
     ["an unknown kind", `${valid}beta 3.9\n`, "unknown kind"],
-    ["a repeated release", `${valid}refused 3.3a\n`, "repeats tmux 3.3a"],
+    ["a repeated release", `${valid}preview 3.3a\n`, "repeats tmux 3.3a"],
+    [
+      "a refused release, which CI no longer starts",
+      `${valid}refused 3.2a\n`,
+      "unknown kind: refused",
+    ],
     ["a repeated Bun", `${valid}bun 1.4.0\n`, "repeats bun 1.4.0"],
-    ["a line without a value", `${valid}refused\n`, "malformed"],
-    ["a line with extra words", `${valid}refused 3.2a 3.1c\n`, "malformed"],
-    ["a release with a pipe", `${valid}refused 3.2a|id\n`, "invalid tmux ref"],
+    ["a line without a value", `${valid}preview\n`, "malformed"],
+    ["a line with extra words", `${valid}preview 3.2a 3.1c\n`, "malformed"],
+    ["a release with a pipe", `${valid}preview 3.2a|id\n`, "invalid tmux ref"],
     ["a Bun version with a $", `${valid}bun $HOME\n`, "invalid Bun version"],
   ] as const)("is refused with %s", (_name, text, message) => {
     expect(refusal(() => parseCiMatrix(text))).toContain(message);

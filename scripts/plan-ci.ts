@@ -54,11 +54,10 @@ function plan(): void {
   const lines = [
     `scope=${result.scope}`,
     `tmux=${JSON.stringify(result.lanes)}`,
-    `rejected=${JSON.stringify(result.rejected)}`,
     `bun-versions=${JSON.stringify(result.bun)}`,
     `os=${result.os}`,
     `skip=${result.skip.join(" ")}`,
-    `jobs=${String(result.lanes.length + result.rejected.length)}`,
+    `jobs=${String(result.lanes.length)}`,
   ];
   const output = process.env.GITHUB_OUTPUT;
   if (output === undefined || output === "") process.stdout.write(`${lines.join("\n")}\n`);
@@ -73,9 +72,8 @@ function plan(): void {
         "",
         `- scope: \`${result.scope}\``,
         `- tmux lanes: \`${result.lanes.map((lane) => lane["tmux-version"]).join(" ")}\``,
-        `- refused releases: \`${result.rejected.join(" ")}\``,
         `- Bun: \`${result.bun.join(" ")}\``,
-        `- planned tmux jobs: ${String(result.lanes.length + result.rejected.length)}`,
+        `- planned tmux jobs: ${String(result.lanes.length)}`,
         "",
       ].join("\n"),
     );

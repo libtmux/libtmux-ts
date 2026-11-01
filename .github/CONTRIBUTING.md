@@ -19,8 +19,8 @@ or newer.
 A daemon older than tmux 3.3a is refused before anything is sent to it.
 `tests/integration/core_minimum.test.ts` checks that against a daemon started
 from the tmux named by `LIBTMUX_REJECTED_TMUX`, driven by the tmux on `PATH`;
-CI supplies 3.0a, 3.1c, 3.2a and 3.3 there. Without the variable those tests
-skip, and `LIBTMUX_REQUIRE_REJECTED=1` makes a missing binary fail instead.
+CI does not run it. Without the variable those tests skip, and
+`LIBTMUX_REQUIRE_REJECTED=1` makes a missing binary fail instead.
 
 `test:node` runs the emitted `dist` on Node 22, which is the artifact a Node
 consumer gets — the `bun` export condition serves `src` only to Bun. It runs
@@ -308,9 +308,9 @@ and tmux rejects the command.
 ### Running CI against any tmux
 
 A push or pull request runs the `tmux` job on the oldest and the newest
-released tmux, 3.3a and 3.8. Every release, the `release_3.8a` branch, tmux
-master and the refused releases run for a release and for a dispatch with
-`scope=full`. `.github/ci-matrix.txt` lists the releases and Bun versions, and
+released tmux, 3.3a and 3.8. Every release, the `release_3.8a` branch and tmux
+master run for a release and for a dispatch with `scope=full`.
+`.github/ci-matrix.txt` lists the releases and Bun versions, and
 `scripts/plan-ci.ts` turns it into the workflow's matrices. The `required` job
 is the one check that passes only when every planned job did.
 

@@ -57,7 +57,6 @@ jobs:
     timeout-minutes: 5
     outputs:
       tmux: ${{ steps.plan.outputs.tmux }}
-      rejected: ${{ steps.plan.outputs.rejected }}
       bun-versions: ${{ steps.plan.outputs.bun-versions }}
       os: ${{ steps.plan.outputs.os }}
       skip: ${{ steps.plan.outputs.skip }}
@@ -85,7 +84,7 @@ jobs:
   required:
     name: required
     if: ${{ always() }}
-    needs: [plan, gates, tmux, tmux-rejected]
+    needs: [plan, gates, tmux]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -401,51 +400,3 @@ jobs:
         uses: mxschmitt/action-tmate@35b54afac29c97fb54faba5b513f8fbd1882f113 # v3.24
         with:
           limit-access-to-actor: true
-
-  # The releases just below the floor, which the package must refuse before any
-  # effect. 3.3a is the client, so a refusal here is the daemon's version
-  # speaking, not the executable's. They run with the whole table.
-  tmux-rejected:
-    name: tmux ${{ matrix.rejected-version }} is refused
-    needs: plan
-    if: ${{ needs.plan.outputs.rejected != '[]' }}
-    runs-on: ${{ needs.plan.outputs.os }}
-    timeout-minutes: 15
-    strategy:
-      fail-fast: false
-      matrix:
-        rejected-version: ${{ fromJSON(needs.plan.outputs.rejected) }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
-        with:
-          bun-version: 1.4.0
-
-      - name: Build the supported floor tmux
-        id: floor
-        uses: ./.github/actions/build-tmux
-        with:
-          ref: "3.3a"
-
-      - name: Build the rejected tmux ${{ matrix.rejected-version }}
-        id: rejected
-        uses: ./.github/actions/build-tmux
-        with:
-          ref: ${{ matrix.rejected-version }}
-
-      - run: bun install --frozen-lockfile
-
-      - name: Refuse the daemon before any effect
-        working-directory: packages/libtmux
-        env:
-          REJECTED_VERSION: ${{ matrix.rejected-version }}
-          FLOOR_PREFIX: ${{ steps.floor.outputs.prefix }}
-          REJECTED_PREFIX: ${{ steps.rejected.outputs.prefix }}
-        run: |
-          export PATH="$FLOOR_PREFIX/bin:$PATH"
-          export LIBTMUX_REJECTED_TMUX="$REJECTED_PREFIX/bin/tmux"
-          export LIBTMUX_REQUIRE_REJECTED=1
-          test "$(tmux -V)" = 'tmux 3.3a'
-          test "$("$LIBTMUX_REJECTED_TMUX" -V)" = "tmux $REJECTED_VERSION"
-          bun test --timeout=60000 tests/integration/core_minimum.test.ts

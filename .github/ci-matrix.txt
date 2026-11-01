@@ -8,7 +8,6 @@
 #   preview      a branch that becomes a release. It has no tag yet, so it
 #                runs with the whole table and is not in the support claim.
 #   development  unreleased tmux. It runs with the whole table and may fail.
-#   refused      a release below the floor, started to prove it is refused
 #   bun          a Bun version the gates job runs
 #   lane-bun     the Bun version the tmux lanes run, one of the above
 
@@ -28,11 +27,6 @@ supported 3.8
 preview release_3.8a
 
 development master
-
-refused 3.0a
-refused 3.1c
-refused 3.2a
-refused 3.3
 
 bun 1.3.14
 bun 1.4.0

@@ -12,9 +12,9 @@ import { testControl } from "../support/tmux_release.js";
 
 /**
  * The supported client is `tmux` on PATH. A daemon below the floor is started
- * from `LIBTMUX_REJECTED_TMUX`, which the rejection lanes provide; elsewhere
- * those tests are skipped, and a lane that must run them sets
- * `LIBTMUX_REQUIRE_REJECTED` so a missing binary fails instead of skipping.
+ * from `LIBTMUX_REJECTED_TMUX`; without it those tests are skipped, and a run
+ * that must execute them sets `LIBTMUX_REQUIRE_REJECTED` so a missing binary
+ * fails instead of skipping.
  */
 const rejected = process.env.LIBTMUX_REJECTED_TMUX;
 const required = process.env.LIBTMUX_REQUIRE_REJECTED === "1";
@@ -62,7 +62,7 @@ afterEach(async () => {
 });
 
 describe("a daemon below the core floor", () => {
-  test("the rejection lane provides the unsupported tmux", () => {
+  test("a run that requires the refusals has the unsupported tmux", () => {
     if (required) expect(rejected).toBeDefined();
   });
 
