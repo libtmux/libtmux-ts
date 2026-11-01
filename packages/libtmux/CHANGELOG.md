@@ -46,6 +46,10 @@ here.
 
 ## Unreleased
 
+Receive original pane-output bytes through opt-in control streams while existing
+text events keep their behavior. Buffer limits report dropped bytes when
+consumers fall behind. (#171)
+
 ## 0.1.2 (2026-10-31)
 
 ### `libtmux`
