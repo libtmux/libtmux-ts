@@ -50,6 +50,37 @@ async function withServer(body: (fixture: TestServer) => Promise<void>): Promise
 }
 
 describeControl("control-mode event bounds", () => {
+  test("exposes invalid UTF-8 and NUL through an opted-in public observer", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const session = await server.newSession({
+        name: "raw-bytes",
+        shellCommand:
+          "/bin/sh -c 'read -r token; printf \"\\377\\000\\376\\134\\015\\033[31mA\"; exec cat'",
+      });
+      await using events = server.watch({ outputBytes: true, target: session.id });
+      await events.ready();
+      const expected = Buffer.from([0xff, 0, 0xfe, 0x5c, 0x0d, 0x1b, 0x5b, 0x33, 0x31, 0x6d, 0x41]);
+      const received: Uint8Array[] = [];
+      const matched = events.find(
+        (event) => {
+          if (event.kind !== "output" || event.bytes === undefined) return false;
+          received.push(event.bytes);
+          return Buffer.concat(received).includes(expected);
+        },
+        { timeoutMs: 1_000 },
+      );
+      const pane = (await server.snapshot()).sessions.one({ id: session.id }).panes.one();
+      await pane.sendKeys("run");
+      const match = await matched;
+      expect(Buffer.concat(received).toString("hex")).toContain(expected.toString("hex"));
+      expect(match).toBeDefined();
+      expect(events.dropped).toBe(0);
+      await events.close();
+      expect(await server.hasSession("raw-bytes")).toBe(true);
+    });
+  });
+
   test("names a connection that broke under a command in its own terms", async () => {
     const directory = await makeTestDirectory("ltx-broken-");
     const socketPath = join(directory, "s");

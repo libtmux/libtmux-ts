@@ -193,6 +193,7 @@ function splitArguments(rest: string, limit: number): readonly string[] {
 export function parseControlLine(
   line: Uint8Array,
   decodeOutput: OutputDecoder = decodeWhole,
+  outputBytes = false,
 ): ControlBlockBoundary | TmuxEvent | undefined {
   if (line.length === 0 || line[0] !== 0x25) return undefined;
   const space = line.indexOf(0x20);
@@ -222,8 +223,10 @@ export function parseControlLine(
       if (space === -1 || payloadStart === -1) break;
       const paneId = parsedId(isPaneId, decoder.decode(line.subarray(space + 1, payloadStart)));
       if (paneId === undefined) break;
+      const payload = unescapeOutput(line.subarray(payloadStart + 1));
       return {
-        data: decodeOutput(paneId, unescapeOutput(line.subarray(payloadStart + 1))),
+        ...(outputBytes ? { bytes: new Uint8Array(payload) } : {}),
+        data: decodeOutput(paneId, payload),
         kind: "output",
         paneId,
       };
@@ -237,9 +240,11 @@ export function parseControlLine(
       const parsedPaneId = parsedId(isPaneId, paneId);
       const parsedAge = parseUnsigned(age);
       if (parsedPaneId === undefined || parsedAge === undefined) break;
+      const payload = unescapeOutput(line.subarray(markerEnd + 1));
       return {
         age: parsedAge,
-        data: decodeOutput(parsedPaneId, unescapeOutput(line.subarray(markerEnd + 1))),
+        ...(outputBytes ? { bytes: new Uint8Array(payload) } : {}),
+        data: decodeOutput(parsedPaneId, payload),
         kind: "output",
         paneId: parsedPaneId,
       };
