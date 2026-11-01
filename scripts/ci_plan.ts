@@ -2,10 +2,9 @@
  * Which tmux lanes the typescript workflow runs.
  *
  * `.github/ci-matrix.txt` lists the releases and Bun versions once. A push or
- * pull request runs the first and last supported release. The whole table, the
- * preview and development lanes and the refused releases run for a release
- * (the publish workflow calls this one with `scope: full`) and for a dispatch
- * with `scope: full`. A dispatch with `scope: custom` runs the tmux versions,
+ * pull request runs the first and last supported release. The whole table and
+ * the preview and development lanes run for a release (the publish workflow
+ * calls this one with `scope: full`) and for a dispatch with `scope: full`. A dispatch with `scope: custom` runs the tmux versions,
  * tags, branches or commits it names.
  *
  * Inputs arrive through the environment, never inline in a script. A push or
@@ -50,7 +49,6 @@ export interface CiPlan {
   /** The `tmux` legs. */
   readonly lanes: readonly Lane[];
   readonly os: string;
-  readonly rejected: readonly string[];
   readonly scope: Scope;
   /** Jobs the plan leaves out of scope, which may be skipped. */
   readonly skip: readonly string[];
@@ -124,7 +122,6 @@ export function planCi(matrix: CiMatrix, input: PlanInput): CiPlan {
   }
 
   let refs: readonly string[] = [];
-  let rejected: readonly string[] = [];
   switch (scope) {
     case "edges": {
       const first = matrix.supported[0];
@@ -135,7 +132,6 @@ export function planCi(matrix: CiMatrix, input: PlanInput): CiPlan {
     }
     case "full":
       refs = [...matrix.supported, ...matrix.preview, ...matrix.development];
-      rejected = matrix.refused;
       break;
     case "custom": {
       const requested = splitList(input.tmuxRef ?? "", "tmux-ref");
@@ -144,8 +140,7 @@ export function planCi(matrix: CiMatrix, input: PlanInput): CiPlan {
           fail(`tmux-ref has an invalid item (want ${TMUX_REF.source}, no leading dash): ${ref}`);
         }
       }
-      refs = requested.filter((ref) => !matrix.refused.includes(ref));
-      rejected = requested.filter((ref) => matrix.refused.includes(ref));
+      refs = requested;
       break;
     }
   }
@@ -165,16 +160,15 @@ export function planCi(matrix: CiMatrix, input: PlanInput): CiPlan {
     }
   }
 
-  if (tmate !== "off" && (lanes.length !== 1 || rejected.length !== 0)) {
+  if (tmate !== "off" && lanes.length !== 1) {
     fail(
-      `tmate needs exactly one tmux lane and the plan has ${String(lanes.length + rejected.length)}; name one tmux-ref and at most one bun`,
+      `tmate needs exactly one tmux lane and the plan has ${String(lanes.length)}; name one tmux-ref and at most one bun`,
     );
   }
 
   const skip: string[] = [];
   if (lanes.length === 0) skip.push("tmux");
-  if (rejected.length === 0) skip.push("tmux-rejected");
-  return { bun, lanes, os, rejected, scope, skip };
+  return { bun, lanes, os, scope, skip };
 }
 
 interface NeedResult {

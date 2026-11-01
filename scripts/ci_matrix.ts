@@ -19,8 +19,6 @@ export interface CiMatrix {
   readonly laneBun: string;
   /** A branch that becomes a release, run with the whole table. */
   readonly preview: readonly string[];
-  /** Releases below the floor, started to prove they are refused. */
-  readonly refused: readonly string[];
   /** Released tmux, oldest first. The first and last are the edges. */
   readonly supported: readonly string[];
 }
@@ -41,11 +39,10 @@ export function validToolchain(value: string): boolean {
 
 /** Parse the manifest, refusing anything the plan could not trust. */
 export function parseCiMatrix(text: string): CiMatrix {
-  const lists: Record<"bun" | "development" | "preview" | "refused" | "supported", string[]> = {
+  const lists: Record<"bun" | "development" | "preview" | "supported", string[]> = {
     bun: [],
     development: [],
     preview: [],
-    refused: [],
     supported: [],
   };
   const laneBun: string[] = [];
@@ -69,12 +66,7 @@ export function parseCiMatrix(text: string): CiMatrix {
       }
       continue;
     }
-    if (
-      kind !== "supported" &&
-      kind !== "preview" &&
-      kind !== "refused" &&
-      kind !== "development"
-    ) {
+    if (kind !== "supported" && kind !== "preview" && kind !== "development") {
       fail(`manifest has an unknown kind: ${kind}`);
     }
     if (!validRef(value)) fail(`manifest names an invalid tmux ref: ${value}`);

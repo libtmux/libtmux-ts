@@ -312,13 +312,11 @@ if (callScope !== "full" || verifyJob?.with?.scope !== "full") {
   );
 }
 
-// The tmux lanes, the refused releases and the Bun versions come from the
-// plan, which reads .github/ci-matrix.txt: a list written here would be a
-// second one.
+// The tmux lanes and the Bun versions come from the plan, which reads
+// .github/ci-matrix.txt: a list written here would be a second one.
 for (const [job, key, output] of [
   ["gates", "bun-version", "bun-versions"],
   ["tmux", "include", "tmux"],
-  ["tmux-rejected", "rejected-version", "rejected"],
 ] as const) {
   const taken = typescriptJobs[job]?.strategy?.matrix?.[key];
   if (taken !== `\${{ fromJSON(needs.plan.outputs.${output}) }}`) {

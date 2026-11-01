@@ -8,7 +8,7 @@ import { planCi, unpassedJobs, type PlanInput } from "../../../../scripts/ci_pla
 
 const repositoryRoot = new URL("../../../../", import.meta.url).pathname;
 
-/** A small table with a middle release, a preview, a development lane and refused releases. */
+/** A small table with a middle release, a preview and a development lane. */
 const table = `
 # a comment
 supported 3.3a
@@ -18,8 +18,6 @@ supported 3.8
 
 preview release_3.8a
 development master
-refused 3.2a
-refused 3.3
 
 bun 1.3.14
 bun 1.4.0
@@ -50,15 +48,14 @@ describe("the events", () => {
     for (const input of [push, { event: "pull_request", ref: "refs/pull/7/merge" }]) {
       const plan = planCi(matrix, input);
       expect(plan.lanes.map((lane) => lane["tmux-version"])).toEqual(["3.3a", "3.8"]);
-      expect(plan.rejected).toEqual([]);
       expect(plan.scope).toBe("edges");
-      expect(plan.skip).toEqual(["tmux-rejected"]);
+      expect(plan.skip).toEqual([]);
       expect(plan.bun).toEqual(["1.3.14", "1.4.0", "1.4.2"]);
       expect(plan.os).toBe("ubuntu-latest");
     }
   });
 
-  test("a tag push and scope full run the whole table, the preview, master and the refused", () => {
+  test("a tag push and scope full run the whole table, the preview and master", () => {
     for (const input of [
       { event: "push", ref: "refs/tags/v0.1.1" },
       dispatch({ scope: "full" }),
@@ -75,7 +72,6 @@ describe("the events", () => {
         "release_3.8a",
         "master",
       ]);
-      expect(plan.rejected).toEqual(["3.2a", "3.3"]);
       expect(plan.skip).toEqual([]);
     }
   });
@@ -136,10 +132,9 @@ describe("the events", () => {
       dispatch({ scope: "edges" }),
       dispatch({ scope: "full" }),
       dispatch({ scope: "custom", tmuxRef: "3.4" }),
-      dispatch({ scope: "custom", tmuxRef: "3.3" }),
     ]) {
       const plan = planCi(matrix, input);
-      expect(plan.lanes.length + plan.rejected.length).toBeGreaterThan(0);
+      expect(plan.lanes.length).toBeGreaterThan(0);
     }
   });
 });
@@ -147,10 +142,10 @@ describe("the events", () => {
 describe("a custom scope", () => {
   const commit = "0123456789abcdef0123456789abcdef01234567";
 
-  test("runs the refs it names, once each, with a refused one routed to its own job", () => {
+  test("runs the refs it names, once each", () => {
     const plan = planCi(
       matrix,
-      dispatch({ scope: "custom", tmuxRef: ` 3.7 , master,feature/x,${commit},3.7,3.3,3.9` }),
+      dispatch({ scope: "custom", tmuxRef: ` 3.7 , master,feature/x,${commit},3.7,3.9` }),
     );
     expect(plan.lanes.map((lane) => lane["tmux-version"])).toEqual([
       "3.7",
@@ -159,7 +154,6 @@ describe("a custom scope", () => {
       commit,
       "3.9",
     ]);
-    expect(plan.rejected).toEqual(["3.3"]);
     const byRef = Object.fromEntries(plan.lanes.map((lane) => [lane["tmux-version"], lane]));
     expect(byRef["3.7"]?.expect).toBe("tmux 3.7");
     expect(byRef.master?.expect).toBe("tmux next-*");
@@ -169,11 +163,12 @@ describe("a custom scope", () => {
     expect(byRef["3.9"]?.expect).toBe("tmux 3.9");
   });
 
-  test("naming only a refused release leaves the compatible job out of scope", () => {
+  test("a release below the floor is a lane like any other", () => {
     const plan = planCi(matrix, dispatch({ scope: "custom", tmuxRef: "3.2a" }));
-    expect(plan.lanes).toEqual([]);
-    expect(plan.rejected).toEqual(["3.2a"]);
-    expect(plan.skip).toEqual(["tmux"]);
+    expect(plan.lanes.map((lane) => [lane["tmux-version"], lane.expect])).toEqual([
+      ["3.2a", "tmux 3.2a"],
+    ]);
+    expect(plan.skip).toEqual([]);
   });
 
   test("carries the Bun and runner inputs to every lane", () => {
@@ -236,7 +231,6 @@ describe("tmate", () => {
     ],
     ["the edges", dispatch({ scope: "edges", tmate: "on-failure" })],
     ["the whole table", dispatch({ scope: "full", tmate: "on-failure" })],
-    ["a refused lane", dispatch({ scope: "custom", tmate: "on-failure", tmuxRef: "3.8,3.3" })],
   ] as const)("is refused for %s", (_name, input) => {
     expect(refusal(() => planCi(matrix, input))).toContain("tmate needs exactly one tmux lane");
   });
@@ -256,8 +250,8 @@ describe("verifying the jobs", () => {
     ["every job passed", { plan: { result: "success" }, tmux: { result: "success" } }, [], []],
     [
       "a job the plan left out was skipped",
-      { plan: { result: "success" }, "tmux-rejected": { result: "skipped" } },
-      ["tmux-rejected"],
+      { plan: { result: "success" }, gates: { result: "skipped" } },
+      ["gates"],
       [],
     ],
     [
@@ -275,7 +269,7 @@ describe("verifying the jobs", () => {
     [
       "a job the plan kept in scope was skipped",
       { plan: { result: "success" }, tmux: { result: "skipped" } },
-      ["tmux-rejected"],
+      ["gates"],
       ["tmux: skipped"],
     ],
     [
@@ -326,7 +320,7 @@ describe("the command", () => {
         .map((line) => [line.slice(0, line.indexOf("=")), line.slice(line.indexOf("=") + 1)]),
     );
     expect(outputs.scope).toBe("edges");
-    expect(outputs.skip).toBe("tmux-rejected");
+    expect(outputs.skip).toBe("");
     expect(outputs.jobs).toBe("2");
     expect((JSON.parse(outputs.tmux ?? "[]") as unknown[]).length).toBe(2);
   });
