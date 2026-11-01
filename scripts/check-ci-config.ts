@@ -2,6 +2,8 @@ import { existsSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { rawAptFailures } from "./ci_apt.js";
+
 /**
  * Hold the dependabot configuration to the manifests this workspace has.
  *
@@ -19,6 +21,8 @@ import { fileURLToPath } from "node:url";
  * What this deliberately does not claim: that every ecosystem dependabot could
  * file for is configured. Action pins are checked below, after the workflow
  * set has been found, so a version tag cannot silently move the code CI runs.
+ * The same pass refuses a `run` script that calls `apt-get` without
+ * `scripts/apt-get.sh`.
  */
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
@@ -200,7 +204,7 @@ if (workflows.length === 0) {
 }
 
 // A local action's own steps run what the workflows delegate to it, so they
-// are pinned the same way.
+// are held to the same pins and the same apt-get wrapper.
 const localActions = await Array.fromAsync(
   new Bun.Glob("actions/*/action.yml").scan({ cwd: join(repositoryRoot, ".github"), dot: true }),
 );
@@ -208,6 +212,7 @@ const localActions = await Array.fromAsync(
 for (const workflow of [...workflows, ...localActions]) {
   // eslint-disable-next-line no-await-in-loop -- each workflow gets an exact diagnostic.
   const source = await Bun.file(join(repositoryRoot, ".github", workflow)).text();
+  failures.push(...rawAptFailures(`.github/${workflow}`, Bun.YAML.parse(source)));
   for (const [index, reference] of source.split("\n").entries()) {
     const line = index + 1;
     const found = /^\s*(?:-\s*)?uses:\s*[^@\s]+@([^\s#]+)/u.exec(reference);

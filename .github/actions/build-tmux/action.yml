@@ -44,7 +44,7 @@ runs:
         TMUX_REF: ${{ inputs.ref }}
         TMUX_PREFIX: ${{ steps.resolve.outputs.prefix }}
       run: |
-        sudo apt-get update
-        sudo apt-get install --yes libevent-dev libncurses5-dev libtinfo-dev \
+        "$GITHUB_WORKSPACE/scripts/apt-get.sh" update
+        "$GITHUB_WORKSPACE/scripts/apt-get.sh" install --yes libevent-dev libncurses5-dev libtinfo-dev \
           libutempter-dev bison autoconf automake pkg-config
         "$GITHUB_WORKSPACE/scripts/build-tmux.sh" build "$TMUX_REF" "$TMUX_PREFIX"
