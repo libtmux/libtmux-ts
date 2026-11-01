@@ -50,7 +50,7 @@
     "test:install": "bun run build && bun ../../scripts/check-consumer-install.ts packages/mcp"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "1.32.1",
+    "@modelcontextprotocol/sdk": "1.32.2",
     "libtmux": "0.1.2",
     "zod": "4.6.7"
   },
