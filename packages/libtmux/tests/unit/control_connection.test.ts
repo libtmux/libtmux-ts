@@ -607,6 +607,71 @@ describe("ControlConnection child ownership", () => {
     await control.close();
   });
 
+  test("keeps raw notification boundaries beside UTF-8 carry and bounds subscriber bytes", async () => {
+    const child = new FakeChild(115);
+    const control = new ControlConnection(
+      connection(),
+      { maxBufferedOutputBytes: 2, outputBytes: true },
+      false,
+      new RecordingTransport(),
+      () => child,
+    );
+    const events = control.subscribe();
+    const iterator = events[Symbol.asyncIterator]();
+    attach(child);
+    await events.ready();
+    for (const [payload, text] of [
+      [[0xc3], ""],
+      [[0xa9], "é"],
+    ] as const) {
+      child.stdout.write(
+        Buffer.concat([Buffer.from("%output %1 "), Buffer.from(payload), Buffer.from("\n")]),
+      );
+      // eslint-disable-next-line no-await-in-loop -- carry is exercised in notification order.
+      expect((await iterator.next()).value).toMatchObject({
+        bytes: new Uint8Array(payload),
+        data: text,
+      });
+    }
+    child.stdout.write("%output %1 abc\n%output %1 x\n");
+    expect((await iterator.next()).value).toMatchObject({
+      bytes: new Uint8Array([120]),
+      data: "x",
+    });
+    expect(events.dropped).toBe(1);
+    expect(events.droppedOutputBytes).toBe(3);
+    const pending = iterator.next();
+    await events.close();
+    expect(await pending).toMatchObject({ done: true });
+    expect(child.kills).toEqual([]);
+    await control.close();
+  });
+
+  test("rejects invalid raw-byte observation options before spawning", () => {
+    let spawns = 0;
+    const spawn = (): FakeChild => {
+      spawns += 1;
+      return new FakeChild(116);
+    };
+    for (const maxBufferedOutputBytes of [0, -1, 1.5, Infinity, Number.MAX_SAFE_INTEGER + 1]) {
+      expect(
+        () =>
+          new ControlConnection(
+            connection(),
+            { maxBufferedOutputBytes, outputBytes: true },
+            false,
+            undefined,
+            spawn,
+          ),
+      ).toThrow(/maxBufferedOutputBytes/u);
+    }
+    expect(
+      () =>
+        new ControlConnection(connection(), { maxBufferedOutputBytes: 4 }, false, undefined, spawn),
+    ).toThrow(/requires outputBytes/u);
+    expect(spawns).toBe(0);
+  });
+
   test("fails the stream when pane resume fails", async () => {
     await Promise.all(
       [1, new Error("resume transport failed")].map(async (outcome, index) => {

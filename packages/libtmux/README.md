@@ -1307,6 +1307,11 @@ for await (const event of events) {
 - A consumer that falls behind loses its oldest events; `events.dropped` counts
   them and `bufferSize` sets the bound. [More](docs/contracts.md#watching).
 
+Set `outputBytes: true` on `watch` or `connect` to receive each output event's
+owned `Uint8Array` in `event.bytes`, including invalid UTF-8 and NUL. `data`
+remains decoded text. `maxBufferedOutputBytes` defaults to 1 MiB per subscriber;
+`droppedOutputBytes` counts discarded raw bytes. A gap cannot be replayed.
+
 ### [`pauseAfterSeconds`][ref-watchoptions]: pace a busy pane
 
 tmux kills a client that lets a pane's output back up, so five minutes behind
