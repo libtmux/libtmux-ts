@@ -19,7 +19,7 @@
 [API reference](packages/libtmux/docs/api.md) •
 [Hosted API reference][ref-reference] •
 [Examples](examples) •
-[Changelog](packages/libtmux/CHANGELOG.md)
+[Changelog](CHANGELOG.md)
 
 [![typescript](https://github.com/libtmux/libtmux-ts/actions/workflows/typescript.yml/badge.svg)](https://github.com/libtmux/libtmux-ts/actions/workflows/typescript.yml)
 [![libtmux](https://img.shields.io/npm/v/libtmux?label=libtmux)](https://www.npmjs.com/package/libtmux)
@@ -34,7 +34,8 @@
 > Releases are numbered `0.1.N`, and each release increments `N`. The API is not
 > settled: any release may change or remove exported identifiers, and each
 > package's changelog marks its breaks. Pin an exact version to avoid one.
-> Read the changelog of each package you use before you upgrade:
+> The [root changelog](CHANGELOG.md) summarizes each release. Read the
+> changelog of each package you use before you upgrade:
 > [`libtmux`](packages/libtmux/CHANGELOG.md),
 > [`@libtmux/mcp`](packages/mcp/CHANGELOG.md),
 > [`@libtmux/workspace`](packages/workspace/CHANGELOG.md) and

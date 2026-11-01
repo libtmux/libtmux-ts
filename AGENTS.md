@@ -63,7 +63,9 @@ stated twice, the file listed above is the one that governs.
 
 - [API reference](packages/libtmux/docs/api.md) — generated from the doc
   comments that implement it
-- Changelogs, one per release package:
+- Changelogs: [the root file](CHANGELOG.md) for release-level notes and changes
+  that span packages (documentation, CI, tests, release tooling), and one per
+  release package for that package's changes:
   [`libtmux`](packages/libtmux/CHANGELOG.md),
   [`@libtmux/mcp`](packages/mcp/CHANGELOG.md),
   [`@libtmux/workspace`](packages/workspace/CHANGELOG.md),
