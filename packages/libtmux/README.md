@@ -2066,7 +2066,7 @@ An MCP client launches it from this configuration:
   "mcpServers": {
     "tmux": {
       "command": "npx",
-      "args": ["-y", "@libtmux/mcp@0.1.1"],
+      "args": ["-y", "@libtmux/mcp@0.1.2"],
       "env": { "LIBTMUX_SOCKET": "agent" }
     }
   }
@@ -2108,7 +2108,7 @@ windows:
 Load it detached, on a socket of its own with [`load`][cli-load]:
 
 ```console
-$ npx -y @libtmux/workspace-cli@0.1.1 load ./workspace.yaml \
+$ npx -y @libtmux/workspace-cli@0.1.2 load ./workspace.yaml \
     -L workspace-cli-demo \
     -d
 ```

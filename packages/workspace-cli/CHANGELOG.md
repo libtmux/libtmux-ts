@@ -17,6 +17,7 @@ are in the [`libtmux` changelog](../libtmux/CHANGELOG.md).
 <!-- toc -->
 
 - [Unreleased](#unreleased)
+- [0.1.2 (2026-10-31)](#012-2026-10-31)
 - [0.1.1 (2026-10-31)](#011-2026-10-31)
 - [0.1.0 (2026-10-25)](#010-2026-10-25)
 - [0.1.0-alpha.15 (2026-10-24)](#010-alpha15-2026-10-24)
@@ -28,6 +29,8 @@ are in the [`libtmux` changelog](../libtmux/CHANGELOG.md).
 <!-- /toc -->
 
 ## Unreleased
+
+## 0.1.2 (2026-10-31)
 
 ### `@libtmux/workspace-cli`
 

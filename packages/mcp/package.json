@@ -1,6 +1,6 @@
 {
   "name": "@libtmux/mcp",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Model Context Protocol server for tmux, built on libtmux.",
   "keywords": [
     "agent",
@@ -51,7 +51,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.1",
-    "libtmux": "0.1.1",
+    "libtmux": "0.1.2",
     "zod": "4.6.7"
   },
   "engines": {

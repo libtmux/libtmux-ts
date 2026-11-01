@@ -1,6 +1,6 @@
 {
   "name": "@libtmux/workspace-cli",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "A tmuxp-compatible workspace manager for Node and Bun.",
   "license": "MIT",
   "repository": {
@@ -34,7 +34,7 @@
     "test:install": "bun run build && bun scripts/check-install.ts"
   },
   "dependencies": {
-    "libtmux": "0.1.1"
+    "libtmux": "0.1.2"
   },
   "devDependencies": {
     "cli-truncate": "6.1.1",
