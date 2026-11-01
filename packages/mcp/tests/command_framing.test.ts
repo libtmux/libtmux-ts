@@ -1239,14 +1239,19 @@ describe("command framing", () => {
   });
 
   test("settles when the captured daemon PID no longer exists", async () => {
+    const captured = { ...authority, pid: String(process.pid + 1) };
     const probe = spyOn(process, "kill").mockImplementation((pid, signal) => {
-      expect({ pid, signal }).toEqual({ pid: process.pid, signal: 0 });
+      expect({ pid, signal }).toEqual({ pid: process.pid + 1, signal: 0 });
       throw Object.assign(new Error("no such process"), { code: "ESRCH" });
     });
     try {
-      const { id, result, tail } = await startCancelledCommand("%94", async () => {
-        throw new Error("tmux is gone");
-      });
+      const { id, result, tail } = await startCancelledCommand(
+        "%94",
+        async () => {
+          throw new Error("tmux is gone");
+        },
+        captured,
+      );
       expect(await settlesBeforeMarker(result, tail, id)).toBe(true);
       expect(probe).toHaveBeenCalledTimes(1);
     } finally {
