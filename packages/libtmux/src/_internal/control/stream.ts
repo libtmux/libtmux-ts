@@ -3,6 +3,11 @@ import type { TmuxEvent, TmuxEventStream as PublicEventStream } from "../../type
 import { timerDuration } from "../timing.js";
 
 export const DEFAULT_BUFFER_SIZE = 1024;
+export const DEFAULT_OUTPUT_BYTES: number = 1024 * 1024;
+
+function outputSize(event: TmuxEvent): number {
+  return event.kind === "output" ? (event.bytes?.byteLength ?? 0) : 0;
+}
 
 /**
  * A bounded FIFO that overwrites its oldest entry rather than growing.
@@ -19,9 +24,13 @@ class EventRing {
   #head = 0;
   #count = 0;
   #dropped = 0;
+  #bytes = 0;
+  #droppedOutputBytes = 0;
+  readonly #maxOutputBytes: number;
 
-  constructor(capacity: number) {
+  constructor(capacity: number, maxOutputBytes: number) {
     this.#capacity = capacity;
+    this.#maxOutputBytes = maxOutputBytes;
   }
 
   get dropped(): number {
@@ -32,18 +41,25 @@ class EventRing {
     return this.#count;
   }
 
+  get droppedOutputBytes(): number {
+    return this.#droppedOutputBytes;
+  }
+
   push(event: TmuxEvent): void {
+    const bytes = outputSize(event);
+    if (bytes > this.#maxOutputBytes) {
+      this.#dropped += 1;
+      this.#droppedOutputBytes += bytes;
+      return;
+    }
+    while (this.#count > 0 && this.#bytes + bytes > this.#maxOutputBytes) this.#discard();
     if (this.#count === this.#slots.length) {
       if (this.#slots.length < this.#capacity) this.#grow();
-      else {
-        this.#slots[this.#head] = undefined;
-        this.#head = (this.#head + 1) % this.#capacity;
-        this.#count -= 1;
-        this.#dropped += 1;
-      }
+      else this.#discard();
     }
     this.#slots[(this.#head + this.#count) % this.#slots.length] = event;
     this.#count += 1;
+    this.#bytes += bytes;
   }
 
   shift(): TmuxEvent | undefined {
@@ -54,7 +70,14 @@ class EventRing {
     this.#slots[this.#head] = undefined;
     this.#head = (this.#head + 1) % this.#slots.length;
     this.#count -= 1;
+    this.#bytes -= event === undefined ? 0 : outputSize(event);
     return event;
+  }
+
+  #discard(): void {
+    const event = this.shift();
+    this.#dropped += 1;
+    this.#droppedOutputBytes += event === undefined ? 0 : outputSize(event);
   }
 
   /** Relay into a larger contiguous run, oldest first, and reset the head. */
@@ -94,8 +117,13 @@ class BufferedEventStream implements PublicEventStream {
   #iterated = false;
   #pending: (() => void) | undefined;
 
-  constructor(bufferSize: number, onClose: () => Promise<void>, onReady: () => Promise<void>) {
-    this.#buffer = new EventRing(bufferSize);
+  constructor(
+    bufferSize: number,
+    onClose: () => Promise<void>,
+    onReady: () => Promise<void>,
+    maxOutputBytes: number,
+  ) {
+    this.#buffer = new EventRing(bufferSize, maxOutputBytes);
     this.#onClose = onClose;
     this.#onReady = onReady;
   }
@@ -109,9 +137,17 @@ class BufferedEventStream implements PublicEventStream {
     return this.#buffer.dropped;
   }
 
+  get droppedOutputBytes(): number {
+    return this.#buffer.droppedOutputBytes;
+  }
+
   push(event: TmuxEvent): void {
     if (this.#closed) return;
-    this.#buffer.push(event);
+    this.#buffer.push(
+      event.kind === "output" && event.bytes !== undefined
+        ? { ...event, bytes: new Uint8Array(event.bytes) }
+        : event,
+    );
     this.#wake();
   }
 
@@ -220,11 +256,12 @@ export function createEventStream(
   onClose: () => Promise<void>,
   bufferSize: number = DEFAULT_BUFFER_SIZE,
   onReady: () => Promise<void> = () => Promise.resolve(),
+  maxOutputBytes: number = Infinity,
 ): EventSink {
   if (!Number.isInteger(bufferSize) || bufferSize < 1) {
     throw new TypeError("bufferSize must be a positive integer");
   }
-  const stream = new BufferedEventStream(bufferSize, onClose, onReady);
+  const stream = new BufferedEventStream(bufferSize, onClose, onReady, maxOutputBytes);
   return {
     cancel: () => {
       stream.cancel();

@@ -835,6 +835,12 @@ export interface TmuxOutputEvent {
    * behind before tmux pauses the pane.
    */
   readonly age?: number;
+  /**
+   * Unescaped bytes received in this notification, when
+   * {@link ConnectionOptions.outputBytes} is enabled. This subscriber owns the
+   * buffer. UTF-8 carry can make its boundaries differ from `data`.
+   */
+  readonly bytes?: Uint8Array;
   readonly data: string;
   readonly kind: "output";
   readonly paneId: PaneId;
@@ -1110,6 +1116,15 @@ export interface ConnectionOptions {
    * heap until the process dies, which is worse than losing an event.
    */
   readonly bufferSize?: number;
+  /** Include owned raw payload bytes on output events. Defaults to false. */
+  readonly outputBytes?: boolean;
+  /**
+   * Raw output payload bytes retained per subscriber, with `outputBytes`.
+   * Defaults to 1 MiB. A positive safe integer; the event-count bound also
+   * applies. Oversized notifications are discarded whole. This bounds raw
+   * buffers, not metadata or total heap usage.
+   */
+  readonly maxBufferedOutputBytes?: number;
   /** Abort the connection when this signal fires. */
   readonly signal?: AbortLike;
   /**
@@ -1212,6 +1227,8 @@ export interface TmuxEventStream extends AsyncIterable<TmuxEvent>, AsyncDisposab
   ready(): Promise<void>;
   /** Events discarded because the consumer fell behind. */
   readonly dropped: number;
+  /** Raw output bytes discarded by event or byte overflow, when available. */
+  readonly droppedOutputBytes?: number;
   [Symbol.asyncDispose](): Promise<void>;
 }
 

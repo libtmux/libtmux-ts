@@ -269,6 +269,26 @@ describe("control-mode line parsing", () => {
 });
 
 describe("control-mode output unescaping", () => {
+  test("keeps opted-in raw bytes before decoding ordinary and aged output", () => {
+    for (const prefix of ["%output %1 ", "%extended-output %1 4 : "]) {
+      const line = new Uint8Array([
+        ...encoder.encode(prefix),
+        0xff,
+        ...encoder.encode("\\000\\376\\134"),
+        0xc3,
+      ]);
+      const parsed = parseControlLine(line, () => "carried text", true);
+      expect(parsed).toMatchObject({
+        bytes: new Uint8Array([0xff, 0, 0xfe, 0x5c, 0xc3]),
+        data: "carried text",
+        kind: "output",
+      });
+      line.fill(0);
+      if (parsed?.kind !== "output") throw new Error("expected output");
+      expect(parsed.bytes).toEqual(new Uint8Array([0xff, 0, 0xfe, 0x5c, 0xc3]));
+    }
+  });
+
   test("decodes the octal escapes tmux writes for control bytes", () => {
     expect(new TextDecoder().decode(unescapeOutput(encoder.encode("a\\015\\012b")))).toBe("a\r\nb");
     expect(new TextDecoder().decode(unescapeOutput(encoder.encode("\\033[0m")))).toBe("\u001b[0m");
