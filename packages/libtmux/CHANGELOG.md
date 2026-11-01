@@ -46,6 +46,10 @@ here.
 
 ## Unreleased
 
+Find literal text with `Pane.locateText` in an immutable pane capture, with
+explicit missing, unique and ambiguous results. Positions refer to captured text
+and remain stable after the pane changes. (#173)
+
 ## 0.1.2 (2026-10-31)
 
 ### `libtmux`
