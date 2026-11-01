@@ -5,6 +5,7 @@ import type {
   CmdOptions,
   CommandWaitOptions,
   JoinOptions,
+  LocateTextOptions,
   MenuItem,
   PopupOptions,
   ProgramExit,
@@ -16,6 +17,7 @@ import type {
   SetOptionOptions,
   PlannedOperation,
   SplitOptions,
+  TextLocatorResult,
 } from "./types.js";
 import type { CommandOptions } from "./common.js";
 import { PANE_ALIASES } from "./_generated/field_aliases.js";
@@ -37,6 +39,7 @@ import {
 } from "./_internal/operations/mutations.js";
 import { setHook, showHooks, unsetHook } from "./_internal/operations/hooks.js";
 import { capturePane, clearHistory, pipePane, sendKeys } from "./_internal/operations/pane_io.js";
+import { locatePaneText } from "./_internal/operations/pane_text.js";
 import {
   waitForPaneCommand,
   waitForPaneExit,
@@ -351,6 +354,25 @@ export class Pane {
    */
   capture(options?: CaptureOptions): Promise<readonly string[]> {
     return capturePane(runtimeForHandle(this), this.id, options);
+  }
+
+  /**
+   * Locate a literal in one retained capture, including overlapping matches.
+   *
+   * Offsets count UTF-16 code units in capture lines joined with LF, without
+   * normalization. Line indices refer to those returned lines, including when
+   * joinWrapped changes their shape. A retained result never follows redraws.
+   *
+   * ```ts
+   * const located = await pane.locateText("ready");
+   * if (located.status === "unique") located.match.startUtf16;
+   * ```
+   *
+   * @throws TypeError for an empty literal or invalid positive integer limits.
+   * @throws RangeError when the literal or captured text exceeds maxTextCodeUnits.
+   */
+  locateText(literal: string, options?: LocateTextOptions): Promise<TextLocatorResult> {
+    return locatePaneText(this, literal, options);
   }
 
   /**
