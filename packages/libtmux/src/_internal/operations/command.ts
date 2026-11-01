@@ -114,7 +114,16 @@ export async function runCommand(
   args: readonly string[],
   options: PinnedCommandOptions = {},
 ): Promise<readonly string[]> {
-  return (await executeCommand(runtime, args, options)).result.stdout;
+  return (await runCommandResult(runtime, args, options)).stdout;
+}
+
+/** Run one guarded command while retaining its native result for an operation report. */
+export async function runCommandResult(
+  runtime: RuntimeContext,
+  args: readonly string[],
+  options: PinnedCommandOptions = {},
+): Promise<CommandResult> {
+  return (await executeCommand(runtime, args, options)).result;
 }
 
 /** Run one tmux command and return its unmodified stdout bytes. */
@@ -138,6 +147,15 @@ export async function runCommands(
   commands: readonly (readonly string[])[],
   options: PinnedCommandOptions = {},
 ): Promise<readonly string[]> {
+  return (await runCommandsResult(runtime, commands, options)).stdout;
+}
+
+/** Run one guarded invocation while retaining its native result. */
+export async function runCommandsResult(
+  runtime: RuntimeContext,
+  commands: readonly (readonly string[])[],
+  options: PinnedCommandOptions = {},
+): Promise<CommandResult> {
   const { timeoutMs, ...rest } = options;
   const deadline = deadlineFor(runtime, commands, timeoutMs);
   const flat = commands.flat();
@@ -166,7 +184,7 @@ export async function runCommands(
       ...(target === -1 ? {} : { target: flat[target + 1] }),
     });
   }
-  return result.stdout;
+  return result;
 }
 
 /** The configured executable's own version: the tmux a command on a cold socket starts. */

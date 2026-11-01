@@ -109,6 +109,12 @@
       "import": "./dist/pane.js",
       "default": "./dist/pane.js"
     },
+    "./pane-set": {
+      "types": "./dist/pane_set.d.ts",
+      "bun": "./src/pane_set.ts",
+      "import": "./dist/pane_set.js",
+      "default": "./dist/pane_set.js"
+    },
     "./program": {
       "types": "./dist/program.d.ts",
       "bun": "./src/program.ts",
