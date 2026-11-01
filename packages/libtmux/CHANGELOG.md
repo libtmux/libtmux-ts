@@ -46,6 +46,17 @@ here.
 
 ## Unreleased
 
+### Development
+
+Every test entry point runs in a sandbox: an owner-only directory that becomes
+`TMUX_TMPDIR`, with `TMUX`, `TMUX_PANE`, `LIBTMUX_SOCKET` and
+`LIBTMUX_SOCKET_PATH` removed, so a test, doctest or example that names no
+socket reaches a server of the run's own. `bun test` enters it from the
+`bunfig.toml` in the repository root, each package and each example; the
+runners, the documentation and install gates and the Node lane enter it
+themselves. A server a run leaves on any socket under the sandbox is stopped,
+and fails the run. (#176)
+
 ## 0.1.2 (2026-10-31)
 
 ### `libtmux`
