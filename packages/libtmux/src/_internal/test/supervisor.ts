@@ -8,6 +8,7 @@ import { reportSecondaryCleanupFailure, runWithCleanup } from "./cleanup.js";
 import { resolveControllerIdentity } from "./process_identity.js";
 import { prepareRunRoot, reapOwnedRunRoot } from "./reaper.js";
 import { publishRunRootOwner } from "./records.js";
+import { enterSandbox } from "./sandbox.js";
 import { makeTestDirectory } from "./temp_root.js";
 
 export const RUN_ROOT_ENV = "LIBTMUX_TEST_RUN_ROOT";
@@ -61,11 +62,15 @@ async function terminateSupervisor(signal: "SIGINT" | "SIGTERM"): Promise<never>
   return new Promise<never>(() => undefined);
 }
 
-/** Run one test command under signal forwarding and authenticated run-root cleanup. */
+/**
+ * Run one test command under signal forwarding and authenticated run-root cleanup.
+ * The command inherits the tmux sandbox, which this enters.
+ */
 export async function runSupervisor(options: SupervisorOptions): Promise<number> {
   const graceMs = options.graceMs ?? 500;
   if (!Number.isSafeInteger(graceMs) || graceMs < 1)
     throw new TypeError("graceMs must be positive");
+  const sandbox = await enterSandbox();
   const runRoot = options.runRoot ?? (await mkdtemp(join(tmpdir(), "ltx-")));
   if (options.runRoot === undefined) {
     await chmod(runRoot, 0o700);
@@ -87,9 +92,12 @@ export async function runSupervisor(options: SupervisorOptions): Promise<number>
   let hardClose: NodeJS.Timeout | undefined;
   let forceClose: (() => void) | undefined;
   let closeDeadlineExceeded = false;
+  let childClosed = false;
   const forward = (signal: "SIGINT" | "SIGTERM"): void => {
     if (requestedSignal !== undefined) return;
     requestedSignal = signal;
+    // Once the child has closed there is nothing to signal or to wait out.
+    if (childClosed) return;
     child.kill(signal);
     escalation = setTimeout(() => {
       if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
@@ -135,6 +143,7 @@ export async function runSupervisor(options: SupervisorOptions): Promise<number>
       }
       throw error;
     });
+    childClosed = true;
     if (escalation !== undefined) clearTimeout(escalation);
     if (hardClose !== undefined) clearTimeout(hardClose);
 
@@ -142,6 +151,12 @@ export async function runSupervisor(options: SupervisorOptions): Promise<number>
     try {
       const report = await reapOwnedRunRoot(runRoot);
       if (report.leaks.length > 0) throw new Error(report.leaks.join("; "));
+    } catch (error) {
+      cleanupFailed = true;
+      process.stderr.write(`test cleanup failed: ${String(error)}\n`);
+    }
+    try {
+      await sandbox.release();
     } catch (error) {
       cleanupFailed = true;
       process.stderr.write(`test cleanup failed: ${String(error)}\n`);
@@ -162,6 +177,13 @@ export async function runSupervisor(options: SupervisorOptions): Promise<number>
     const processEvents: Pick<EventEmitter, "removeListener"> = process;
     processEvents.removeListener("SIGINT", onSigint);
     processEvents.removeListener("SIGTERM", onSigterm);
+    // Already released on the way out of a run that finished; this is for one
+    // that threw, whose error is the one to report.
+    try {
+      await sandbox.release();
+    } catch (error) {
+      process.stderr.write(`test cleanup failed: ${String(error)}\n`);
+    }
   }
 }
 

@@ -4,6 +4,7 @@
     "scripts/*.ts",
     "tests/**/*.test.ts",
     "tests/support/bun_hooks.ts",
+    "tests/support/sandbox_preload.ts",
     "tests/fixtures/ambient-free/consumer.ts",
     "tests/fixtures/type-aware-lint/no_floating_promise.ts",
     "tests/support/bun_test_on_node.ts"

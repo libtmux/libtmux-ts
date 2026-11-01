@@ -9,12 +9,17 @@ import { npmPack } from "../../../scripts/npm_pack.js";
 import { runBoundedCommand } from "../../../scripts/bounded_process.js";
 import {
   assertOwnedSocketPath,
+  enterSandbox,
   makeTestDirectory,
   resolveNode22,
   runWithCleanup,
   TestServer,
   withOwnedRunRoot,
 } from "../../libtmux/src/_internal/test/testkit.js";
+
+// The installed CLI runs several commands with no socket of their own, so the
+// sandbox decides which server they reach.
+const sandbox = await enterSandbox();
 
 const packageRoot = fileURLToPath(new URL("..", import.meta.url));
 const coreRoot = fileURLToPath(new URL("../../libtmux", import.meta.url));
@@ -81,8 +86,6 @@ await runWithCleanup(
       HOME: project,
       XDG_CONFIG_HOME: join(project, ".config"),
       TMUXP_CONFIGDIR: join(project, ".tmuxp"),
-      TMUX: "",
-      TMUX_PANE: "",
     };
     for (const runtime of [node, process.execPath]) {
       const help = await execute([runtime, executable, "--help"], packageEnvironment);
@@ -155,8 +158,6 @@ class Custom:
             SHELL: "/bin/sh",
             ENV: undefined,
             BASH_ENV: undefined,
-            TMUX: "",
-            TMUX_PANE: "",
           },
         });
         assertOwnedSocketPath(fixture.socketPath);
@@ -175,8 +176,6 @@ class Custom:
               HOME: project,
               XDG_CONFIG_HOME: join(project, ".config"),
               TMUXP_CONFIGDIR: join(project, ".tmuxp"),
-              TMUX: "",
-              TMUX_PANE: "",
               TMUX_BIN: fixture.tmuxExecutable,
               PYTHONUSERBASE: userBase,
               TMUX_WORKSPACE_PYTHON: python,
@@ -414,3 +413,6 @@ class Custom:
   },
   () => rm(project, { recursive: true, force: true }),
 );
+
+// A server the checks left behind fails them, whatever they printed.
+await sandbox.release();

@@ -29,6 +29,7 @@ import {
 } from "./fixture_launch.js";
 import { reapFixture, retireFixtureGeneration, sweepStaleRunRoots } from "./reaper.js";
 import { readFixtureRecord, type FixtureRecord, type LaunchGeneration } from "./records.js";
+import { assertSandboxed } from "./sandbox.js";
 import { RUN_ROOT_ENV } from "./supervisor.js";
 
 export interface TestServerRequestSnapshot {
@@ -432,6 +433,7 @@ export class TestServer {
   }
 
   static async create(options: TestServerOptions): Promise<TestServer> {
+    assertSandboxed();
     if (!sweptUnsupervised && process.env[RUN_ROOT_ENV] === undefined) {
       sweptUnsupervised = true;
       await sweepStaleRunRoots();

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { resolveNode22 } from "../packages/libtmux/src/_internal/test/testkit.js";
+import { enterSandbox, resolveNode22 } from "../packages/libtmux/src/_internal/test/testkit.js";
 import { runBoundedCommand } from "./bounded_process.js";
 import { npmPack } from "./npm_pack.js";
 
@@ -102,7 +102,7 @@ async function probeMcpBinary(project: string, node: string): Promise<void> {
   ];
   const result = await runBoundedCommand([node, binary], {
     cwd: project,
-    env: { ...process.env, LIBTMUX_TOOLSETS: "inspect", TMUX: "", TMUX_PANE: "" },
+    env: { ...process.env, LIBTMUX_TOOLSETS: "inspect" },
     maxOutputBytes: MAX_COMMAND_OUTPUT_BYTES,
     stdin: `${frames.map((frame) => JSON.stringify(frame)).join("\n")}\n`,
     timeoutMilliseconds: MCP_PROBE_TIMEOUT_MILLISECONDS,
@@ -255,6 +255,9 @@ if (declaredLibraryVersion !== libraryManifest.version) {
     `${targetManifest.name} must declare exact ${consumer.dependencyField}.libtmux ${libraryManifest.version}; found ${typeof declaredLibraryVersion === "string" ? JSON.stringify(declaredLibraryVersion) : "nothing"}`,
   );
 }
+// The installed packages run tmux with whatever the environment names. The
+// sandbox leaves them a TMUX_TMPDIR of this run's own.
+const sandbox = await enterSandbox();
 const project = await mkdtemp(join(tmpdir(), "ltx-consumer-install-"));
 
 try {
@@ -306,6 +309,8 @@ try {
   await run([node, "node.mjs"], project, RUNTIME_TIMEOUT_MILLISECONDS);
   await run(["bun", "bun.mjs"], project, RUNTIME_TIMEOUT_MILLISECONDS);
   if (targetManifest.name === "@libtmux/mcp") await probeMcpBinary(project, node);
+  // A server the probes left behind fails the check, whatever they printed.
+  await sandbox.release();
   process.stdout.write(
     `${JSON.stringify({
       installed: `${targetManifest.name}@${targetManifest.version}`,

@@ -2,6 +2,8 @@ import { mkdtemp, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { assertSandboxed } from "./sandbox.js";
+
 /**
  * One prefix this package owns, for every temporary directory its suites make.
  *
@@ -79,8 +81,11 @@ export async function ownedTestDirectories(): Promise<readonly string[]> {
  * attached to, and the fixture sweep would reap it afterwards. Every suite
  * that starts a live server calls this before it touches one, so the isolation
  * fails loudly rather than being a thing everyone remembers.
+ *
+ * The process has to be sandboxed too, so a run no `bunfig.toml` enters refuses here.
  */
 export function assertOwnedSocketPath(socketPath: string): void {
+  assertSandboxed();
   if (!isOwnedTestPath(socketPath)) {
     throw new Error(
       `fixture socket ${socketPath} is not under ${ownedRoot}*: a suite must never touch a server it does not own`,

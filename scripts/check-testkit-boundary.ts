@@ -1,10 +1,12 @@
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { sandboxEntryFailures } from "./sandbox_entry.js";
+
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
 const legacyModule = /(?:^|[/])run_root\.(?:[cm]?[jt]s|[jt]sx)/u;
 const implementationModule =
-  /(?:^|[/])(?:cleanup|control_mode|deadlines|fixture_launch|handle_prototypes|node22|process_identity|reaper|records|supervisor|temp_root|test_server)\.(?:[cm]?[jt]s|[jt]sx)/u;
+  /(?:^|[/])(?:cleanup|control_mode|deadlines|fixture_launch|handle_prototypes|node22|process_identity|reaper|records|sandbox|supervisor|temp_root|test_server)\.(?:[cm]?[jt]s|[jt]sx)/u;
 const internalTestDirectory = "packages/libtmux/src/_internal/test/";
 const testkitEntrypoint = "packages/libtmux/src/_internal/test/testkit.ts";
 const boundaryChecker = "scripts/check-testkit-boundary.ts";
@@ -19,6 +21,23 @@ const recoveryAuthorityFiles = new Set([
   "packages/libtmux/src/_internal/test/fixture_launch.ts",
   "packages/libtmux/src/_internal/test/reaper.ts",
 ]);
+const scriptDirectory = /^(?:packages\/[^/]+\/|examples\/)?scripts\//u;
+const needsNoSandbox: Readonly<Record<string, string>> = {
+  "packages/libtmux/scripts/bench-modes.ts":
+    "a manual benchmark; every server is on an explicit socket",
+  "packages/libtmux/scripts/bench-program.ts":
+    "a manual benchmark; every server is on an explicit socket",
+  "packages/libtmux/scripts/bench-snapshot.ts":
+    "a manual benchmark; every server is on an explicit socket",
+  "packages/libtmux/scripts/check-tmux-compat.ts":
+    "starts only the gates, each of which enters its own",
+  "packages/libtmux/scripts/doc-examples/readme_world.ts": "imported by the gates, which enter it",
+  "packages/libtmux/scripts/doc-examples/tmux_sweep.ts": "imported by the gates, which enter it",
+  "packages/libtmux/scripts/parity/manifest.ts": "names tmux in a table and starts nothing",
+  "scripts/check-ci-config.ts": "reads the workflows, which name the tmux job, and starts nothing",
+  "scripts/ci_plan.ts": "plans the tmux lanes as data and starts nothing",
+};
+const scripts = new Map<string, string>();
 const listed =
   await new Bun.$.Shell()`git ls-files --cached --others --exclude-standard -- "*.ts" "*.mts" "*.cts" "*.tsx" "*.js" "*.mjs" "*.cjs" "*.jsx"`
     .cwd(repositoryRoot)
@@ -29,6 +48,7 @@ for (const file of listed.split("\n").filter((line) => line !== "")) {
   if (file === boundaryChecker) continue;
   // eslint-disable-next-line no-await-in-loop -- diagnostics preserve repository order.
   const source = await Bun.file(join(repositoryRoot, file)).text();
+  if (scriptDirectory.test(file)) scripts.set(file, source);
   for (const [index, line] of source.split("\n").entries()) {
     if (legacyModule.test(line)) {
       failures.push(`${file}:${String(index + 1)}: run_root no longer exists; import testkit`);
@@ -59,6 +79,8 @@ for (const file of listed.split("\n").filter((line) => line !== "")) {
     }
   }
 }
+
+failures.push(...sandboxEntryFailures(scripts, needsNoSandbox));
 
 if (failures.length > 0) {
   process.stderr.write(`Test-runtime boundary violations:\n${failures.join("\n")}\n`);

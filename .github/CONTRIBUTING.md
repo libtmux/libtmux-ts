@@ -273,6 +273,41 @@ apart reaps their servers. `test:namespace` is the gate, `makeTestDirectory`
 applies the prefix, and a suite that starts a live server calls
 `assertOwnedSocketPath` before it touches one.
 
+Every entry point also runs in a sandbox: an owner-only `ltx-sandbox-…`
+directory that becomes `TMUX_TMPDIR`, with `TMUX`, `TMUX_PANE`,
+`LIBTMUX_SOCKET` and `LIBTMUX_SOCKET_PATH` removed. A command that names no
+socket then reaches a default server of this run's own, never the one around
+you. A test that starts a server there must kill it: the runner stops one that
+is left, on any socket under the sandbox and not only where tmux puts its own,
+checks that it stopped answering, and fails the run, naming the socket, whatever
+the tests said. A server that still answers keeps the directory. Every call to
+tmux in that scan has a deadline, past which its process group is killed and
+the run fails naming the call, so a stall cannot hang the worker that runs it.
+
+Bun reads `bunfig.toml` from the directory it starts in and no other, so the
+repository root, each package directory and each example preload the sandbox for
+`bun test`; start it from one of them, since a subdirectory has no sandbox. The
+runners, the documentation gates and the install gates enter it from `testkit`,
+and the Node lane's vitest setup file joins the one `test-node.ts` entered. The
+preload releases on `SIGINT` and `SIGTERM`, which skip `afterAll`. A fixture
+refuses to start tmux in a process that is not sandboxed. A script that may
+start tmux calls `await enterSandbox()` before it does, or names the reason it
+needs none in `needsNoSandbox`, which `scripts/check-testkit-boundary.ts` holds
+it to.
+
+`tests/unit/sandbox_canary.test.ts` fails in a process outside the sandbox. A
+recording `tmux` sees no socket option and a sandbox `TMUX_TMPDIR`, and a real
+bare `tmux` client starts its server on the default socket inside the sandbox,
+where the same client with another `TMUX_TMPDIR` does not.
+`tests/unit/sandbox_control.test.ts` runs it with decoys of all four variables
+set: from each directory that has a `bunfig.toml` it must pass, from one
+without it must fail, and so must a direct `vitest` run whose config names no
+setup file.
+
+`Bun.spawn` and `Bun.spawnSync` hand a child the environment the process
+started with, not the one it has now, so a test that starts `tmux` that way
+passes `env: process.env`.
+
 Every real-tmux runner sweeps before it starts. A suite reaps its own run root
 in a `finally`, which `SIGKILL` skips, and each root is created under a fresh
 `mkdtemp` name that no later run would otherwise revisit — so a killed run left

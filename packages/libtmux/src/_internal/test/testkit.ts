@@ -66,6 +66,15 @@ export {
 } from "./records.js";
 export type { FixtureRecord, LaunchGeneration, SocketIdentity } from "./records.js";
 export {
+  assertSandboxed,
+  enterSandbox,
+  SANDBOX_ENV,
+  SANDBOX_SOCKET_LIMIT,
+  sandboxFindings,
+  tmuxSocketFor,
+} from "./sandbox.js";
+export type { Sandbox, SandboxOptions } from "./sandbox.js";
+export {
   RUN_ROOT_ENV,
   runSupervisor,
   TEST_PARALLEL_ENV,

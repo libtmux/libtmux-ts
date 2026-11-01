@@ -1,8 +1,8 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import {
+  enterSandbox,
   prepareRunRoot,
   reapOwnedRunRoot,
   sweepStaleRunRoots,
@@ -17,13 +17,7 @@ import {
   requireSymbolExamples,
 } from "../api_surface.js";
 import { packageRoot } from "../package_root.js";
-import {
-  bindingsFor,
-  fencedBlocks,
-  isolateTmuxEnvironment,
-  splitForExecution,
-  type Example,
-} from "./example_harness.js";
+import { bindingsFor, fencedBlocks, splitForExecution, type Example } from "./example_harness.js";
 import { buildWorld, disposeWorld, type World } from "./readme_world.js";
 import { sweepStrayTmux } from "./tmux_sweep.js";
 
@@ -238,8 +232,10 @@ if (examples.length === 0) throw new Error("no symbol examples were found to run
 // still can. Once per suite process, before anything creates a root of its own.
 await sweepStaleRunRoots();
 
-const isolated = await mkdtemp(join(tmpdir(), "ltx-symbol-runs-"));
-isolateTmuxEnvironment(isolated);
+// An example's `new Server()` follows an inherited TMUX before TMUX_TMPDIR; the sandbox
+// clears it and gives the example a default socket of this run's own.
+const sandbox = await enterSandbox();
+const isolated = sandbox.root;
 
 const directory = join(packageRoot, "node_modules", ".examples-symbol-runs");
 await mkdir(directory, { recursive: true });
@@ -399,7 +395,7 @@ try {
       strayServers = await sweepStrayTmux(isolated);
       await rm(parent, { force: true, recursive: true });
       await rm(directory, { force: true, recursive: true });
-      await rm(isolated, { force: true, recursive: true });
+      await sandbox.release();
     },
   );
 }
