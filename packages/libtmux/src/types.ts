@@ -311,7 +311,7 @@ export interface SplitOptions extends CommandOptions {
   readonly shellCommand?: string;
   /**
    * @deprecated Use `direction: PaneDirection.Below` for `true` or
-   * `direction: PaneDirection.Right` for `false`. Removed at `0.1.0`. Do not
+   * `direction: PaneDirection.Right` for `false`. Exported in 0.1.x; no removal is scheduled. Do not
    * combine with `direction`.
    */
   readonly vertical?: boolean;
@@ -356,7 +356,7 @@ export interface JoinOptions extends CommandOptions {
   /**
    * @deprecated Use `direction: PaneDirection.Below` for `true` or
    * `direction: PaneDirection.Right` for `false`, matching
-   * {@link SplitOptions.direction}. Removed at `0.1.0`. Do not combine with
+   * {@link SplitOptions.direction}. Exported in 0.1.x; no removal is scheduled. Do not combine with
    * `direction`.
    */
   readonly vertical?: boolean;
@@ -406,6 +406,7 @@ export interface CaptureOptions extends CommandOptions {
   readonly start?: number;
 }
 
+/** How a paste buffer is written to a file. */
 export interface SaveBufferOptions extends CommandOptions {
   /** Append to the file rather than replacing it, tmux's `-a`. */
   readonly append?: boolean;

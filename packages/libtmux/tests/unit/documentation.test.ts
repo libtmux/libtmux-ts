@@ -88,17 +88,20 @@ describe("generated API reference", () => {
     const rootEntries = [...api.matchAll(/^### (`[^`]+`(?: type)?)$/gmu)].map((match) => match[1]!);
 
     expect(rootEntries).toEqual([
+      "`compileBoundedRegex`",
       "`encodeWhereDocument`",
       "`decodeWhereDocument`",
-      "`isSafeInteger`",
-      "`safeInteger`",
       "`isTmuxName`",
       "`isSplitSize`",
       "`splitSize`",
-      "`SafeInteger` type",
+      "`isSafeInteger`",
+      "`safeInteger`",
+      "`assertSupportedTmux`",
+      "`MINIMUM_TMUX`",
       "`SplitCellSize` type",
       "`SplitPercentage` type",
       "`SplitSize` type",
+      "`SafeInteger` type",
     ]);
   });
 

@@ -24,24 +24,6 @@ export const SOURCES = [
   "src/selection.ts",
 ];
 
-const ROOT_SOURCES = [
-  {
-    file: "src/selection.ts",
-    functions: ["encodeWhereDocument", "decodeWhereDocument"],
-    types: [],
-  },
-  {
-    file: "src/common.ts",
-    functions: ["isSafeInteger", "safeInteger"],
-    types: ["SafeInteger"],
-  },
-  {
-    file: "src/types.ts",
-    functions: ["isSplitSize", "isTmuxName", "splitSize"],
-    types: ["SplitCellSize", "SplitPercentage", "SplitSize"],
-  },
-] as const;
-
 /**
  * Symbols that carry no example of their own, with the reason.
  *
@@ -108,7 +90,7 @@ export interface ApiClass {
 export interface ApiDeclaration {
   readonly example: string | undefined;
   readonly file: string;
-  readonly kind: "function" | "type";
+  readonly kind: "const" | "function" | "type";
   readonly line: number;
   readonly name: string;
   readonly prose: string;
@@ -189,6 +171,11 @@ function declarationAt(
   index: number,
   kind: ApiDeclaration["kind"],
 ): ParsedDeclaration {
+  if (kind === "const") {
+    // The value is an implementation detail; the reference shows the type.
+    const text = (lines[index] ?? "").replace(/^export /u, "");
+    return { hasBody: false, signature: text.replace(/\s*=[^]*$/u, ";").trim() };
+  }
   if (kind === "function") {
     const collected: string[] = [];
     let hasBody = false;
@@ -231,19 +218,17 @@ function declarationAt(
 function declarationsOf(
   source: string,
   file: string,
-  wantedFunctions: ReadonlySet<string>,
-  wantedTypes: ReadonlySet<string>,
+  wanted: ReadonlyMap<string, ApiDeclaration["kind"]>,
 ): readonly ApiDeclaration[] {
   const lines = source.split("\n");
   const declarations = new Map<string, ApiDeclaration>();
 
   for (const [index, line] of lines.entries()) {
-    const functionName = /^export function (\w+)/u.exec(line)?.[1];
-    const typeName = /^export type (\w+)/u.exec(line)?.[1];
-    const kind = functionName === undefined ? "type" : "function";
-    const name = functionName ?? typeName;
-    if (name === undefined) continue;
-    if (kind === "function" ? !wantedFunctions.has(name) : !wantedTypes.has(name)) continue;
+    const declared = /^export (function|const|type) (\w+)/u.exec(line) ?? undefined;
+    if (declared === null || declared === undefined) continue;
+    const kind = declared[1] as ApiDeclaration["kind"];
+    const name = declared[2] ?? "";
+    if (wanted.get(name) !== kind) continue;
 
     const doc = docAbove(lines, index);
     const read =
@@ -374,22 +359,173 @@ export async function readApiSurface(): Promise<readonly ApiClass[]> {
 }
 
 /** The root functions and scalar aliases whose validation semantics need prose. */
+export type RootExportKind = "alias" | "class" | "const" | "function" | "interface" | "type";
+
+/** One name the package root exports, found in the module that declares it. */
+export interface RootExport {
+  readonly deprecated: boolean;
+  readonly example: string | undefined;
+  readonly file: string;
+  readonly kind: RootExportKind;
+  readonly line: number;
+  readonly name: string;
+  /** The first sentence of the doc comment. */
+  readonly summary: string;
+}
+
+const namedReexport = /export\s+(?:type\s+)?\{([^}]*)\}\s*from\s*"([^"]+)"\s*;?/gu;
+
+/**
+ * Every name `src/index.ts` re-exports, with the module it comes from.
+ *
+ * Only `export { a, type B as C } from "./m.js"` can be followed to a
+ * declaration. Any other export form (`export * from`, `export * as ns from`,
+ * a bare `export { x }`, `export const`, `export default`, ...) names things
+ * this reader cannot trace, and skipping one would drop it from the reference
+ * without a sound, so it throws.
+ *
+ * @throws Error naming the first export statement it cannot follow.
+ */
+export function rootExportNames(index: string): readonly { from: string; name: string }[] {
+  const code = index.replace(/\/\*[^]*?\*\//gu, "").replace(/^\s*\/\/.*$/gmu, "");
+  const names: { from: string; name: string }[] = [];
+  for (const match of code.matchAll(namedReexport)) {
+    for (const part of (match[1] ?? "").split(",")) {
+      const name = part
+        .replace(/\btype\b/u, "")
+        .trim()
+        .split(/\s+as\s+/u)
+        .pop();
+      if (name !== undefined && name !== "") names.push({ from: match[2] ?? "", name });
+    }
+  }
+  const untraceable = /^\s*export\b[^\n]*/mu.exec(code.replace(namedReexport, ""));
+  if (untraceable !== null) {
+    throw new Error(
+      `src/index.ts has an export the API reference cannot trace: ${untraceable[0].trim()}. Re-export names one by one with \`export { name } from "./module.js"\`.`,
+    );
+  }
+  return names;
+}
+
+/** A doc comment above a line, stepping over directive comments such as eslint-disable. */
+function docAboveDirectives(
+  lines: readonly string[],
+  index: number,
+): { end: number; start: number } | undefined {
+  let at = index;
+  while ((lines[at - 1] ?? "").trim().startsWith("//")) at -= 1;
+  return docAbove(lines, at);
+}
+
+function moduleFile(from: string): string {
+  return join("src", from.replace(/^\.\//u, "").replace(/\.js$/u, ".ts"));
+}
+
+function firstSentence(prose: string): string {
+  const paragraph = prose.split(/\n\s*\n/u)[0] ?? "";
+  const flat = paragraph.replace(/\s+/gu, " ").trim();
+  const end = /[.!?](?=\s|$)/u.exec(flat);
+  return (end === null ? flat : flat.slice(0, end.index + 1)).trim();
+}
+
+/**
+ * Every root export, derived from `src/index.ts` rather than listed by hand.
+ *
+ * A name added to the root shows up here with no change to this file, and one
+ * whose declaration cannot be found, or that has no doc comment, fails the
+ * run: the reference cannot fall behind the root without somebody noticing.
+ */
+export async function readRootExports(root: string = packageRoot): Promise<readonly RootExport[]> {
+  const names = rootExportNames(await readFile(join(root, "src/index.ts"), "utf8"));
+  const files = [...new Set(names.map(({ from }) => moduleFile(from)))];
+  const sources = new Map<string, readonly string[]>(
+    await Promise.all(
+      files.map(
+        async (file) => [file, (await readFile(join(root, file), "utf8")).split("\n")] as const,
+      ),
+    ),
+  );
+  const problems: string[] = [];
+  const found: RootExport[] = [];
+  for (const { from, name } of names) {
+    const file = moduleFile(from);
+    const lines = sources.get(file) ?? [];
+    const declaration = new RegExp(
+      `^export (?:declare )?(?:abstract )?(?:async )?(function|class|interface|type|const|enum) ${name}\\b|^export \\{ \\w+ as ${name} \\};?$`,
+      "u",
+    );
+    let best: RootExport | undefined;
+    for (const [index, line] of lines.entries()) {
+      const match = declaration.exec(line);
+      if (match === null) continue;
+      const doc = docAboveDirectives(lines, index);
+      const block = doc === undefined ? [] : lines.slice(doc.start, doc.end + 1);
+      // A one-line `/** … */` has no leader lines for `readDoc` to strip.
+      const read =
+        doc === undefined
+          ? { example: undefined, prose: "" }
+          : doc.start === doc.end
+            ? readDoc([
+                "/**",
+                ` * ${(block[0] ?? "").replace(/^\s*\/\*\*\s*|\s*\*\/\s*$/gu, "")}`,
+                " */",
+              ])
+            : readDoc(block);
+      const kind =
+        (match[1] ?? "alias") === "enum" ? "const" : ((match[1] ?? "alias") as RootExportKind);
+      const candidate: RootExport = {
+        deprecated: read.prose.includes("@deprecated"),
+        example: read.example,
+        file,
+        kind,
+        line: index + 1,
+        name,
+        summary: read.prose.startsWith("@deprecated")
+          ? `Deprecated: ${firstSentence(read.prose.replace(/^@deprecated\s*/u, ""))}`
+          : firstSentence(read.prose),
+      };
+      // A name declared twice, as a value and as a type, is documented by
+      // whichever declaration carries the comment.
+      if (best === undefined || (best.summary === "" && candidate.summary !== "")) best = candidate;
+    }
+    if (best === undefined) problems.push(`${name}: no declaration in ${file}`);
+    else if (best.summary === "")
+      problems.push(`${name}: no doc comment at ${file}:${String(best.line)}`);
+    else found.push(best);
+  }
+  if (problems.length > 0) {
+    throw new Error(`root exports the reference cannot document:\n  ${problems.join("\n  ")}`);
+  }
+  return found;
+}
+
+/** The root declarations that get a full entry, with their example. */
 export async function readRootApiSurface(): Promise<readonly ApiDeclaration[]> {
-  const sources = await Promise.all(
-    ROOT_SOURCES.map(async (entry) => ({
-      ...entry,
-      source: await readFile(join(packageRoot, entry.file), "utf8"),
-    })),
+  const exports = await readRootExports();
+  const byFile = new Map<string, Map<string, ApiDeclaration["kind"]>>();
+  for (const entry of exports) {
+    const kind =
+      entry.kind === "function" ||
+      ((entry.kind === "const" || entry.kind === "type") && entry.example !== undefined)
+        ? entry.kind
+        : undefined;
+    if (kind === undefined) continue;
+    const wanted = byFile.get(entry.file) ?? new Map<string, ApiDeclaration["kind"]>();
+    wanted.set(entry.name, kind);
+    byFile.set(entry.file, wanted);
+  }
+  const read = await Promise.all(
+    [...byFile].map(async ([file, wanted]) => {
+      const found = declarationsOf(await readFile(join(packageRoot, file), "utf8"), file, wanted);
+      const missing = [...wanted.keys()].filter(
+        (name) => !found.some((entry) => entry.name === name && entry.kind === wanted.get(name)),
+      );
+      return { found, missing };
+    }),
   );
-  const declarations = sources.flatMap((entry) =>
-    declarationsOf(entry.source, entry.file, new Set(entry.functions), new Set(entry.types)),
-  );
-  const expected = ROOT_SOURCES.flatMap((entry) => [
-    ...entry.functions.map((name) => `function:${name}`),
-    ...entry.types.map((name) => `type:${name}`),
-  ]);
-  const found = new Set(declarations.map((entry) => `${entry.kind}:${entry.name}`));
-  const missing = expected.filter((entry) => !found.has(entry));
+  const missing = read.flatMap((entry) => entry.missing);
   if (missing.length > 0) throw new Error(`root API declarations not found: ${missing.join(", ")}`);
+  const declarations = read.flatMap((entry) => entry.found);
   return declarations;
 }
