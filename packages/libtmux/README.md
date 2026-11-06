@@ -925,6 +925,9 @@ const lines = await created.capture();
   crossing between them is refused rather than guessed.
 - A plan assembled from the `argv` of one plan and the `resolve` of another is
   refused with `TypeError`.
+- A batch whose plans resolve to nothing, such as kills, takes no final
+  snapshot, so killing the last session resolves instead of failing to read a
+  server that is gone.
 
 ### [`Server.pipeline`][ref-server-pipeline]: raw arguments, one result each
 

@@ -7,6 +7,7 @@ import {
   type NewWindowOptions,
   type PlanOptions,
   type PlannedOperation,
+  type ServerSnapshot,
   type SplitOptions,
 } from "../../types.js";
 import type { Pane } from "../../pane.js";
@@ -37,6 +38,19 @@ export function refuseStdin(options: object | undefined, builder: string): void 
       `${builder} describes a command without running it, so it takes no stdin: a plan honours signal and timeoutMs, and stdin belongs to the direct call.`,
     );
   }
+}
+
+/** Read a plan's result, handing it a snapshot only when it declared it needs one. */
+export function resolvePlan<T>(
+  plan: PlannedOperation<T>,
+  snapshot: ServerSnapshot | undefined,
+  lines: readonly string[],
+): T {
+  if (plan.needsSnapshot === false) return plan.resolve(undefined, lines);
+  if (snapshot === undefined) {
+    throw new LibTmuxError(`${plan.argv[0] ?? "a plan"} needs a snapshot and none was taken`);
+  }
+  return plan.resolve(snapshot, lines);
 }
 
 function requireIdentity(lines: readonly string[], command: string): string {
@@ -199,6 +213,7 @@ export function planKill(
 ): PlannedOperation<void> {
   return {
     argv: [command, ...(target == null ? [] : ["-t", target])],
+    needsSnapshot: false,
     resolve: () => undefined,
   };
 }
@@ -229,6 +244,7 @@ export function planKillPaneIfUnshared(target: string): PlannedOperation<void> {
       ["kill-pane", "-t", target],
       "shared-window",
     ),
+    needsSnapshot: false,
     resolve: () => undefined,
   };
 }
@@ -242,6 +258,7 @@ export function planRemoveWindowPlacement(target: string): PlannedOperation<void
       ["unlink-window", "-k", "-t", target],
       "grouped-session",
     ),
+    needsSnapshot: false,
     resolve: () => undefined,
   };
 }

@@ -1579,7 +1579,9 @@ When the batch fails after some commands ran, the error keeps its class
 and carries `applied`, the number of commands that had completed. The
 failing command is not counted, and one that timed out or was abandoned may
 still have taken effect. When only the final snapshot fails, `applied` is
-every command. A refusal before any command is sent has no `applied`.
+every command. A refusal before any command is sent has no `applied`. The final snapshot is taken
+only when some plan resolves a handle, so a batch of kills resolves even
+when it removed the last session.
 
 ```ts
 const [editor, logs] = await server.batch([

@@ -1290,20 +1290,37 @@ export interface ConnectedServer extends Server, AsyncDisposable {
  * The type parameter is what the command resolves to, so a batch of mixed
  * operations still comes back typed one by one.
  */
-export interface PlannedOperation<T> {
-  readonly argv: readonly string[];
-  /**
-   * The `signal` and `timeoutMs` the plan was written with, which bound its
-   * own command when a batch runs it.
-   *
-   * They combine with the batch's own: either signal abandons the command,
-   * and the shorter deadline applies. A plan that names none is bound by
-   * the batch's alone.
-   */
-  readonly options?: Pick<CommandOptions, "signal" | "timeoutMs">;
-  /** What `argv` produced, read out of a snapshot taken after it ran. */
-  readonly resolve: (snapshot: ServerSnapshot, lines: readonly string[]) => T;
-}
+export type PlannedOperation<T> =
+  | {
+      readonly argv: readonly string[];
+      /**
+       * Whether `resolve` reads the snapshot. Absent means it does.
+       *
+       * {@link Server.batch} takes its final snapshot only when some plan needs
+       * one, so a batch of kills does not read a server it may have just
+       * emptied. A plan that declares `false` is handed no snapshot, and its
+       * `resolve` is typed to match.
+       */
+      readonly needsSnapshot?: true;
+      /**
+       * The `signal` and `timeoutMs` the plan was written with, which bound its
+       * own command when a batch runs it.
+       *
+       * They combine with the batch's own: either signal abandons the command,
+       * and the shorter deadline applies. A plan that names none is bound by
+       * the batch's alone.
+       */
+      readonly options?: Pick<CommandOptions, "signal" | "timeoutMs">;
+      /** What `argv` produced, read out of a snapshot taken after it ran. */
+      readonly resolve: (snapshot: ServerSnapshot, lines: readonly string[]) => T;
+    }
+  | {
+      readonly argv: readonly string[];
+      readonly needsSnapshot: false;
+      readonly options?: Pick<CommandOptions, "signal" | "timeoutMs">;
+      /** What `argv` produced; there is no snapshot to read it from. */
+      readonly resolve: (snapshot: undefined, lines: readonly string[]) => T;
+    };
 
 /**
  * The options a plan builder takes: the direct call's, less `stdin`.

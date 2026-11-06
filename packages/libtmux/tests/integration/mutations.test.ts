@@ -772,6 +772,16 @@ describe("lifecycle mutations", () => {
       });
     }, 40_000);
 
+    test("kills the last session in a batch without reading a server that is gone", async () => {
+      await withServer(async (fixture) => {
+        const server = serverFor(fixture);
+        const only = (await server.snapshot()).sessions.one();
+
+        await expect(server.batch([only.plan.kill()])).resolves.toEqual([undefined]);
+        await expect(server.hasSession(fixture.sessionName)).resolves.toBe(false);
+      });
+    }, 40_000);
+
     test("refuses a plan whose argv and resolver came from different servers", async () => {
       await withServer(async (fixture) => {
         const server = serverFor(fixture);
@@ -781,6 +791,7 @@ describe("lifecycle mutations", () => {
           await other.newSession({ name: "theirs-too" });
 
           // The argv names `mine` on `server`; the resolver is `theirs` on `other`.
+          // Spreading a union-typed plan loses its type, so say what it is.
           const mixed = {
             ...mine.plan.kill(),
             resolve: theirs.plan.kill().resolve,
@@ -884,6 +895,21 @@ describe("lifecycle mutations", () => {
           .catch((thrown: unknown) => thrown);
         expect(error).toMatchObject({ kind: "cancelled" });
         expect((error as { applied?: unknown }).applied).toBe(1);
+      });
+    }, 40_000);
+
+    test("still takes the snapshot when any plan resolves a handle", async () => {
+      await withServer(async (fixture) => {
+        const server = serverFor(fixture);
+        const session = (await server.snapshot()).sessions.one();
+        const extra = await session.newWindow({ name: "doomed" });
+
+        const [killed, created] = await server.batch([
+          extra.plan.kill(),
+          session.plan.newWindow({ name: "kept" }),
+        ]);
+        expect(killed).toBeUndefined();
+        expect(created.name).toBe("kept");
       });
     }, 40_000);
   });

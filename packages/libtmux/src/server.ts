@@ -1,5 +1,6 @@
 import type { CommandOptions } from "./common.js";
 import { runPipeline, runPlans, withApplied } from "./_internal/operations/pipeline.js";
+import { resolvePlan } from "./_internal/operations/plans.js";
 import type { TmuxVersion } from "./types.js";
 import { parseTmuxVersion, tmuxVersionAtLeast } from "./_internal/runtime/tmux_version.js";
 import {
@@ -1701,7 +1702,9 @@ export class Server {
    * and carries `applied`, the number of commands that had completed. The
    * failing command is not counted, and one that timed out or was abandoned may
    * still have taken effect. When only the final snapshot fails, `applied` is
-   * every command. A refusal before any command is sent has no `applied`.
+   * every command. A refusal before any command is sent has no `applied`. The final snapshot is taken
+   * only when some plan resolves a handle, so a batch of kills resolves even
+   * when it removed the last session.
    */
   async batch<const T extends readonly PlannedOperation<unknown>[]>(
     operations: T,
@@ -1715,14 +1718,17 @@ export class Server {
     // than one per mutation. It carries the caller's signal: a batch abandoned
     // between its commands and this read is abandoned, and taking it
     // unsignalled left the handles resolving against a server the caller had
-    // already stopped waiting for.
-    const snapshot = await this.snapshot(
-      options?.signal === undefined ? {} : { signal: options.signal },
-    ).catch((error: unknown) => {
-      throw withApplied(error, operations.length);
-    });
+    // already stopped waiting for. A batch no plan needs it for skips it: the
+    // server may be the very thing the batch ended.
+    const snapshot = operations.some((operation) => operation.needsSnapshot !== false)
+      ? await this.snapshot(options?.signal === undefined ? {} : { signal: options.signal }).catch(
+          (error: unknown) => {
+            throw withApplied(error, operations.length);
+          },
+        )
+      : undefined;
     return operations.map((operation, index) =>
-      operation.resolve(snapshot, printed[index] ?? []),
+      resolvePlan(operation, snapshot, printed[index] ?? []),
     ) as { -readonly [K in keyof T]: T[K] extends PlannedOperation<infer R> ? R : never };
   }
 
