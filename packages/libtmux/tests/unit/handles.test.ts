@@ -60,6 +60,7 @@ import type {
   RawCommandResult,
 } from "../../src/_internal/transport/types.js";
 import { flattenInvocation } from "../../src/_internal/transport/invocation.js";
+import { quoteCommand } from "../../src/_internal/transport/lexer.js";
 import { WHERE_FIELDS_V1, type WhereModel } from "../../src/_generated/where_fields.js";
 import { runPlans } from "../../src/_internal/operations/pipeline.js";
 import { assertPlanRunnable } from "../../src/_internal/operations/plan_origin.js";
@@ -1139,33 +1140,61 @@ describe("authenticated handle materialization", () => {
     await target.removePlacement();
     await target.swapWith(other);
 
-    expect(target.plan.removePlacement().argv).toEqual([
+    // Each placement write asks tmux, in the queue that then acts, whether the
+    // window captured at that index is still there. The refusal commands are
+    // unique per call, so their suffix is masked.
+    const masked = (argv: readonly string[]): string[] =>
+      argv.map((part) => part.replaceAll(/(libtmux-[a-z-]+?)-[0-9a-f]{32}/gu, "$1-*"));
+    const guarded = (id: string, at: string, then: string): string[] => [
+      "if-shell",
+      "-F",
+      "-t",
+      at,
+      `#{==:#{window_id},${id}}`,
+      then,
+      quoteCommand(["libtmux-placement-moved-*"]),
+    ];
+    const grouped = quoteCommand([
       "if-shell",
       "-F",
       "-t",
       "$1:4",
       "#{==:#{session_grouped},0}",
-      "'unlink-window' '-k' '-t' '$1:4'",
-      expect.stringMatching(/^'libtmux-grouped-session-[0-9a-f]{32}'$/u),
+      quoteCommand(["unlink-window", "-k", "-t", "$1:4"]),
+      quoteCommand(["libtmux-grouped-session-*"]),
     ]);
+    expect(masked(target.plan.removePlacement().argv)).toEqual(guarded("@9", "$1:4", grouped));
 
-    expect(fixture.transport.requests.map(flattenInvocation)).toEqual([
-      ["-u", "-Lhandles", "select-window", "-t", "$1:4"],
-      ["-u", "-Lhandles", "move-window", "-d", "-s", "$1:4", "-t", "$1:7"],
-      ["-u", "-Lhandles", "unlink-window", "-t", "$1:4"],
-      [
-        "-u",
-        "-Lhandles",
-        "if-shell",
-        "-F",
-        "-t",
-        "$1:4",
-        "#{==:#{session_grouped},0}",
-        "'unlink-window' '-k' '-t' '$1:4'",
-        expect.stringMatching(/^'libtmux-grouped-session-[0-9a-f]{32}'$/u),
-      ],
-      ["-u", "-Lhandles", "swap-window", "-d", "-s", "$1:4", "-t", "$1:6"],
+    const swap = quoteCommand([
+      "if-shell",
+      "-F",
+      "-t",
+      "$1:6",
+      "#{==:#{window_id},@8}",
+      quoteCommand(["swap-window", "-d", "-s", "$1:4", "-t", "$1:6"]),
+      quoteCommand(["libtmux-placement-moved-*"]),
     ]);
+    expect(fixture.transport.requests.map((request) => masked(flattenInvocation(request)))).toEqual(
+      [
+        [
+          "-u",
+          "-Lhandles",
+          ...guarded("@9", "$1:4", quoteCommand(["select-window", "-t", "$1:4"])),
+        ],
+        [
+          "-u",
+          "-Lhandles",
+          ...guarded("@9", "$1:4", quoteCommand(["move-window", "-d", "-s", "$1:4", "-t", "$1:7"])),
+        ],
+        [
+          "-u",
+          "-Lhandles",
+          ...guarded("@9", "$1:4", quoteCommand(["unlink-window", "-t", "$1:4"])),
+        ],
+        ["-u", "-Lhandles", ...guarded("@9", "$1:4", grouped)],
+        ["-u", "-Lhandles", ...guarded("@9", "$1:4", swap)],
+      ],
+    );
   });
 
   test("a batch runs each plan under its own deadline and the shorter of the two", async () => {

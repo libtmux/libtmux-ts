@@ -20,6 +20,7 @@ import {
   planRemoveWindowPlacement,
   planSplitWindow,
   refuseStdin,
+  type Placement,
 } from "./_internal/operations/plans.js";
 import { bindPlan } from "./_internal/operations/plan_origin.js";
 import { setHook, showHooks, unsetHook } from "./_internal/operations/hooks.js";
@@ -38,7 +39,7 @@ import {
   removeWindowPlacement,
   rotateWindow,
   selectLayout,
-  selectTarget,
+  selectPlacement,
   unzoomTarget,
   swapWindows,
   unlinkWindow,
@@ -46,7 +47,7 @@ import {
 import type { CommandOptions } from "./common.js";
 import { respawnWindow } from "./_internal/operations/shell.js";
 import { refreshedHandle } from "./_internal/operations/refreshed.js";
-import { originGraphForHandle } from "./_internal/runtime/live_handle.js";
+import { originForHandle, originGraphForHandle } from "./_internal/runtime/live_handle.js";
 import type { Pane } from "./pane.js";
 import type { Selection } from "./selection.js";
 import type { Session } from "./session.js";
@@ -107,8 +108,12 @@ function inThisSession(window: Window, options: MoveWindowOptions): MoveWindowOp
  * `selectLayout` and `resize` act on the window itself, wherever it is linked,
  * and naming a session there would suggest a choice that does not exist.
  */
-function placementTarget(window: Window): string {
-  return `${window.format.session_id}:${window.format.window_index}`;
+function placementOf(window: Window): Placement {
+  return {
+    daemon: originForHandle(window).daemon,
+    target: `${window.format.session_id}:${window.format.window_index}`,
+    windowId: window.id,
+  };
 }
 
 /**
@@ -304,7 +309,7 @@ export class Window {
   get plan(): WindowPlans {
     return {
       kill: () => bindPlan(this, planKill("kill-window", this.id)),
-      removePlacement: () => bindPlan(this, planRemoveWindowPlacement(placementTarget(this))),
+      removePlacement: () => bindPlan(this, planRemoveWindowPlacement(placementOf(this))),
       split: (options?: PlanOptions<SplitOptions>) => {
         refuseStdin(options, "window.plan.split");
         return bindPlan(this, planSplitWindow(this.id, options));
@@ -432,7 +437,7 @@ export class Window {
    */
   move(options: MoveWindowOptions = {}): Promise<void> {
     options = destinationFor(this, options, "move");
-    return moveWindow(runtimeForHandle(this), placementTarget(this), inThisSession(this, options));
+    return moveWindow(runtimeForHandle(this), placementOf(this), inThisSession(this, options));
   }
 
   /**
@@ -466,7 +471,7 @@ export class Window {
    * ```
    */
   unlink(): Promise<void> {
-    return unlinkWindow(runtimeForHandle(this), placementTarget(this));
+    return unlinkWindow(runtimeForHandle(this), placementOf(this));
   }
 
   /**
@@ -477,7 +482,7 @@ export class Window {
    * ```
    */
   removePlacement(): Promise<void> {
-    return removeWindowPlacement(runtimeForHandle(this), placementTarget(this));
+    return removeWindowPlacement(runtimeForHandle(this), placementOf(this));
   }
 
   /**
@@ -489,7 +494,7 @@ export class Window {
    */
   swapWith(other: Window): Promise<void> {
     requireSameServer(this, other, "swapWith");
-    return swapWindows(runtimeForHandle(this), placementTarget(this), placementTarget(other));
+    return swapWindows(runtimeForHandle(this), placementOf(this), placementOf(other));
   }
 
   /**
@@ -539,7 +544,7 @@ export class Window {
    * ```
    */
   select(): Promise<void> {
-    return selectTarget(runtimeForHandle(this), "select-window", placementTarget(this));
+    return selectPlacement(runtimeForHandle(this), placementOf(this));
   }
 
   /**

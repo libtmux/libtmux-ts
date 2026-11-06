@@ -687,13 +687,22 @@ await server.newSession({ name: "ci", shellCommand: "just watch" });
 Moving and linking windows between sessions:
 
 ```ts
-await window.swapWith(other);
-await other.move({ index: 2, session: "other" });
 await window.link({ session: "other" }); // one window, in two sessions
+await window.swapWith(other);
+// The swap changed both indexes, so read `other` again before addressing it.
+const moved = (await server.snapshot()).windows.one({ id: other.id });
+await moved.move({ index: 40, session: "other" });
 await pane.breakOut();
 await pane.joinTo("other:1");
 await pane.swapWith(otherPane);
 ```
+
+A handle names the placement it was read at, `session:index`, and tmux refuses
+a write when that index now holds another window, with a `LibTmuxError` and no
+change. `refreshed()` refuses the same handle, so read it again from a snapshot.
+`Session.selectWindow` given a window handle is guarded the same way; given an
+index string such as `"3"` it names whatever holds that index and cannot be
+guarded.
 
 ### Handles as targets
 

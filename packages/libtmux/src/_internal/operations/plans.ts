@@ -1,6 +1,7 @@
 import { PANE_DIRECTION_FLAG_MAP, WINDOW_DIRECTION_FLAG_MAP } from "../../constants.js";
 import type { CommandOptions } from "../../common.js";
-import { LibTmuxError } from "../../errors.js";
+import type { DaemonGuard } from "../../engine.js";
+import { LibTmuxError, TmuxCommandError } from "../../errors.js";
 import {
   splitSize as authenticateSplitSize,
   type NewSessionOptions,
@@ -249,14 +250,76 @@ export function planKillPaneIfUnshared(target: string): PlannedOperation<void> {
   };
 }
 
+/**
+ * A window placement as tmux addresses one, and the window it was captured as.
+ *
+ * `session:index` names a slot, and a window can leave it while a handle still
+ * holds the index. The window id says which window the caller meant.
+ */
+export interface Placement {
+  /** The daemon the handle was read from, so tmux refuses the command on any other. */
+  readonly daemon?: DaemonGuard | undefined;
+  readonly target: string;
+  readonly windowId: string;
+}
+
+/**
+ * Run `command` only while tmux finds each captured window at its placement.
+ *
+ * The comparison is made by tmux in the same command queue that then runs the
+ * command, so nothing can reorder windows between the check and the act. A
+ * mismatch, or an index that holds no window at all, runs a unique unknown
+ * command instead, which fails the invocation and leaves the command unrun, as
+ * {@link planRemoveWindowPlacement}'s group check does. The first placement is
+ * checked first; a swap guards both by passing both.
+ */
+export function guardPlacements(
+  placements: readonly Pick<Placement, "target" | "windowId">[],
+  command: readonly string[],
+): readonly string[] {
+  return placements.reduceRight(
+    (inner, placement) =>
+      conditionalTargetMutation(
+        placement.target,
+        `#{==:#{window_id},${placement.windowId}}`,
+        inner,
+        "placement-moved",
+      ),
+    command,
+  );
+}
+
+/**
+ * Say plainly that a placement no longer holds the window a handle captured.
+ *
+ * tmux can only report the guard's refusal as an unknown command, so this
+ * recognises it by its prefix and returns a readable error that keeps the
+ * original as its cause. Anything else comes back unchanged.
+ */
+export function placementRefusal(error: unknown): unknown {
+  if (
+    error instanceof TmuxCommandError &&
+    error.stderr.some((line) => line.includes("unknown command: libtmux-placement-moved-"))
+  ) {
+    return new LibTmuxError(
+      "the window is no longer at the placement this handle names; read it back from a fresh snapshot",
+      { cause: error },
+    );
+  }
+  return error;
+}
+
 /** Remove one ungrouped placement, destroying the window only when it is last. */
-export function planRemoveWindowPlacement(target: string): PlannedOperation<void> {
+export function planRemoveWindowPlacement(placement: Placement): PlannedOperation<void> {
   return {
-    argv: conditionalTargetMutation(
-      target,
-      "#{==:#{session_grouped},0}",
-      ["unlink-window", "-k", "-t", target],
-      "grouped-session",
+    argv: guardPlacements(
+      [placement],
+      conditionalTargetMutation(
+        placement.target,
+        "#{==:#{session_grouped},0}",
+        ["unlink-window", "-k", "-t", placement.target],
+        "grouped-session",
+      ),
     ),
     needsSnapshot: false,
     resolve: () => undefined,

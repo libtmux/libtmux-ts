@@ -35,7 +35,7 @@ import {
 } from "./_internal/operations/options.js";
 import { renameSession, selectWindowIn } from "./_internal/operations/session_nav.js";
 import { refreshedHandle } from "./_internal/operations/refreshed.js";
-import { originGraphForHandle } from "./_internal/runtime/live_handle.js";
+import { originForHandle, originGraphForHandle } from "./_internal/runtime/live_handle.js";
 import type { Pane } from "./pane.js";
 import type { Selection } from "./selection.js";
 import type { Window } from "./window.js";
@@ -440,12 +440,25 @@ export class Session {
   /**
    * Select the last, next, or previous window, or one named by target.
    *
+   * Given a window handle, the selection is guarded: it is refused with a
+   * `LibTmuxError` when that window no longer holds the placement the handle
+   * names. Given an index string such as `"3"` there is no window to compare,
+   * so it selects whatever holds that index and is not guarded.
+   *
    * ```ts
    * await session.selectWindow("next");
    * ```
    */
   selectWindow(target: Window | WindowTarget): Promise<void> {
-    return selectWindowIn(runtimeForHandle(this), this.id, windowTargetOf(this, target));
+    return selectWindowIn(
+      runtimeForHandle(this),
+      this.id,
+      windowTargetOf(this, target),
+      // An index names whatever holds it, so only a window handle can be checked.
+      typeof target === "string"
+        ? undefined
+        : { daemon: originForHandle(target).daemon, windowId: target.id },
+    );
   }
 
   /**

@@ -6,6 +6,7 @@ import type { RuntimeContext } from "../runtime/context.js";
 import { runCommand } from "./command.js";
 import { assertPlanRunnable, daemonOfPlan } from "./plan_origin.js";
 import { timerDuration } from "../timing.js";
+import { placementRefusal } from "./plans.js";
 
 function validatePipeline(commands: readonly (readonly string[])[]): void {
   for (const command of commands) {
@@ -142,7 +143,7 @@ export async function runPlans(
       });
       results.push(lines);
     } catch (error) {
-      throw withApplied(error, results.length);
+      throw withApplied(placementRefusal(error), results.length);
     } finally {
       dispose();
     }

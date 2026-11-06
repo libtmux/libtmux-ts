@@ -1927,6 +1927,11 @@ selectWindow(target: Window | WindowTarget): Promise<void>
 
 Select the last, next, or previous window, or one named by target.
 
+Given a window handle, the selection is guarded: it is refused with a
+`LibTmuxError` when that window no longer holds the placement the handle
+names. Given an index string such as `"3"` there is no window to compare,
+so it selects whatever holds that index and is not guarded.
+
 ```ts
 await session.selectWindow("next");
 ```
