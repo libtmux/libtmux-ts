@@ -20,6 +20,7 @@ import {
   planRemoveWindowPlacement,
   planSplitWindow,
 } from "./_internal/operations/plans.js";
+import { bindPlan } from "./_internal/operations/plan_origin.js";
 import { setHook, showHooks, unsetHook } from "./_internal/operations/hooks.js";
 import {
   setOption,
@@ -298,9 +299,9 @@ export class Window {
    */
   get plan(): WindowPlans {
     return {
-      kill: () => planKill("kill-window", this.id),
-      removePlacement: () => planRemoveWindowPlacement(placementTarget(this)),
-      split: (options?: SplitOptions) => planSplitWindow(this.id, options),
+      kill: () => bindPlan(this, planKill("kill-window", this.id)),
+      removePlacement: () => bindPlan(this, planRemoveWindowPlacement(placementTarget(this))),
+      split: (options?: SplitOptions) => bindPlan(this, planSplitWindow(this.id, options)),
     };
   }
 

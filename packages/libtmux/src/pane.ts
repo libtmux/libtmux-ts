@@ -65,6 +65,7 @@ import {
   swapPanes,
 } from "./_internal/operations/topology.js";
 import { planKill, planKillPaneIfUnshared, planSplitWindow } from "./_internal/operations/plans.js";
+import { bindPlan } from "./_internal/operations/plan_origin.js";
 import { refreshedHandle } from "./_internal/operations/refreshed.js";
 import { originGraphForHandle } from "./_internal/runtime/live_handle.js";
 import type { Session } from "./session.js";
@@ -276,9 +277,9 @@ export class Pane {
    */
   get plan(): PanePlans {
     return {
-      kill: () => planKill("kill-pane", this.id),
-      killIfWindowUnshared: () => planKillPaneIfUnshared(this.id),
-      split: (options?: SplitOptions) => planSplitWindow(this.id, options),
+      kill: () => bindPlan(this, planKill("kill-pane", this.id)),
+      killIfWindowUnshared: () => bindPlan(this, planKillPaneIfUnshared(this.id)),
+      split: (options?: SplitOptions) => bindPlan(this, planSplitWindow(this.id, options)),
     };
   }
 

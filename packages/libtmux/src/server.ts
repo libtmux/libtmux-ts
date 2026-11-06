@@ -1,5 +1,5 @@
 import type { CommandOptions } from "./common.js";
-import { runPipeline } from "./_internal/operations/pipeline.js";
+import { runPipeline, runPlans, withApplied } from "./_internal/operations/pipeline.js";
 import type { TmuxVersion } from "./types.js";
 import { parseTmuxVersion, tmuxVersionAtLeast } from "./_internal/runtime/tmux_version.js";
 import {
@@ -74,6 +74,7 @@ import {
   registerServerRuntime,
   runtimeForServer,
   runtimeForServerValue,
+  serverAddress,
   type RuntimeContext,
 } from "./_internal/runtime/context.js";
 import {
@@ -205,36 +206,6 @@ export interface ServerOptions {
    * present because their observer is a local tmux process.
    */
   readonly engine?: TmuxEngine;
-}
-
-/**
- * How a connection addresses its daemon, as one comparable string.
- *
- * An absolute socket path names the daemon outright. A name does not: it is
- * resolved against `TMUX_TMPDIR` (then the default tmpdir) and a per-user
- * directory, so the tmpdir in force is part of the address. tmux's own default
- * name is `default`, which is why an unnamed connection is not a third case.
- */
-function socketAddress(connection: TmuxConnection): string {
-  if (connection.socketPath !== undefined) return `path ${connection.socketPath}`;
-  const tmpdir = connection.environment.TMUX_TMPDIR ?? "";
-  return `name ${tmpdir} ${connection.socketName ?? "default"}`;
-}
-
-/**
- * Which tmux this runtime addresses, or `undefined` when that is unknowable.
- *
- * An engine's socket is a path on a machine this process cannot see, so the
- * socket alone does not name the daemon. Unknowable rather than guessed: an
- * engine that declares no endpoint is the one case where answering would mean
- * inventing the fact the comparison turns on.
- */
-function serverAddress(runtime: RuntimeContext): string | undefined {
-  const socket = socketAddress(runtime.connection);
-  if (runtime.engine === undefined) return `local ${socket}`;
-  const endpoint = runtime.engine.endpoint;
-  if (endpoint === undefined || endpoint === "") return undefined;
-  return `engine ${endpoint} ${socket}`;
 }
 
 /**
@@ -1708,6 +1679,21 @@ export class Server {
    * Not atomic, for the same reason {@link Server.pipeline} is not: tmux runs
    * them in order and stops at the first failure, leaving everything before it
    * applied.
+   *
+   * A plan belongs to the tmux server its handle came from and to the daemon
+   * that handle was read from. A `Server` for another tmux server refuses it
+   * with `TypeError`, and a daemon that has since been replaced refuses it with
+   * {@link TmuxServerRestartedError}, before any command is sent; another
+   * `Server` over the same socket and daemon runs it. Each command is also
+   * guarded inside tmux so a restart mid-batch cannot apply it to a stranger.
+   * A copy of a plan, by spread or `.map`, is checked like the original. A plan
+   * written by hand has no origin and runs here.
+   *
+   * When the batch fails after some commands ran, the error keeps its class
+   * and carries `applied`, the number of commands that had completed. The
+   * failing command is not counted, and one that timed out or was abandoned may
+   * still have taken effect. When only the final snapshot fails, `applied` is
+   * every command. A refusal before any command is sent has no `applied`.
    */
   async batch<const T extends readonly PlannedOperation<unknown>[]>(
     operations: T,
@@ -1715,10 +1701,7 @@ export class Server {
   ): Promise<{
     -readonly [K in keyof T]: T[K] extends PlannedOperation<infer R> ? R : never;
   }> {
-    const printed = await this.pipeline(
-      operations.map((operation) => operation.argv),
-      options,
-    );
+    const printed = await runPlans(runtimeForServer(this), operations, options);
     // One snapshot for the whole group, taken after every command has run, so
     // each plan reads the same instant and the group costs one snapshot rather
     // than one per mutation. It carries the caller's signal: a batch abandoned
@@ -1727,7 +1710,9 @@ export class Server {
     // already stopped waiting for.
     const snapshot = await this.snapshot(
       options?.signal === undefined ? {} : { signal: options.signal },
-    );
+    ).catch((error: unknown) => {
+      throw withApplied(error, operations.length);
+    });
     return operations.map((operation, index) =>
       operation.resolve(snapshot, printed[index] ?? []),
     ) as { -readonly [K in keyof T]: T[K] extends PlannedOperation<infer R> ? R : never };
@@ -1740,7 +1725,10 @@ export class Server {
    * identity, so a server constructed twice against one socket is equal to
    * itself. A socket *name* is not that socket: tmux resolves `-L work` under
    * `TMUX_TMPDIR`, so the same name with two different tmpdirs addresses two
-   * different daemons, and this reports them as different. Accepts `unknown`
+   * different daemons, and this reports them as different. Absolute paths are
+   * compared with `.`, `..` and doubled or trailing slashes removed; a symbolic
+   * link, a relative path, and a name against the path it resolves to are
+   * different addresses here. Accepts `unknown`
    * because the interesting comparisons are against values a caller has not
    * narrowed yet.
    *

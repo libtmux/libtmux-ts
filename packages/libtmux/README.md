@@ -900,6 +900,21 @@ const lines = await created.capture();
 - Reach for [`cmd`][ref-server-cmd] where you want the id and not the handle:
   `server.cmd("new-window", ["-d", "-P", "-F", "#{window_id}"])` is one
   invocation, and its printed line is a target every other method accepts.
+- A plan belongs to the `Server` its handle came from, and to the tmux daemon
+  that handle was read from. A `Server` for another tmux server refuses it with
+  `TypeError`, and a daemon that has since restarted refuses it with
+  `TmuxServerRestartedError`, both before any command is sent. Another `Server`
+  over the same socket and daemon may run it, and so may a copy of the plan.
+- A batch that fails after some commands ran carries `applied` on its error,
+  the number of commands that had completed; the failing command is not
+  counted, and one that timed out may still have taken effect. A refusal before
+  dispatch has no `applied`: nothing ran.
+- "The same socket" is compared by absolute path with `.`, `..` and doubled or
+  trailing slashes removed. A symbolic link, a relative path, or a `socketName`
+  against the `socketPath` it resolves to compare as different, so a plan
+  crossing between them is refused rather than guessed.
+- A plan assembled from the `argv` of one plan and the `resolve` of another is
+  refused with `TypeError`.
 
 ### [`Server.pipeline`][ref-server-pipeline]: raw arguments, one result each
 

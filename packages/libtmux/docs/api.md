@@ -1558,6 +1558,21 @@ Not atomic, for the same reason [`Server.pipeline`](#serverpipeline) is not: tmu
 them in order and stops at the first failure, leaving everything before it
 applied.
 
+A plan belongs to the tmux server its handle came from and to the daemon
+that handle was read from. A `Server` for another tmux server refuses it
+with `TypeError`, and a daemon that has since been replaced refuses it with
+`TmuxServerRestartedError`, before any command is sent; another
+`Server` over the same socket and daemon runs it. Each command is also
+guarded inside tmux so a restart mid-batch cannot apply it to a stranger.
+A copy of a plan, by spread or `.map`, is checked like the original. A plan
+written by hand has no origin and runs here.
+
+When the batch fails after some commands ran, the error keeps its class
+and carries `applied`, the number of commands that had completed. The
+failing command is not counted, and one that timed out or was abandoned may
+still have taken effect. When only the final snapshot fails, `applied` is
+every command. A refusal before any command is sent has no `applied`.
+
 ```ts
 const [editor, logs] = await server.batch([
   session.plan.newWindow({ name: "editor" }),

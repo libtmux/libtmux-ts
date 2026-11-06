@@ -21,6 +21,7 @@ import { LibTmuxError } from "./errors.js";
 import { setHook, showHooks, unsetHook } from "./_internal/operations/hooks.js";
 import { killTarget, newWindow } from "./_internal/operations/mutations.js";
 import { planKill, planNewWindow } from "./_internal/operations/plans.js";
+import { bindPlan } from "./_internal/operations/plan_origin.js";
 import {
   setOption,
   showOptions,
@@ -383,8 +384,8 @@ export class Session {
    */
   get plan(): SessionPlans {
     return {
-      kill: () => planKill("kill-session", this.id),
-      newWindow: (options?: NewWindowOptions) => planNewWindow(this.id, options),
+      kill: () => bindPlan(this, planKill("kill-session", this.id)),
+      newWindow: (options?: NewWindowOptions) => bindPlan(this, planNewWindow(this.id, options)),
     };
   }
 

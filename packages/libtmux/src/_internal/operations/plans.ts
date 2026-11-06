@@ -56,7 +56,10 @@ function newSessionArgs(options: NewSessionOptions): readonly string[] {
   ];
 }
 
-function newWindowArgs(sessionId: string | null, options: NewWindowOptions): readonly string[] {
+function newWindowArgs(
+  sessionId: string | null,
+  options: NewWindowOptions,
+): readonly string[] {
   if (options.index !== undefined) {
     if (!Number.isInteger(options.index) || options.index < 0 || options.index > 2_147_483_647) {
       throw new TypeError("window index must be an integer from 0 to 2147483647");
@@ -89,7 +92,10 @@ function renderSplitSize(value: NonNullable<SplitOptions["size"]>): string {
   return String(authenticateSplitSize(value));
 }
 
-function splitWindowArgs(target: string | null, options: SplitOptions): readonly string[] {
+function splitWindowArgs(
+  target: string | null,
+  options: SplitOptions,
+): readonly string[] {
   if (options.direction !== undefined && options.vertical !== undefined) {
     throw new TypeError("Choose direction without the deprecated vertical option");
   }
