@@ -727,6 +727,51 @@ describe("lifecycle mutations", () => {
       });
     }, 40_000);
 
+    test("honours a plan's own aborted signal and never runs its command", async () => {
+      await withServer(async (fixture) => {
+        const server = serverFor(fixture);
+        const session = (await server.snapshot()).sessions.one();
+        const controller = new AbortController();
+        controller.abort();
+
+        await expect(
+          server.batch([
+            session.plan.newWindow({ name: "before" }),
+            session.plan.newWindow({ name: "aborted", signal: controller.signal }),
+            session.plan.newWindow({ name: "after" }),
+          ]),
+        ).rejects.toMatchObject({ code: "TmuxTransportError", kind: "cancelled" });
+
+        const windows = (await server.snapshot()).windows;
+        expect(windows.count({ name: "before" })).toBe(1);
+        expect(windows.count({ name: "aborted" })).toBe(0);
+        expect(windows.count({ name: "after" })).toBe(0);
+      });
+    }, 40_000);
+
+    test("stops the batch when a plan's signal fires while an earlier command runs", async () => {
+      await withServer(async (fixture) => {
+        const controller = new AbortController();
+        const server = new Server({
+          environment: fixture.controllerEnvironment,
+          onInvocation: (report) => {
+            if (report.commands.some((command) => command.includes("first"))) controller.abort();
+          },
+          socketPath: fixture.socketPath,
+          tmuxBin: fixture.tmuxExecutable,
+        });
+        const session = (await server.snapshot()).sessions.one();
+
+        await expect(
+          server.batch([
+            session.plan.newWindow({ name: "first" }),
+            session.plan.newWindow({ name: "second", signal: controller.signal }),
+          ]),
+        ).rejects.toMatchObject({ code: "TmuxTransportError", kind: "cancelled" });
+        expect((await server.snapshot()).windows.count({ name: "second" })).toBe(0);
+      });
+    }, 40_000);
+
     test("refuses a plan whose argv and resolver came from different servers", async () => {
       await withServer(async (fixture) => {
         const server = serverFor(fixture);
@@ -753,6 +798,72 @@ describe("lifecycle mutations", () => {
           expect((await other.snapshot()).sessions.count()).toBe(2);
           expect((await server.snapshot()).sessions.exists({ name: "mine" })).toBe(true);
         });
+      });
+    }, 40_000);
+
+    test("refuses every plan's bad timeout before any command runs", async () => {
+      await withServer(async (fixture) => {
+        const server = serverFor(fixture);
+        const session = (await server.snapshot()).sessions.one();
+
+        for (const bad of [2 ** 40, 1.5, -1, 0]) {
+          /* eslint-disable no-await-in-loop -- each refusal is checked before the next. */
+          await expect(
+            server.batch([
+              session.plan.newWindow({ name: "ran" }),
+              session.plan.newWindow({ name: "bad", timeoutMs: bad }),
+            ]),
+          ).rejects.toThrow(TypeError);
+          await expect(
+            server.batch([session.plan.newWindow({ name: "ran" })], { timeoutMs: bad }),
+          ).rejects.toThrow(TypeError);
+          /* eslint-enable no-await-in-loop */
+        }
+        // `null` is a named choice, not a bad number.
+        await expect(
+          server.batch([session.plan.newWindow({ name: "fine", timeoutMs: null })]),
+        ).resolves.toHaveLength(1);
+
+        expect((await server.snapshot()).windows.count({ name: "ran" })).toBe(0);
+      });
+    }, 40_000);
+
+    test("says how many commands a failed batch had applied", async () => {
+      await withServer(async (fixture) => {
+        const server = serverFor(fixture);
+        const session = (await server.snapshot()).sessions.one();
+        const controller = new AbortController();
+        controller.abort();
+        const applied = (error: unknown): unknown => (error as { applied?: unknown }).applied;
+
+        // A tmux refusal at the third command.
+        const refused = await server
+          .batch([
+            session.plan.newWindow({ name: "one" }),
+            session.plan.newWindow({ name: "two" }),
+            { argv: ["new-window", "-t", "$999999"], resolve: () => undefined },
+            session.plan.newWindow({ name: "never" }),
+          ])
+          .catch((error: unknown) => error);
+        expect(refused).toBeInstanceOf(TmuxCommandError);
+        expect(applied(refused)).toBe(2);
+
+        // A signal that fired before the second command.
+        const cancelled = await server
+          .batch([
+            session.plan.newWindow({ name: "three" }),
+            session.plan.newWindow({ name: "four", signal: controller.signal }),
+          ])
+          .catch((error: unknown) => error);
+        expect(cancelled).toMatchObject({ code: "TmuxTransportError", kind: "cancelled" });
+        expect(applied(cancelled)).toBe(1);
+
+        // A refusal before dispatch ran nothing, so it carries no count.
+        const early = await server
+          .batch([session.plan.newWindow({ name: "x" }), { argv: [], resolve: () => undefined }])
+          .catch((error: unknown) => error);
+        expect(early).toBeInstanceOf(TypeError);
+        expect(applied(early)).toBeUndefined();
       });
     }, 40_000);
 

@@ -4,7 +4,7 @@ import { FORMAT_FIELD_TOKENS } from "../../src/_generated/format_fields.js";
 import type { ConnectionAlias, DaemonEpoch, LogicalRef } from "../../src/common.js";
 import { safeInteger } from "../../src/common.js";
 import { LibTmuxError, QueryValidationError, TmuxServerRestartedError } from "../../src/errors.js";
-import type { PlannedOperation } from "../../src/types.js";
+import type { AbortLike, PlannedOperation } from "../../src/types.js";
 import {
   CLIENT_ALIASES,
   PANE_ALIASES,
@@ -61,6 +61,7 @@ import type {
 } from "../../src/_internal/transport/types.js";
 import { flattenInvocation } from "../../src/_internal/transport/invocation.js";
 import { WHERE_FIELDS_V1, type WhereModel } from "../../src/_generated/where_fields.js";
+import { runPlans } from "../../src/_internal/operations/pipeline.js";
 import { assertPlanRunnable } from "../../src/_internal/operations/plan_origin.js";
 import { Pane } from "../../src/pane.js";
 import { Server, type ServerOptions } from "../../src/server.js";
@@ -1167,6 +1168,32 @@ describe("authenticated handle materialization", () => {
     ]);
   });
 
+  test("a batch runs each plan under its own deadline and the shorter of the two", async () => {
+    const fixture = runtimeFixture();
+    const graph = await graphFor(fixture.runtime, [
+      source("sessions", "list-sessions", [completeFormatRow({ session_id: "$1" })]),
+    ]);
+    const session = (
+      await materializeProjectionMembers(fixture.server, projectionFor(graph, "sessions"), graph)
+    )[0] as Session;
+    fixture.transport.requests.length = 0;
+
+    await runPlans(
+      fixture.runtime,
+      [
+        session.plan.newWindow({ timeoutMs: 5_000 }),
+        session.plan.newWindow({ timeoutMs: 20_000 }),
+        session.plan.newWindow({ timeoutMs: null }),
+        session.plan.newWindow({}),
+      ],
+      { timeoutMs: 10_000 },
+    );
+
+    expect(fixture.transport.requests.map((request) => request.timeoutMs)).toEqual([
+      5_000, 10_000, 10_000, 10_000,
+    ]);
+  });
+
   test("materializes an authenticated reachable non-root relation record", async () => {
     const fixture = runtimeFixture({ alias: "reachable-relation" });
     const windowRow = completeFormatRow({
@@ -1729,5 +1756,88 @@ describe("a plan keeps the Server and daemon it was written for", () => {
 
     expect(() => assertPlanRunnable(other.runtime, byHand)).not.toThrow();
     expect(() => assertPlanRunnable(other.runtime, { ...byHand })).not.toThrow();
+  });
+
+  test("a plan builder refuses stdin, which only a direct call can feed", async () => {
+    const fixture = runtimeFixture();
+    const graph = await graphFor(fixture.runtime, [
+      source("sessions", "list-sessions", [completeFormatRow({ session_id: "$1" })]),
+      source("windows", "list-windows", [
+        completeFormatRow({ session_id: "$1", window_id: "@1", window_index: "1" }),
+      ]),
+      source("panes", "list-panes", [
+        completeFormatRow({
+          pane_id: "%1",
+          session_id: "$1",
+          window_id: "@1",
+          window_index: "1",
+        }),
+      ]),
+    ]);
+    const [session] = await materializeProjectionMembers(
+      fixture.server,
+      projectionFor(graph, "sessions"),
+      graph,
+    );
+    const [window] = await materializeProjectionMembers(
+      fixture.server,
+      projectionFor(graph, "windows"),
+      graph,
+    );
+    const [pane] = await materializeProjectionMembers(
+      fixture.server,
+      projectionFor(graph, "panes"),
+      graph,
+    );
+    const stdin = { stdin: "echo" } as never;
+
+    expect(() => (session as Session).plan.newWindow(stdin)).toThrow(/stdin/u);
+    expect(() => (window as Window).plan.split(stdin)).toThrow(/stdin/u);
+    expect(() => (pane as Pane).plan.split(stdin)).toThrow(/stdin/u);
+    expect(() => (session as Session).plan.newWindow({ timeoutMs: 1_000 })).not.toThrow();
+  });
+});
+
+describe("a batch's combined signal", () => {
+  /** A signal that counts the listeners it holds. */
+  function countingSignal(): AbortLike & { readonly held: () => number } {
+    const listeners = new Set<unknown>();
+    return {
+      aborted: false,
+      addEventListener: (_type: string, listener: unknown) => void listeners.add(listener),
+      held: () => listeners.size,
+      reason: undefined,
+      removeEventListener: (_type: string, listener: unknown) => void listeners.delete(listener),
+    } as never;
+  }
+
+  test("leaves no listener on either signal when the command throws", async () => {
+    let failing = false;
+    const fixture = runtimeFixture({
+      alias: "listeners",
+      onExecute: () => {
+        // The command never reaches tmux: the transport refuses it outright.
+        if (failing) throw new Error("spawn failed");
+      },
+    });
+    const graph = await graphFor(fixture.runtime, [
+      source("sessions", "list-sessions", [completeFormatRow({ session_id: "$1" })]),
+    ]);
+    const [session] = (await materializeProjectionMembers(
+      fixture.server,
+      projectionFor(graph, "sessions"),
+      graph,
+    )) as Session[];
+    const batchSignal = countingSignal();
+    const planSignal = countingSignal();
+    const plans = [session!.plan.newWindow({ signal: planSignal })];
+    failing = true;
+
+    await expect(runPlans(fixture.runtime, plans, { signal: batchSignal })).rejects.toThrow(
+      /spawn failed/u,
+    );
+
+    expect(batchSignal.held()).toBe(0);
+    expect(planSignal.held()).toBe(0);
   });
 });

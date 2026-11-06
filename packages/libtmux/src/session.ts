@@ -6,7 +6,12 @@ import {
   showEnvironment,
   unsetEnvironment,
 } from "./_internal/operations/environment.js";
-import type { EnvironmentValue, PlannedOperation, SetEnvironmentOptions } from "./types.js";
+import type {
+  EnvironmentValue,
+  PlanOptions,
+  PlannedOperation,
+  SetEnvironmentOptions,
+} from "./types.js";
 import type { CmdOptions } from "./types.js";
 import { runRawCommand } from "./_internal/operations/raw.js";
 import type { SetHookOptions } from "./types.js";
@@ -20,7 +25,7 @@ import { panesOfSession, windowsOfSession } from "./_internal/operations/relatio
 import { LibTmuxError } from "./errors.js";
 import { setHook, showHooks, unsetHook } from "./_internal/operations/hooks.js";
 import { killTarget, newWindow } from "./_internal/operations/mutations.js";
-import { planKill, planNewWindow } from "./_internal/operations/plans.js";
+import { planKill, planNewWindow, refuseStdin } from "./_internal/operations/plans.js";
 import { bindPlan } from "./_internal/operations/plan_origin.js";
 import {
   setOption,
@@ -46,7 +51,8 @@ import type { Server } from "./server.js";
 /** What {@link Session.plan} offers, one entry per mutation it can describe. */
 export interface SessionPlans {
   readonly kill: () => PlannedOperation<void>;
-  readonly newWindow: (options?: NewWindowOptions) => PlannedOperation<Window>;
+  /** @throws TypeError when `options` carries `stdin`, which a plan cannot feed. */
+  readonly newWindow: (options?: PlanOptions<NewWindowOptions>) => PlannedOperation<Window>;
 }
 
 /**
@@ -385,7 +391,10 @@ export class Session {
   get plan(): SessionPlans {
     return {
       kill: () => bindPlan(this, planKill("kill-session", this.id)),
-      newWindow: (options?: NewWindowOptions) => bindPlan(this, planNewWindow(this.id, options)),
+      newWindow: (options?: PlanOptions<NewWindowOptions>) => {
+        refuseStdin(options, "session.plan.newWindow");
+        return bindPlan(this, planNewWindow(this.id, options));
+      },
     };
   }
 

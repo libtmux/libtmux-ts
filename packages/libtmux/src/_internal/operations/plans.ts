@@ -1,9 +1,11 @@
 import { PANE_DIRECTION_FLAG_MAP, WINDOW_DIRECTION_FLAG_MAP } from "../../constants.js";
+import type { CommandOptions } from "../../common.js";
 import { LibTmuxError } from "../../errors.js";
 import {
   splitSize as authenticateSplitSize,
   type NewSessionOptions,
   type NewWindowOptions,
+  type PlanOptions,
   type PlannedOperation,
   type SplitOptions,
 } from "../../types.js";
@@ -13,6 +15,29 @@ import type { Window } from "../../window.js";
 import { quoteCommand } from "../transport/lexer.js";
 import { uniqueUnknownCommand } from "../transport/refusal.js";
 import { assertName } from "./names.js";
+
+/** What a plan carries of the options its direct call would honour. */
+function planOptions(options: CommandOptions): NonNullable<PlannedOperation<unknown>["options"]> {
+  const { signal, timeoutMs } = options;
+  return {
+    ...(signal === undefined ? {} : { signal }),
+    ...(timeoutMs === undefined ? {} : { timeoutMs }),
+  };
+}
+
+/**
+ * Refuse the one option a plan cannot carry.
+ *
+ * The types already do; this is for the caller they do not reach, because a
+ * `stdin` that is accepted and ignored reads as one that was fed.
+ */
+export function refuseStdin(options: object | undefined, builder: string): void {
+  if ((options as { readonly stdin?: unknown } | undefined)?.stdin !== undefined) {
+    throw new TypeError(
+      `${builder} describes a command without running it, so it takes no stdin: a plan honours signal and timeoutMs, and stdin belongs to the direct call.`,
+    );
+  }
+}
 
 function requireIdentity(lines: readonly string[], command: string): string {
   const identity = lines[0];
@@ -58,7 +83,7 @@ function newSessionArgs(options: NewSessionOptions): readonly string[] {
 
 function newWindowArgs(
   sessionId: string | null,
-  options: NewWindowOptions,
+  options: PlanOptions<NewWindowOptions>,
 ): readonly string[] {
   if (options.index !== undefined) {
     if (!Number.isInteger(options.index) || options.index < 0 || options.index > 2_147_483_647) {
@@ -94,7 +119,7 @@ function renderSplitSize(value: NonNullable<SplitOptions["size"]>): string {
 
 function splitWindowArgs(
   target: string | null,
-  options: SplitOptions,
+  options: PlanOptions<SplitOptions>,
 ): readonly string[] {
   if (options.direction !== undefined && options.vertical !== undefined) {
     throw new TypeError("Choose direction without the deprecated vertical option");
@@ -124,6 +149,7 @@ function splitWindowArgs(
 export function planNewSession(options: NewSessionOptions = {}): PlannedOperation<Session> {
   return {
     argv: newSessionArgs(options),
+    options: planOptions(options),
     resolve: (snapshot, lines) => {
       const identity = requireIdentity(lines, "new-session");
       return found(snapshot.sessions.first({ id: identity }), "new-session", identity);
@@ -133,10 +159,11 @@ export function planNewSession(options: NewSessionOptions = {}): PlannedOperatio
 
 export function planNewWindow(
   sessionId: string | null,
-  options: NewWindowOptions = {},
+  options: PlanOptions<NewWindowOptions> = {},
 ): PlannedOperation<Window> {
   return {
     argv: newWindowArgs(sessionId, options),
+    options: planOptions(options),
     resolve: (snapshot, lines) => {
       const identity = requireIdentity(lines, "new-window");
       return found(
@@ -154,10 +181,11 @@ export function planNewWindow(
 
 export function planSplitWindow(
   target: string | null,
-  options: SplitOptions = {},
+  options: PlanOptions<SplitOptions> = {},
 ): PlannedOperation<Pane> {
   return {
     argv: splitWindowArgs(target, options),
+    options: planOptions(options),
     resolve: (snapshot, lines) => {
       const identity = requireIdentity(lines, "split-window");
       return found(snapshot.panes.first({ id: identity }), "split-window", identity);

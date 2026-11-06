@@ -905,6 +905,16 @@ const lines = await created.capture();
   `TypeError`, and a daemon that has since restarted refuses it with
   `TmuxServerRestartedError`, both before any command is sent. Another `Server`
   over the same socket and daemon may run it, and so may a copy of the plan.
+- A plan builder takes the direct call's options except `stdin`. An object
+  literal that names it is a compile error; a value held in a variable is not
+  checked by the compiler, so the builder also refuses it at run time with
+  `TypeError`.
+- A plan's `signal` and `timeoutMs` bound its own command, and combine with the
+  batch's: either signal abandons the command, and the shorter deadline wins. A
+  plan's `timeoutMs: null` means no deadline of its own and does not relax a
+  deadline the batch names. Every deadline is validated before the first command
+  runs, so `2 ** 40`, `1.5` and `-1` refuse the whole batch. A signal that has
+  already fired stops the batch before that command is sent.
 - A batch that fails after some commands ran carries `applied` on its error,
   the number of commands that had completed; the failing command is not
   counted, and one that timed out may still have taken effect. A refusal before

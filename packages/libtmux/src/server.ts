@@ -1689,6 +1689,14 @@ export class Server {
    * A copy of a plan, by spread or `.map`, is checked like the original. A plan
    * written by hand has no origin and runs here.
    *
+   * A plan's own `signal` and `timeoutMs` bound its own command and combine
+   * with `options`: either signal abandons the command, and the shorter
+   * deadline applies. A plan's `timeoutMs: null` means no deadline of its own,
+   * not "lift the batch's": it does not relax a deadline `options` names, and
+   * relaxes only the server's default when `options` names none. Every
+   * deadline is validated before the first command runs. A signal that has
+   * already fired stops the batch before its command is sent.
+   *
    * When the batch fails after some commands ran, the error keeps its class
    * and carries `applied`, the number of commands that had completed. The
    * failing command is not counted, and one that timed out or was abandoned may

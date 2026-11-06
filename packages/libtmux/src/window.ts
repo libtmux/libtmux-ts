@@ -1,4 +1,4 @@
-import type { CmdOptions, PlannedOperation } from "./types.js";
+import type { CmdOptions, PlanOptions, PlannedOperation } from "./types.js";
 import { runRawCommand } from "./_internal/operations/raw.js";
 import type { SetHookOptions, SetOptionOptions } from "./types.js";
 import type {
@@ -19,6 +19,7 @@ import {
   planKill,
   planRemoveWindowPlacement,
   planSplitWindow,
+  refuseStdin,
 } from "./_internal/operations/plans.js";
 import { bindPlan } from "./_internal/operations/plan_origin.js";
 import { setHook, showHooks, unsetHook } from "./_internal/operations/hooks.js";
@@ -73,8 +74,11 @@ function destinationFor(
 export interface WindowPlans {
   readonly kill: () => PlannedOperation<void>;
   readonly removePlacement: () => PlannedOperation<void>;
-  /** @throws TypeError when `options` combines `direction` with `vertical`. */
-  readonly split: (options?: SplitOptions) => PlannedOperation<Pane>;
+  /**
+   * @throws TypeError when `options` combines `direction` with `vertical`, or
+   * carries `stdin`, which a plan cannot feed.
+   */
+  readonly split: (options?: PlanOptions<SplitOptions>) => PlannedOperation<Pane>;
 }
 
 /**
@@ -301,7 +305,10 @@ export class Window {
     return {
       kill: () => bindPlan(this, planKill("kill-window", this.id)),
       removePlacement: () => bindPlan(this, planRemoveWindowPlacement(placementTarget(this))),
-      split: (options?: SplitOptions) => bindPlan(this, planSplitWindow(this.id, options)),
+      split: (options?: PlanOptions<SplitOptions>) => {
+        refuseStdin(options, "window.plan.split");
+        return bindPlan(this, planSplitWindow(this.id, options));
+      },
     };
   }
 

@@ -1,6 +1,20 @@
 import { expect, test } from "bun:test";
 
-import { withApplied } from "../../src/_internal/operations/pipeline.js";
+import { tighterDeadline, withApplied } from "../../src/_internal/operations/pipeline.js";
+
+test("the tighter deadline wins, and a plan's null never relaxes the batch's number", () => {
+  expect(tighterDeadline(500, 2_000)).toBe(500);
+  expect(tighterDeadline(2_000, 500)).toBe(500);
+  expect(tighterDeadline(null, 500)).toBe(500);
+  expect(tighterDeadline(500, null)).toBe(500);
+});
+
+test("null stands only when neither side names a number", () => {
+  expect(tighterDeadline(null, undefined)).toBeNull();
+  expect(tighterDeadline(undefined, null)).toBeNull();
+  expect(tighterDeadline(undefined, undefined)).toBeUndefined();
+  expect(tighterDeadline(undefined, 500)).toBe(500);
+});
 
 test("withApplied keeps the error's class and message, and tolerates frozen errors", () => {
   class Mine extends Error {}

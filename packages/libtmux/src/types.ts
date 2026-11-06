@@ -1292,6 +1292,24 @@ export interface ConnectedServer extends Server, AsyncDisposable {
  */
 export interface PlannedOperation<T> {
   readonly argv: readonly string[];
+  /**
+   * The `signal` and `timeoutMs` the plan was written with, which bound its
+   * own command when a batch runs it.
+   *
+   * They combine with the batch's own: either signal abandons the command,
+   * and the shorter deadline applies. A plan that names none is bound by
+   * the batch's alone.
+   */
+  readonly options?: Pick<CommandOptions, "signal" | "timeoutMs">;
   /** What `argv` produced, read out of a snapshot taken after it ran. */
   readonly resolve: (snapshot: ServerSnapshot, lines: readonly string[]) => T;
 }
+
+/**
+ * The options a plan builder takes: the direct call's, less `stdin`.
+ *
+ * A plan honours `signal` and `timeoutMs` when {@link Server.batch} runs it. It
+ * describes a command without running one, so there is nothing to feed `stdin`
+ * to.
+ */
+export type PlanOptions<T extends CommandOptions> = Omit<T, "stdin">;
