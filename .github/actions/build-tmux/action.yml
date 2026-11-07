@@ -1,5 +1,5 @@
 name: Build tmux
-description: Build tmux from a release, tag, branch or commit of github.com/tmux/tmux, cached by the commit it resolves to.
+description: Restore a validated tmux build, or build it, for a release, tag, branch or commit of github.com/tmux/tmux.
 
 inputs:
   ref:
@@ -7,44 +7,64 @@ inputs:
     required: true
 
 outputs:
-  commit:
-    description: The commit the ref resolved to.
-    value: ${{ steps.resolve.outputs.commit }}
   prefix:
     description: The directory tmux is installed under; its bin/ holds tmux.
-    value: ${{ steps.resolve.outputs.prefix }}
+    value: ${{ steps.plan.outputs.prefix }}
 
 runs:
   using: composite
   steps:
-    # The cache key is the commit, so a branch name never serves a stale build.
-    # The image name is in it because a build links the libraries of the image
-    # that made it.
-    - name: Resolve tmux ${{ inputs.ref }}
-      id: resolve
-      shell: bash
-      env:
-        TMUX_REF: ${{ inputs.ref }}
-      run: |
-        commit=$("$GITHUB_WORKSPACE/scripts/build-tmux.sh" resolve "$TMUX_REF")
-        echo "commit=$commit" >> "$GITHUB_OUTPUT"
-        echo "prefix=$HOME/tmux-builds/$commit" >> "$GITHUB_OUTPUT"
-
-    - name: Cache the tmux build for ${{ inputs.ref }}
-      id: cache
-      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+    # .github/scripts/tmux_build.py needs Python 3.11 for tomllib, which an
+    # older runner image does not ship. update-environment is off so no other
+    # step sees this interpreter.
+    - name: Set up Python for the tmux build
+      id: python
+      uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
       with:
-        path: ${{ steps.resolve.outputs.prefix }}
-        key: tmux-${{ env.ImageOS }}-${{ steps.resolve.outputs.commit }}
+        python-version: "3.13"
+        update-environment: false
 
-    - name: Build tmux ${{ inputs.ref }}
-      if: steps.cache.outputs.cache-hit != 'true'
+    # Installed before the key is computed and before a restored build is
+    # validated: the key names the versions of these packages.
+    - name: Install tmux build and runtime dependencies
       shell: bash
-      env:
-        TMUX_REF: ${{ inputs.ref }}
-        TMUX_PREFIX: ${{ steps.resolve.outputs.prefix }}
       run: |
         "$GITHUB_WORKSPACE/scripts/apt-get.sh" update
-        "$GITHUB_WORKSPACE/scripts/apt-get.sh" install --yes libevent-dev libncurses5-dev libtinfo-dev \
-          libutempter-dev bison autoconf automake pkg-config
-        "$GITHUB_WORKSPACE/scripts/build-tmux.sh" build "$TMUX_REF" "$TMUX_PREFIX"
+        "$GITHUB_WORKSPACE/scripts/apt-get.sh" install --yes --no-install-recommends \
+          autoconf automake bison build-essential libevent-dev \
+          libncurses-dev libutempter-dev pkg-config
+
+    # The key holds the runner image and its version, the architecture,
+    # compiler and dependency versions, the source (a release's pinned
+    # checksum, or the commit a ref resolves to) and the build script. A branch
+    # name never serves a stale build, and an image change never serves a build
+    # linked against the previous image's libraries.
+    - name: Identify tmux ${{ inputs.ref }} source and build environment
+      id: plan
+      shell: bash
+      env:
+        PYTHON: ${{ steps.python.outputs.python-path }}
+        TMUX_VERSION: ${{ inputs.ref }}
+      run: '"$PYTHON" "$GITHUB_WORKSPACE/.github/scripts/tmux_build.py" plan "$TMUX_VERSION"'
+
+    - name: Restore tmux ${{ inputs.ref }}
+      id: cache
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ steps.plan.outputs.prefix }}
+        key: ${{ steps.plan.outputs.key }}
+
+    - name: Validate or rebuild tmux ${{ inputs.ref }}
+      shell: bash
+      env:
+        PYTHON: ${{ steps.python.outputs.python-path }}
+        TMUX_VERSION: ${{ inputs.ref }}
+        CACHE_HIT: ${{ steps.cache.outputs.cache-hit }}
+      run: '"$PYTHON" "$GITHUB_WORKSPACE/.github/scripts/tmux_build.py" prepare "$TMUX_VERSION"'
+
+    - name: Save validated tmux ${{ inputs.ref }}
+      if: steps.cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ steps.plan.outputs.prefix }}
+        key: ${{ steps.plan.outputs.key }}
