@@ -9,6 +9,7 @@ import {
   isSafeInteger,
   type CommandOptions,
   type PaneId,
+  type PaneRef,
   type SafeInteger,
   type SessionId,
   type WindowId,
@@ -405,6 +406,54 @@ export interface CaptureOptions extends CommandOptions {
   /** First line to capture; negative reaches into scrollback history. */
   readonly start?: number;
 }
+
+/** One capture's literal text lookup, with text admission and retained-match bounds. */
+export interface LocateTextOptions extends CaptureOptions {
+  /** Positive safe integer; defaults to 1024 retained matches. */
+  readonly maxMatches?: number;
+  /** Positive safe integer; defaults to 1,048,576 UTF-16 code units, including joined newlines. */
+  readonly maxTextCodeUnits?: number;
+}
+
+/** Zero-based UTF-16 positions in the returned capture lines joined with LF. Ends are exclusive. */
+export interface TextLocation {
+  readonly startUtf16: number;
+  readonly endUtf16: number;
+  readonly startLineIndex: number;
+  readonly startLineOffsetUtf16: number;
+  readonly endLineIndex: number;
+  readonly endLineOffsetUtf16: number;
+}
+
+/** An immutable sample owned by a locator result, without live actions or observer continuity. */
+export interface TextLocatorObservation {
+  readonly kind: "sampled_text";
+  readonly target: PaneRef;
+  readonly lines: readonly string[];
+  readonly capture: Readonly<
+    Pick<CaptureOptions, "start" | "end" | "alternateScreen" | "escapeSequences" | "joinWrapped">
+  >;
+  /** This controller's monotonic clock, before dispatch and after receipt. */
+  readonly startedMonotonicMs: number;
+  readonly completedMonotonicMs: number;
+}
+
+interface TextLocatorResultBase {
+  readonly observation: TextLocatorObservation;
+  readonly literal: string;
+  readonly matches: readonly TextLocation[];
+  /** Exact unless truncated; then includes the one additional match establishing overflow. */
+  readonly matchCountAtLeast: number;
+  readonly truncated: boolean;
+}
+
+/** Only a unique result exposes a strict single match. */
+export type TextLocatorResult = TextLocatorResultBase &
+  (
+    | { readonly status: "missing"; readonly match?: never }
+    | { readonly status: "unique"; readonly match: TextLocation }
+    | { readonly status: "ambiguous"; readonly match?: never }
+  );
 
 export interface SaveBufferOptions extends CommandOptions {
   /** Append to the file rather than replacing it, tmux's `-a`. */

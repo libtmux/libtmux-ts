@@ -2456,7 +2456,7 @@ window.sameTmuxIdAs(other);
 
 ## Pane
 
-[`server`](#paneserver) · [`window`](#panewindow) · [`session`](#panesession) · [`showHooks`](#paneshowhooks) · [`setHook`](#panesethook) · [`unsetHook`](#paneunsethook) · [`showOptions`](#paneshowoptions) · [`showResolvedOptions`](#paneshowresolvedoptions) · [`setOption`](#panesetoption) · [`unsetOption`](#paneunsetoption) · [`split`](#panesplit) · [`kill`](#panekill) · [`killIfWindowUnshared`](#panekillifwindowunshared) · [`plan`](#paneplan) · [`sendKeys`](#panesendkeys) · [`capture`](#panecapture) · [`waitForExit`](#panewaitforexit) · [`waitForCommand`](#panewaitforcommand) · [`waitForText`](#panewaitfortext) · [`clearHistory`](#paneclearhistory) · [`resize`](#paneresize) · [`zoom`](#panezoom) · [`unzoom`](#paneunzoom) · [`swapWith`](#paneswapwith) · [`select`](#paneselect) · [`setTitle`](#panesettitle) · [`pasteBuffer`](#panepastebuffer) · [`refreshed`](#panerefreshed) · [`displayMessage`](#panedisplaymessage) · [`respawn`](#panerespawn) · [`pipeTo`](#panepipeto) · [`breakOut`](#panebreakout) · [`joinTo`](#panejointo) · [`enterCopyMode`](#paneentercopymode) · [`exitCopyMode`](#paneexitcopymode) · [`displayPopup`](#panedisplaypopup) · [`displayMenu`](#panedisplaymenu) · [`chooseTree`](#panechoosetree) · [`chooseBuffer`](#panechoosebuffer) · [`findWindow`](#panefindwindow) · [`sendPrefix`](#panesendprefix) · [`customizeMode`](#panecustomizemode) · [`cmd`](#panecmd) · [`sameTmuxIdAs`](#panesametmuxidas)
+[`server`](#paneserver) · [`window`](#panewindow) · [`session`](#panesession) · [`showHooks`](#paneshowhooks) · [`setHook`](#panesethook) · [`unsetHook`](#paneunsethook) · [`showOptions`](#paneshowoptions) · [`showResolvedOptions`](#paneshowresolvedoptions) · [`setOption`](#panesetoption) · [`unsetOption`](#paneunsetoption) · [`split`](#panesplit) · [`kill`](#panekill) · [`killIfWindowUnshared`](#panekillifwindowunshared) · [`plan`](#paneplan) · [`sendKeys`](#panesendkeys) · [`capture`](#panecapture) · [`locateText`](#panelocatetext) · [`waitForExit`](#panewaitforexit) · [`waitForCommand`](#panewaitforcommand) · [`waitForText`](#panewaitfortext) · [`clearHistory`](#paneclearhistory) · [`resize`](#paneresize) · [`zoom`](#panezoom) · [`unzoom`](#paneunzoom) · [`swapWith`](#paneswapwith) · [`select`](#paneselect) · [`setTitle`](#panesettitle) · [`pasteBuffer`](#panepastebuffer) · [`refreshed`](#panerefreshed) · [`displayMessage`](#panedisplaymessage) · [`respawn`](#panerespawn) · [`pipeTo`](#panepipeto) · [`breakOut`](#panebreakout) · [`joinTo`](#panejointo) · [`enterCopyMode`](#paneentercopymode) · [`exitCopyMode`](#paneexitcopymode) · [`displayPopup`](#panedisplaypopup) · [`displayMenu`](#panedisplaymenu) · [`chooseTree`](#panechoosetree) · [`chooseBuffer`](#panechoosebuffer) · [`findWindow`](#panefindwindow) · [`sendPrefix`](#panesendprefix) · [`customizeMode`](#panecustomizemode) · [`cmd`](#panecmd) · [`sameTmuxIdAs`](#panesametmuxidas)
 
 ### Properties
 
@@ -2719,6 +2719,26 @@ try {
   }
 }
 if (failures.length > 0) throw new AggregateError(failures, "Capture failed");
+```
+
+#### `Pane.locateText`
+
+```ts
+locateText(literal: string, options?: LocateTextOptions): Promise<TextLocatorResult>
+```
+
+Locate a literal in one retained capture, including overlapping matches.
+
+Offsets count UTF-16 code units in capture lines joined with LF, without
+normalization. Line indices refer to those returned lines, including when
+joinWrapped changes their shape. A retained result never follows redraws.
+
+@throws TypeError for an empty literal or invalid positive integer limits.
+@throws RangeError when the literal or captured text exceeds maxTextCodeUnits.
+
+```ts
+const located = await pane.locateText("ready");
+if (located.status === "unique") located.match.startUtf16;
 ```
 
 #### `Pane.waitForExit`
