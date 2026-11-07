@@ -11,7 +11,14 @@ import type { Server } from "./server.js";
 import type { Session } from "./session.js";
 import type { Window } from "./window.js";
 
-/** Compile a regex under the deterministic selection-query work budget. */
+/**
+ * Compile a regex under the deterministic selection-query work budget.
+ *
+ * ```ts
+ * import { compileBoundedRegex } from "libtmux";
+ * compileBoundedRegex("^work-[0-9]+$").test("work-12"); // true
+ * ```
+ */
 export function compileBoundedRegex(pattern: string): RegExp {
   return compileRegex(pattern);
 }

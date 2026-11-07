@@ -411,7 +411,7 @@ describe("package contract", () => {
    * `0.1.0` is where every one in this package goes: the alphas precede it,
    * and semantic versioning starts applying there.
    */
-  test("names a removal point on every deprecation", async () => {
+  test("says what is true of every deprecation in this release", async () => {
     const root = new URL("../../src/", import.meta.url).pathname;
     const missing: string[] = [];
     let tags = 0;
@@ -421,7 +421,7 @@ describe("package contract", () => {
       for (const block of text.matchAll(/\/\*\*[\s\S]*?\*\//gu)) {
         if (!block[0].includes("@deprecated")) continue;
         tags += 1;
-        if (!/Removed at `0\.1\.0`/u.test(block[0])) {
+        if (!/Exported in 0\.1\.x; no removal is scheduled\./u.test(block[0])) {
           missing.push(`${relative}: ${block[0].replaceAll(/\s+/gu, " ").slice(0, 70)}`);
         }
       }

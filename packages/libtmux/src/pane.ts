@@ -14,6 +14,7 @@ import type {
   SendKeysOptions,
   SetHookOptions,
   SetOptionOptions,
+  PlanOptions,
   PlannedOperation,
   SplitOptions,
 } from "./types.js";
@@ -64,7 +65,13 @@ import {
   zoomPane,
   swapPanes,
 } from "./_internal/operations/topology.js";
-import { planKill, planKillPaneIfUnshared, planSplitWindow } from "./_internal/operations/plans.js";
+import {
+  planKill,
+  planKillPaneIfUnshared,
+  planSplitWindow,
+  refuseStdin,
+} from "./_internal/operations/plans.js";
+import { bindPlan } from "./_internal/operations/plan_origin.js";
 import { refreshedHandle } from "./_internal/operations/refreshed.js";
 import { originGraphForHandle } from "./_internal/runtime/live_handle.js";
 import type { Session } from "./session.js";
@@ -83,8 +90,11 @@ import type { Server } from "./server.js";
 export interface PanePlans {
   readonly kill: () => PlannedOperation<void>;
   readonly killIfWindowUnshared: () => PlannedOperation<void>;
-  /** @throws TypeError when `options` combines `direction` with `vertical`. */
-  readonly split: (options?: SplitOptions) => PlannedOperation<Pane>;
+  /**
+   * @throws TypeError when `options` combines `direction` with `vertical`, or
+   * carries `stdin`, which a plan cannot feed.
+   */
+  readonly split: (options?: PlanOptions<SplitOptions>) => PlannedOperation<Pane>;
 }
 
 /**
@@ -276,9 +286,12 @@ export class Pane {
    */
   get plan(): PanePlans {
     return {
-      kill: () => planKill("kill-pane", this.id),
-      killIfWindowUnshared: () => planKillPaneIfUnshared(this.id),
-      split: (options?: SplitOptions) => planSplitWindow(this.id, options),
+      kill: () => bindPlan(this, planKill("kill-pane", this.id)),
+      killIfWindowUnshared: () => bindPlan(this, planKillPaneIfUnshared(this.id)),
+      split: (options?: PlanOptions<SplitOptions>) => {
+        refuseStdin(options, "pane.plan.split");
+        return bindPlan(this, planSplitWindow(this.id, options));
+      },
     };
   }
 

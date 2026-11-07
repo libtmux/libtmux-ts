@@ -17,6 +17,7 @@ import {
   planNewSession,
   planNewWindow,
   planSplitWindow,
+  resolvePlan,
 } from "./plans.js";
 import { buildServerSnapshot } from "./snapshot.js";
 
@@ -41,7 +42,7 @@ async function runPlan<T>(
   options: CommandOptions = {},
 ): Promise<T> {
   const lines = await runCommand(runtime, plan.argv, options);
-  return plan.resolve(await buildServerSnapshot(server, runtime, options.signal), lines);
+  return resolvePlan(plan, await buildServerSnapshot(server, runtime, options.signal), lines);
 }
 
 export function newSession(

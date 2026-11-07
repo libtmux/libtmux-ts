@@ -311,7 +311,7 @@ export interface SplitOptions extends CommandOptions {
   readonly shellCommand?: string;
   /**
    * @deprecated Use `direction: PaneDirection.Below` for `true` or
-   * `direction: PaneDirection.Right` for `false`. Removed at `0.1.0`. Do not
+   * `direction: PaneDirection.Right` for `false`. Exported in 0.1.x; no removal is scheduled. Do not
    * combine with `direction`.
    */
   readonly vertical?: boolean;
@@ -356,7 +356,7 @@ export interface JoinOptions extends CommandOptions {
   /**
    * @deprecated Use `direction: PaneDirection.Below` for `true` or
    * `direction: PaneDirection.Right` for `false`, matching
-   * {@link SplitOptions.direction}. Removed at `0.1.0`. Do not combine with
+   * {@link SplitOptions.direction}. Exported in 0.1.x; no removal is scheduled. Do not combine with
    * `direction`.
    */
   readonly vertical?: boolean;
@@ -406,6 +406,7 @@ export interface CaptureOptions extends CommandOptions {
   readonly start?: number;
 }
 
+/** How a paste buffer is written to a file. */
 export interface SaveBufferOptions extends CommandOptions {
   /** Append to the file rather than replacing it, tmux's `-a`. */
   readonly append?: boolean;
@@ -1290,8 +1291,43 @@ export interface ConnectedServer extends Server, AsyncDisposable {
  * The type parameter is what the command resolves to, so a batch of mixed
  * operations still comes back typed one by one.
  */
-export interface PlannedOperation<T> {
-  readonly argv: readonly string[];
-  /** What `argv` produced, read out of a snapshot taken after it ran. */
-  readonly resolve: (snapshot: ServerSnapshot, lines: readonly string[]) => T;
-}
+export type PlannedOperation<T> =
+  | {
+      readonly argv: readonly string[];
+      /**
+       * Whether `resolve` reads the snapshot. Absent means it does.
+       *
+       * {@link Server.batch} takes its final snapshot only when some plan needs
+       * one, so a batch of kills does not read a server it may have just
+       * emptied. A plan that declares `false` is handed no snapshot, and its
+       * `resolve` is typed to match.
+       */
+      readonly needsSnapshot?: true;
+      /**
+       * The `signal` and `timeoutMs` the plan was written with, which bound its
+       * own command when a batch runs it.
+       *
+       * They combine with the batch's own: either signal abandons the command,
+       * and the shorter deadline applies. A plan that names none is bound by
+       * the batch's alone.
+       */
+      readonly options?: Pick<CommandOptions, "signal" | "timeoutMs">;
+      /** What `argv` produced, read out of a snapshot taken after it ran. */
+      readonly resolve: (snapshot: ServerSnapshot, lines: readonly string[]) => T;
+    }
+  | {
+      readonly argv: readonly string[];
+      readonly needsSnapshot: false;
+      readonly options?: Pick<CommandOptions, "signal" | "timeoutMs">;
+      /** What `argv` produced; there is no snapshot to read it from. */
+      readonly resolve: (snapshot: undefined, lines: readonly string[]) => T;
+    };
+
+/**
+ * The options a plan builder takes: the direct call's, less `stdin`.
+ *
+ * A plan honours `signal` and `timeoutMs` when {@link Server.batch} runs it. It
+ * describes a command without running one, so there is nothing to feed `stdin`
+ * to.
+ */
+export type PlanOptions<T extends CommandOptions> = Omit<T, "stdin">;
