@@ -55,6 +55,7 @@ import type {
 } from "../../src/common.js";
 import { Client } from "../../src/client.js";
 import { Pane } from "../../src/pane.js";
+import { PaneSet, type PaneSetOutcome } from "../../src/index.js";
 import { Server, type ServerOptions } from "../../src/server.js";
 import {
   isSplitSize,
@@ -473,3 +474,16 @@ export const boundable: readonly Promise<unknown>[] = [
   cancelPane.sendKeys("x", { timeoutMs: 1_000 }),
   cancelServer.newSession({ timeoutMs: 1_000 }),
 ];
+
+const paneGroup = new PaneSet([cancelPane, cancelPane] as const);
+export const groupCaptures: Promise<readonly PaneSetOutcome<readonly string[]>[]> =
+  paneGroup.capture({ signal: abort, timeoutMs: 100 });
+export const groupSubmissions: Promise<readonly PaneSetOutcome<void>[]> = paneGroup.sendKeys("go", {
+  literal: true,
+  enter: false,
+  signal: abort,
+});
+// @ts-expect-error target order is retained as a readonly list.
+paneGroup.panes.push(cancelPane);
+// @ts-expect-error groups accept pane handles, not raw ids.
+void new PaneSet(["%0"]);
