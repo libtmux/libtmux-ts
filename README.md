@@ -115,6 +115,26 @@ const found = snapshot.windows.where({ name: "editor" }).one();
 const paneCount = found.panes.length;
 ```
 
+## Refresh an object
+
+A `Session`, `Window` or `Pane` you hold is what tmux said when it was read.
+Changing tmux does not change it. [`refreshed()`][ref-window-refreshed] reads it
+again and returns a new handle, the way Python libtmux's `.refresh()` does,
+except that the handle you called it on stays as it was:
+
+<!-- runs: examples/quickstart/quickstart.ts -->
+
+```ts
+const window = snapshot.windows.one({ name: "editor" });
+await window.rename("build");
+const stale = window.name;
+const fresh = (await window.refreshed()).name;
+console.log(stale, fresh);
+// editor build
+```
+
+[`Session`][ref-session] and [`Pane`][ref-pane] have the same method.
+
 ## What querying looks like
 
 This is the part worth judging the library on. [`.where()`][ref-selection-where] takes declarative,
@@ -426,6 +446,7 @@ Please use the following BibTeX template to cite libtmux-ts in scientific discou
 [ref-session]: https://libtmux.org/en/ts/latest/reference/session-session/
 [ref-versiontoolowerror]: https://libtmux.org/en/ts/latest/reference/errors-versiontoolowerror/
 [ref-window]: https://libtmux.org/en/ts/latest/reference/window-window/
+[ref-window-refreshed]: https://libtmux.org/en/ts/latest/reference/window-window-refreshed/
 [tool-capture_since]: https://libtmux.org/en/ts/latest/mcp/tools/capture_since/
 [tool-list_sessions]: https://libtmux.org/en/ts/latest/mcp/tools/list_sessions/
 [tool-run_shell_command]: https://libtmux.org/en/ts/latest/mcp/tools/run_shell_command/

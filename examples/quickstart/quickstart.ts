@@ -29,6 +29,16 @@ export async function quickstart(server: Server): Promise<ServerSnapshot> {
   if (first === undefined) throw new Error("expected a pane");
   await first.sendKeys("echo hello-from-libtmux", { literal: true });
 
+  // A held window is what tmux said when it was read: renaming it changes tmux, not the handle.
+  const window = snapshot.windows.one({ name: "editor" });
+  await window.rename("build");
+  const stale = window.name;
+  const fresh = (await window.refreshed()).name;
+  console.log(stale, fresh);
+  // editor build
+  if (stale !== "editor" || fresh !== "build")
+    throw new Error("expected refreshed() to read the rename");
+
   // Failures carry their parts rather than a formatted sentence.
   try {
     await server.setOption("not-a-real-option", "1");
