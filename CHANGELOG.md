@@ -48,6 +48,11 @@ changelog has the documentation, CI and release tooling entries up to 0.1.2.
 
 ### Development
 
+- CI rebuilds incompatible cached tmux installations before running tests.
+  A build is keyed by the runner image and its version, and a restored one
+  is validated before use, so an Ubuntu 24.04 build is no longer restored
+  onto Ubuntu 26.04. Release downloads use checksum pins in
+  `.github/tmux-releases.toml`. (#197)
 - Every test entry point runs in a sandbox: an owner-only directory that
   becomes `TMUX_TMPDIR`, with `TMUX`, `TMUX_PANE`, `LIBTMUX_SOCKET` and
   `LIBTMUX_SOCKET_PATH` removed, so a test, doctest or example that names no
