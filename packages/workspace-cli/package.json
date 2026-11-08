@@ -37,9 +37,9 @@
     "libtmux": "0.1.2"
   },
   "devDependencies": {
-    "cli-truncate": "6.1.1",
+    "cli-truncate": "6.2.0",
     "commander": "15.0.0",
-    "oxfmt": "0.74.0",
+    "oxfmt": "0.76.0",
     "string-width": "8.3.0",
     "yaml": "2.9.1"
   },
