@@ -15,8 +15,9 @@ import {
 import { safeInteger } from "../../src/common.js";
 import type { Pane } from "../../src/pane.js";
 import { PaneDirection, ResizeAdjustmentDirection, WindowDirection } from "../../src/constants.js";
-import { MultipleMatchesError, VersionTooLowError } from "../../src/errors.js";
+import { LibTmuxError, MultipleMatchesError, VersionTooLowError } from "../../src/errors.js";
 import { Server } from "../../src/server.js";
+import type { Window } from "../../src/window.js";
 
 function serverFor(fixture: TestServer): Server {
   return new Server({
@@ -1211,4 +1212,141 @@ describe("window and pane topology", () => {
       expect(lines.some((line) => line.includes("pasted-from-buffer"))).toBe(true);
     });
   }, 40_000);
+
+  describe("placement writes name the window they captured", () => {
+    /**
+     * Two windows trade places behind a handle's back: `w1` held index 5 when
+     * it was captured and now sits at 9, while `w2` took over index 5.
+     */
+    async function reorder(server: Server): Promise<{ w1: Window; w2: Window; session: string }> {
+      const session = (await server.snapshot()).sessions.one();
+      const w1 = await session.newWindow({ index: 5, name: "w1" });
+      const w2 = await session.newWindow({ index: 6, name: "w2" });
+      await server.cmd("move-window", ["-d", "-s", `${session.id}:5`, "-t", `${session.id}:9`], {
+        target: null,
+      });
+      await server.cmd("move-window", ["-d", "-s", `${session.id}:6`, "-t", `${session.id}:5`], {
+        target: null,
+      });
+      // Something now sits at `w2`'s captured index, and the window at `w1`'s
+      // is linked elsewhere, so a write aimed by index alone would succeed
+      // against the wrong window instead of failing on its own.
+      await session.newWindow({ index: 6, name: "w3" });
+      const elsewhere = await server.newSession({ name: "elsewhere" });
+      await (await server.snapshot()).windows.one({ id: w2.id }).link({ session: elsewhere.id });
+      return { session: session.id, w1, w2 };
+    }
+
+    const writes: readonly [string, (w1: Window, w2: Window) => Promise<unknown>][] = [
+      ["removePlacement", (w1) => w1.removePlacement()],
+      ["plan.removePlacement", (w1) => w1.server.batch([w1.plan.removePlacement()])],
+      ["move", (w1) => w1.move({ index: 20 })],
+      ["unlink", (w1) => w1.unlink()],
+      ["swapWith (source)", (w1, w2) => w1.swapWith(w2)],
+      ["swapWith (destination)", (w1, w2) => w2.swapWith(w1)],
+      ["select", (w1) => w1.select()],
+      ["Session.selectWindow(window)", (w1) => w1.session!.selectWindow(w1)],
+    ];
+
+    for (const [name, write] of writes) {
+      test(`${name} refuses a reordered placement and changes nothing`, async () => {
+        await withServer(async (fixture) => {
+          const server = serverFor(fixture);
+          const { w1, w2, session } = await reorder(server);
+          const layout = async (): Promise<string[]> =>
+            (await server.snapshot()).windows
+              .filter((window) => window.session?.id === session)
+              .toArray()
+              .map((window) => `${window.id}@${window.index}${window.active ? "*" : ""}`)
+              .sort();
+          const before = await layout();
+
+          await expect(write(w1, w2)).rejects.toThrow(/no longer at the placement/u);
+
+          expect(await layout()).toEqual(before);
+        });
+      }, 40_000);
+    }
+
+    test("names an empty index and a window that is gone as the same refusal", async () => {
+      await withServer(async (fixture) => {
+        const server = serverFor(fixture);
+        const session = (await server.snapshot()).sessions.one();
+        const w1 = await session.newWindow({ index: 5, name: "w1" });
+        const w2 = await session.newWindow({ index: 6, name: "w2" });
+        await server.cmd("kill-window", ["-t", w1.id], { target: null });
+        const elsewhere = await server.newSession({ name: "elsewhere" });
+        const gone = await elsewhere.newWindow({ index: 8, name: "gone" });
+        await elsewhere.kill();
+
+        // tmux alone would say "can't find window"; the guard says what happened.
+        for (const handle of [w1, gone]) {
+          for (const write of [
+            () => handle.select(),
+            () => handle.move({ index: 20 }),
+            () => handle.unlink(),
+            () => handle.removePlacement(),
+            () => handle.swapWith(w2),
+            () => w2.swapWith(handle),
+            () => (handle === gone ? elsewhere : session).selectWindow(handle),
+            () => server.batch([handle.plan.removePlacement()]),
+          ]) {
+            // eslint-disable-next-line no-await-in-loop -- each refusal is judged on its own.
+            const error = await write().then(
+              () => undefined,
+              (caught: unknown) => caught,
+            );
+            expect(error).toBeInstanceOf(LibTmuxError);
+            expect((error as Error).message).toMatch(/no longer at the placement/u);
+            expect((error as Error).message).not.toMatch(/can't find/u);
+          }
+        }
+        expect((await server.snapshot()).windows.exists({ id: w2.id })).toBe(true);
+      });
+    }, 40_000);
+
+    test("tells the two placements of a linked window apart", async () => {
+      await withServer(async (fixture) => {
+        const server = serverFor(fixture);
+        const first = (await server.snapshot()).sessions.one();
+        const second = await server.newSession({ name: "second" });
+        const w1 = await first.newWindow({ index: 5, name: "w1" });
+        await w1.link({ session: second.id, index: 7 });
+        const placements = (await server.snapshot()).windows.where({ id: w1.id }).toArray();
+        expect(placements.map((placement) => placement.format.window_index).toSorted()).toEqual([
+          "5",
+          "7",
+        ]);
+
+        // eslint-disable-next-line no-await-in-loop -- one select at a time.
+        for (const placement of placements) await placement.select();
+        // Both indexes name this window, but only in their own session.
+        await expect(
+          server.batch([
+            placements[0]!.plan.removePlacement(),
+            placements[1]!.plan.removePlacement(),
+          ]),
+        ).resolves.toEqual([undefined, undefined]);
+        expect((await server.snapshot()).windows.exists({ id: w1.id })).toBe(false);
+      });
+    }, 40_000);
+
+    test("still applies to a placement that has not moved", async () => {
+      await withServer(async (fixture) => {
+        const server = serverFor(fixture);
+        const session = (await server.snapshot()).sessions.one();
+        const w1 = await session.newWindow({ index: 5, name: "w1" });
+        const w2 = await session.newWindow({ index: 6, name: "w2" });
+
+        await w1.select();
+        await w2.move({ index: 20 });
+        await w1.removePlacement();
+        expect((await server.snapshot()).windows.exists({ id: w1.id })).toBe(false);
+        const third = await session.newWindow({ index: 30, name: "w3" });
+        const moved = (await server.snapshot()).windows.one({ id: w2.id });
+        await moved.swapWith(third);
+        expect((await server.snapshot()).windows.one({ id: w2.id }).index).toBe(safeInteger(30));
+      });
+    }, 40_000);
+  });
 });

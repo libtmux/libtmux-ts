@@ -3,7 +3,8 @@ import { describe, expect, test } from "bun:test";
 import { FORMAT_FIELD_TOKENS } from "../../src/_generated/format_fields.js";
 import type { ConnectionAlias, DaemonEpoch, LogicalRef } from "../../src/common.js";
 import { safeInteger } from "../../src/common.js";
-import { LibTmuxError, QueryValidationError } from "../../src/errors.js";
+import { LibTmuxError, QueryValidationError, TmuxServerRestartedError } from "../../src/errors.js";
+import type { AbortLike, PlannedOperation } from "../../src/types.js";
 import {
   CLIENT_ALIASES,
   PANE_ALIASES,
@@ -37,8 +38,11 @@ import {
   bindLogicalRef,
   createRuntimeContext,
   createServerWithRuntime,
+  beginDaemonObservation,
   invalidateRuntimeEpoch,
+  observeDaemonIdentity,
   runtimeForServer,
+  type DaemonIdentity,
   type RuntimeContext,
 } from "../../src/_internal/runtime/context.js";
 import { deriveTmuxCapabilities } from "../../src/_internal/runtime/capabilities.js";
@@ -56,7 +60,10 @@ import type {
   RawCommandResult,
 } from "../../src/_internal/transport/types.js";
 import { flattenInvocation } from "../../src/_internal/transport/invocation.js";
+import { quoteCommand } from "../../src/_internal/transport/lexer.js";
 import { WHERE_FIELDS_V1, type WhereModel } from "../../src/_generated/where_fields.js";
+import { runPlans } from "../../src/_internal/operations/pipeline.js";
+import { assertPlanRunnable } from "../../src/_internal/operations/plan_origin.js";
 import { Pane } from "../../src/pane.js";
 import { Server, type ServerOptions } from "../../src/server.js";
 import { Session } from "../../src/session.js";
@@ -113,6 +120,8 @@ function runtimeFixture(
     readonly epoch?: number;
     readonly onExecute?: () => void;
     readonly connection?: ServerOptions;
+    /** An engine that names where its tmux lives; `{}` is one that names nothing. */
+    readonly engine?: { readonly endpoint?: string };
   } = {},
 ): RuntimeFixture {
   const transport = recordingTransport(options.onExecute);
@@ -136,6 +145,9 @@ function runtimeFixture(
     }),
     connectionAlias: alias(options.alias ?? "handles-runtime"),
     daemonEpoch: epoch(options.epoch ?? 0),
+    ...(options.engine === undefined
+      ? {}
+      : { engine: options.engine as unknown as CommandTransport }),
     transport,
   });
   return {
@@ -157,12 +169,14 @@ async function graphFor(
   runtime: RuntimeContext,
   sources: readonly CapturedRowSet[],
   fingerprint?: string,
+  daemon?: DaemonIdentity,
 ): Promise<NormalizedGraph> {
   const capabilities = await runtime.capabilities.bind();
   return normalizeGraph({
     capture: {
       capabilityFingerprint: fingerprint ?? capabilities.fingerprint,
       connection: runtime.connectionAlias,
+      ...(daemon === undefined ? {} : { daemon }),
       epoch: runtime.daemonEpoch,
     },
     sources,
@@ -1126,32 +1140,86 @@ describe("authenticated handle materialization", () => {
     await target.removePlacement();
     await target.swapWith(other);
 
-    expect(target.plan.removePlacement().argv).toEqual([
+    // Each placement write asks tmux, in the queue that then acts, whether the
+    // window captured at that index is still there. The refusal commands are
+    // unique per call, so their suffix is masked.
+    const masked = (argv: readonly string[]): string[] =>
+      argv.map((part) => part.replaceAll(/(libtmux-[a-z-]+?)-[0-9a-f]{32}/gu, "$1-*"));
+    const guarded = (id: string, at: string, then: string): string[] => [
+      "if-shell",
+      "-F",
+      "-t",
+      at,
+      `#{==:#{window_id},${id}}`,
+      then,
+      quoteCommand(["libtmux-placement-moved-*"]),
+    ];
+    const grouped = quoteCommand([
       "if-shell",
       "-F",
       "-t",
       "$1:4",
       "#{==:#{session_grouped},0}",
-      "'unlink-window' '-k' '-t' '$1:4'",
-      expect.stringMatching(/^'libtmux-grouped-session-[0-9a-f]{32}'$/u),
+      quoteCommand(["unlink-window", "-k", "-t", "$1:4"]),
+      quoteCommand(["libtmux-grouped-session-*"]),
     ]);
+    expect(masked(target.plan.removePlacement().argv)).toEqual(guarded("@9", "$1:4", grouped));
 
-    expect(fixture.transport.requests.map(flattenInvocation)).toEqual([
-      ["-u", "-Lhandles", "select-window", "-t", "$1:4"],
-      ["-u", "-Lhandles", "move-window", "-d", "-s", "$1:4", "-t", "$1:7"],
-      ["-u", "-Lhandles", "unlink-window", "-t", "$1:4"],
+    const swap = quoteCommand([
+      "if-shell",
+      "-F",
+      "-t",
+      "$1:6",
+      "#{==:#{window_id},@8}",
+      quoteCommand(["swap-window", "-d", "-s", "$1:4", "-t", "$1:6"]),
+      quoteCommand(["libtmux-placement-moved-*"]),
+    ]);
+    expect(fixture.transport.requests.map((request) => masked(flattenInvocation(request)))).toEqual(
       [
-        "-u",
-        "-Lhandles",
-        "if-shell",
-        "-F",
-        "-t",
-        "$1:4",
-        "#{==:#{session_grouped},0}",
-        "'unlink-window' '-k' '-t' '$1:4'",
-        expect.stringMatching(/^'libtmux-grouped-session-[0-9a-f]{32}'$/u),
+        [
+          "-u",
+          "-Lhandles",
+          ...guarded("@9", "$1:4", quoteCommand(["select-window", "-t", "$1:4"])),
+        ],
+        [
+          "-u",
+          "-Lhandles",
+          ...guarded("@9", "$1:4", quoteCommand(["move-window", "-d", "-s", "$1:4", "-t", "$1:7"])),
+        ],
+        [
+          "-u",
+          "-Lhandles",
+          ...guarded("@9", "$1:4", quoteCommand(["unlink-window", "-t", "$1:4"])),
+        ],
+        ["-u", "-Lhandles", ...guarded("@9", "$1:4", grouped)],
+        ["-u", "-Lhandles", ...guarded("@9", "$1:4", swap)],
       ],
-      ["-u", "-Lhandles", "swap-window", "-d", "-s", "$1:4", "-t", "$1:6"],
+    );
+  });
+
+  test("a batch runs each plan under its own deadline and the shorter of the two", async () => {
+    const fixture = runtimeFixture();
+    const graph = await graphFor(fixture.runtime, [
+      source("sessions", "list-sessions", [completeFormatRow({ session_id: "$1" })]),
+    ]);
+    const session = (
+      await materializeProjectionMembers(fixture.server, projectionFor(graph, "sessions"), graph)
+    )[0] as Session;
+    fixture.transport.requests.length = 0;
+
+    await runPlans(
+      fixture.runtime,
+      [
+        session.plan.newWindow({ timeoutMs: 5_000 }),
+        session.plan.newWindow({ timeoutMs: 20_000 }),
+        session.plan.newWindow({ timeoutMs: null }),
+        session.plan.newWindow({}),
+      ],
+      { timeoutMs: 10_000 },
+    );
+
+    expect(fixture.transport.requests.map((request) => request.timeoutMs)).toEqual([
+      5_000, 10_000, 10_000, 10_000,
     ]);
   });
 
@@ -1221,6 +1289,25 @@ describe("authenticated handle materialization", () => {
         expect(() => Reflect.construct(Child, arguments_)).toThrow();
       }
     }
+  });
+});
+
+describe("server equality across spellings of one socket path", () => {
+  test("a non-canonical absolute path is the same socket", () => {
+    const canonical = new Server({ socketPath: "/tmp/spelling/s.sock" });
+    for (const spelling of [
+      "/tmp/spelling/../spelling/s.sock",
+      "/tmp//spelling/./s.sock",
+      "/tmp/spelling/s.sock/",
+    ]) {
+      expect(canonical.equals(new Server({ socketPath: spelling }))).toBe(true);
+    }
+    expect(canonical.equals(new Server({ socketPath: "/tmp/spelling/other.sock" }))).toBe(false);
+  });
+
+  test("a name and a path are not guessed equal", () => {
+    const named = new Server({ socketName: "work" });
+    expect(named.equals(new Server({ socketPath: "/tmp/tmux-1000/work" }))).toBe(false);
   });
 });
 
@@ -1590,5 +1677,196 @@ describe("Python-compatible handle equality", () => {
     );
     expect(baseline.equals(proxy)).toBe(false);
     expect(trapCalls).toBe(0);
+  });
+});
+
+describe("a plan keeps the Server and daemon it was written for", () => {
+  const daemon: DaemonIdentity = { pid: "41", startTime: "1000" } as DaemonIdentity;
+  const replacement: DaemonIdentity = { pid: "42", startTime: "2000" } as DaemonIdentity;
+
+  /** Pretend an acquisition on `runtime` reached `reached`, as its first command would. */
+  function observe(runtime: RuntimeContext, reached: DaemonIdentity): void {
+    observeDaemonIdentity(
+      runtime,
+      beginDaemonObservation(runtime),
+      { daemon: reached, daemonEpoch: runtime.daemonEpoch },
+      reached,
+    );
+  }
+
+  async function sessionOn(fixture: RuntimeFixture, reached?: DaemonIdentity): Promise<Session> {
+    const graph = await graphFor(
+      fixture.runtime,
+      [source("sessions", "list-sessions", [completeFormatRow({ session_id: "$1" })])],
+      undefined,
+      reached,
+    );
+    return (
+      await materializeProjectionMembers(fixture.server, projectionFor(graph, "sessions"), graph)
+    )[0] as Session;
+  }
+
+  test("a Server over the same socket and daemon may run it", async () => {
+    const written = runtimeFixture({ alias: "written", connection: { socketName: "same" } });
+    const other = runtimeFixture({ alias: "other", connection: { socketName: "same" } });
+    observe(other.runtime, daemon);
+    const plan = (await sessionOn(written, daemon)).plan.kill();
+
+    expect(() => assertPlanRunnable(other.runtime, plan)).not.toThrow();
+  });
+
+  test("a Server over the same socket but another daemon says the daemon was replaced", async () => {
+    const written = runtimeFixture({ alias: "written", connection: { socketName: "same" } });
+    const other = runtimeFixture({ alias: "other", connection: { socketName: "same" } });
+    observe(other.runtime, replacement);
+    const plan = (await sessionOn(written, daemon)).plan.kill();
+
+    expect(() => assertPlanRunnable(other.runtime, plan)).toThrow(TmuxServerRestartedError);
+  });
+
+  test("a Server over another socket refuses it", async () => {
+    const written = runtimeFixture({ alias: "written", connection: { socketName: "one" } });
+    const other = runtimeFixture({ alias: "other", connection: { socketName: "two" } });
+    observe(other.runtime, daemon);
+    const plan = (await sessionOn(written, daemon)).plan.kill();
+
+    expect(() => assertPlanRunnable(other.runtime, plan)).toThrow(TypeError);
+  });
+
+  test("engines naming the same endpoint share an address, and differing ones do not", async () => {
+    const connection = { socketName: "same" };
+    const written = runtimeFixture({ alias: "w", connection, engine: { endpoint: "host-a" } });
+    const same = runtimeFixture({ alias: "s", connection, engine: { endpoint: "host-a" } });
+    const elsewhere = runtimeFixture({ alias: "e", connection, engine: { endpoint: "host-b" } });
+    const plan = (await sessionOn(written, daemon)).plan.kill();
+
+    expect(() => assertPlanRunnable(same.runtime, plan)).not.toThrow();
+    expect(() => assertPlanRunnable(elsewhere.runtime, plan)).toThrow(TypeError);
+  });
+
+  test("with no endpoint to compare, only the very same runtime may run it", async () => {
+    const connection = { socketName: "same" };
+    const written = runtimeFixture({ alias: "w", connection, engine: {} });
+    const twin = runtimeFixture({ alias: "t", connection, engine: {} });
+    const plan = (await sessionOn(written, daemon)).plan.kill();
+
+    expect(() => assertPlanRunnable(written.runtime, plan)).not.toThrow();
+    expect(() => assertPlanRunnable(twin.runtime, plan)).toThrow(TypeError);
+  });
+
+  test("a copy of a plan stays bound to where it was written", async () => {
+    const written = runtimeFixture({ alias: "written", connection: { socketName: "one" } });
+    const other = runtimeFixture({ alias: "other", connection: { socketName: "two" } });
+    const session = await sessionOn(written, daemon);
+    const originals = [session.plan.kill(), session.plan.newWindow({ name: "w" })];
+    const retimed = originals.map((plan) => ({ ...plan, options: { timeoutMs: 5_000 } }));
+    const copies: readonly PlannedOperation<unknown>[] = [
+      { ...originals[0]! },
+      Object.assign({}, originals[1]!),
+      ...retimed,
+      // Keeps the library's resolver under a command of its own.
+      {
+        argv: ["kill-session", "-t", "$0"],
+        resolve: originals[0]!.resolve,
+      } as PlannedOperation<unknown>,
+      // Keeps the library's command under a resolver of its own.
+      { argv: originals[0]!.argv, resolve: () => undefined },
+    ];
+
+    for (const copy of copies) {
+      expect(() => assertPlanRunnable(other.runtime, copy)).toThrow(TypeError);
+      expect(() => assertPlanRunnable(written.runtime, copy)).not.toThrow();
+    }
+  });
+
+  test("a plan written by hand runs anywhere, as it always did", () => {
+    const other = runtimeFixture({ alias: "other", connection: { socketName: "two" } });
+    const byHand = { argv: ["kill-session", "-t", "$0"], resolve: () => undefined };
+
+    expect(() => assertPlanRunnable(other.runtime, byHand)).not.toThrow();
+    expect(() => assertPlanRunnable(other.runtime, { ...byHand })).not.toThrow();
+  });
+
+  test("a plan builder refuses stdin, which only a direct call can feed", async () => {
+    const fixture = runtimeFixture();
+    const graph = await graphFor(fixture.runtime, [
+      source("sessions", "list-sessions", [completeFormatRow({ session_id: "$1" })]),
+      source("windows", "list-windows", [
+        completeFormatRow({ session_id: "$1", window_id: "@1", window_index: "1" }),
+      ]),
+      source("panes", "list-panes", [
+        completeFormatRow({
+          pane_id: "%1",
+          session_id: "$1",
+          window_id: "@1",
+          window_index: "1",
+        }),
+      ]),
+    ]);
+    const [session] = await materializeProjectionMembers(
+      fixture.server,
+      projectionFor(graph, "sessions"),
+      graph,
+    );
+    const [window] = await materializeProjectionMembers(
+      fixture.server,
+      projectionFor(graph, "windows"),
+      graph,
+    );
+    const [pane] = await materializeProjectionMembers(
+      fixture.server,
+      projectionFor(graph, "panes"),
+      graph,
+    );
+    const stdin = { stdin: "echo" } as never;
+
+    expect(() => (session as Session).plan.newWindow(stdin)).toThrow(/stdin/u);
+    expect(() => (window as Window).plan.split(stdin)).toThrow(/stdin/u);
+    expect(() => (pane as Pane).plan.split(stdin)).toThrow(/stdin/u);
+    expect(() => (session as Session).plan.newWindow({ timeoutMs: 1_000 })).not.toThrow();
+  });
+});
+
+describe("a batch's combined signal", () => {
+  /** A signal that counts the listeners it holds. */
+  function countingSignal(): AbortLike & { readonly held: () => number } {
+    const listeners = new Set<unknown>();
+    return {
+      aborted: false,
+      addEventListener: (_type: string, listener: unknown) => void listeners.add(listener),
+      held: () => listeners.size,
+      reason: undefined,
+      removeEventListener: (_type: string, listener: unknown) => void listeners.delete(listener),
+    } as never;
+  }
+
+  test("leaves no listener on either signal when the command throws", async () => {
+    let failing = false;
+    const fixture = runtimeFixture({
+      alias: "listeners",
+      onExecute: () => {
+        // The command never reaches tmux: the transport refuses it outright.
+        if (failing) throw new Error("spawn failed");
+      },
+    });
+    const graph = await graphFor(fixture.runtime, [
+      source("sessions", "list-sessions", [completeFormatRow({ session_id: "$1" })]),
+    ]);
+    const [session] = (await materializeProjectionMembers(
+      fixture.server,
+      projectionFor(graph, "sessions"),
+      graph,
+    )) as Session[];
+    const batchSignal = countingSignal();
+    const planSignal = countingSignal();
+    const plans = [session!.plan.newWindow({ signal: planSignal })];
+    failing = true;
+
+    await expect(runPlans(fixture.runtime, plans, { signal: batchSignal })).rejects.toThrow(
+      /spawn failed/u,
+    );
+
+    expect(batchSignal.held()).toBe(0);
+    expect(planSignal.held()).toBe(0);
   });
 });

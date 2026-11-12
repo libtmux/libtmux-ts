@@ -687,13 +687,22 @@ await server.newSession({ name: "ci", shellCommand: "just watch" });
 Moving and linking windows between sessions:
 
 ```ts
-await window.swapWith(other);
-await other.move({ index: 2, session: "other" });
 await window.link({ session: "other" }); // one window, in two sessions
+await window.swapWith(other);
+// The swap changed both indexes, so read `other` again before addressing it.
+const moved = (await server.snapshot()).windows.one({ id: other.id });
+await moved.move({ index: 40, session: "other" });
 await pane.breakOut();
 await pane.joinTo("other:1");
 await pane.swapWith(otherPane);
 ```
+
+A handle names the placement it was read at, `session:index`, and tmux refuses
+a write when that index now holds another window, with a `LibTmuxError` and no
+change. `refreshed()` refuses the same handle, so read it again from a snapshot.
+`Session.selectWindow` given a window handle is guarded the same way; given an
+index string such as `"3"` it names whatever holds that index and cannot be
+guarded.
 
 ### Handles as targets
 
@@ -900,6 +909,34 @@ const lines = await created.capture();
 - Reach for [`cmd`][ref-server-cmd] where you want the id and not the handle:
   `server.cmd("new-window", ["-d", "-P", "-F", "#{window_id}"])` is one
   invocation, and its printed line is a target every other method accepts.
+- A plan belongs to the `Server` its handle came from, and to the tmux daemon
+  that handle was read from. A `Server` for another tmux server refuses it with
+  `TypeError`, and a daemon that has since restarted refuses it with
+  `TmuxServerRestartedError`, both before any command is sent. Another `Server`
+  over the same socket and daemon may run it, and so may a copy of the plan.
+- A plan builder takes the direct call's options except `stdin`. An object
+  literal that names it is a compile error; a value held in a variable is not
+  checked by the compiler, so the builder also refuses it at run time with
+  `TypeError`.
+- A plan's `signal` and `timeoutMs` bound its own command, and combine with the
+  batch's: either signal abandons the command, and the shorter deadline wins. A
+  plan's `timeoutMs: null` means no deadline of its own and does not relax a
+  deadline the batch names. Every deadline is validated before the first command
+  runs, so `2 ** 40`, `1.5` and `-1` refuse the whole batch. A signal that has
+  already fired stops the batch before that command is sent.
+- A batch that fails after some commands ran carries `applied` on its error,
+  the number of commands that had completed; the failing command is not
+  counted, and one that timed out may still have taken effect. A refusal before
+  dispatch has no `applied`: nothing ran.
+- "The same socket" is compared by absolute path with `.`, `..` and doubled or
+  trailing slashes removed. A symbolic link, a relative path, or a `socketName`
+  against the `socketPath` it resolves to compare as different, so a plan
+  crossing between them is refused rather than guessed.
+- A plan assembled from the `argv` of one plan and the `resolve` of another is
+  refused with `TypeError`.
+- A batch whose plans resolve to nothing, such as kills, takes no final
+  snapshot, so killing the last session resolves instead of failing to read a
+  server that is gone.
 
 ### [`Server.pipeline`][ref-server-pipeline]: raw arguments, one result each
 

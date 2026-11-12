@@ -1,6 +1,7 @@
 import * as clientModule from "../../src/client.js";
 import type { CompleteFormatRow } from "../../src/_internal/codec/schemas.js";
-import type { TmuxInvocationObserver } from "../../src/common.js";
+import type { CommandOptions, TmuxInvocationObserver } from "../../src/common.js";
+import type { PlannedOperation } from "../../src/types.js";
 import type { TmuxEngine } from "../../src/engine.js";
 import type { RowWithIdentities } from "../../src/field_types.js";
 import type {
@@ -472,4 +473,57 @@ export const boundable: readonly Promise<unknown>[] = [
   cancelPane.capture({ timeoutMs: 1_000 }),
   cancelPane.sendKeys("x", { timeoutMs: 1_000 }),
   cancelServer.newSession({ timeoutMs: 1_000 }),
+];
+
+// A plan carries the two options its direct call honours, and says whether it
+// needs the batch's final snapshot to resolve.
+type _PlanCarriesOptions = Expect<
+  Equal<
+    PlannedOperation<unknown>["options"],
+    Pick<CommandOptions, "signal" | "timeoutMs"> | undefined
+  >
+>;
+type _PlanDeclaresSnapshot = Expect<
+  Equal<PlannedOperation<unknown>["needsSnapshot"], boolean | undefined>
+>;
+export const plannedWithOptions: readonly PlannedOperation<unknown>[] = [
+  cancelSession.plan.newWindow({ signal: abort, timeoutMs: 1_000 }),
+  cancelWindow.plan.split({ signal: abort, timeoutMs: 1_000 }),
+];
+
+// A plan that declares `needsSnapshot: false` is resolved without a snapshot,
+// so reading one is a compile error rather than a crash on `undefined`.
+export const snapshotFree: PlannedOperation<void> = {
+  argv: ["kill-session"],
+  needsSnapshot: false,
+  // @ts-expect-error a snapshot-free resolver is handed none
+  resolve: (snapshot) => void snapshot.sessions,
+};
+export const snapshotFreeIgnoring: PlannedOperation<void> = {
+  argv: ["kill-session"],
+  needsSnapshot: false,
+  resolve: () => undefined,
+};
+export const snapshotReading: PlannedOperation<number> = {
+  argv: ["list-sessions"],
+  resolve: (snapshot) => snapshot.sessions.count(),
+};
+
+// Mixed plans keep their own result type through `batch`.
+export const mixedBatch = cancelServer.batch([
+  cancelSession.plan.kill(),
+  cancelSession.plan.newWindow(),
+  cancelWindow.plan.split(),
+  snapshotReading,
+]);
+type _MixedBatchResult = Expect<Equal<Awaited<typeof mixedBatch>, [void, Window, Pane, number]>>;
+
+// A plan describes a command without running it, so it cannot be fed stdin.
+export const refusedStdin = [
+  // @ts-expect-error stdin belongs to a direct call
+  cancelSession.plan.newWindow({ stdin: "x" }),
+  // @ts-expect-error stdin belongs to a direct call
+  cancelWindow.plan.split({ stdin: "x" }),
+  // @ts-expect-error stdin belongs to a direct call
+  cancelPane.plan.split({ stdin: "x" }),
 ];

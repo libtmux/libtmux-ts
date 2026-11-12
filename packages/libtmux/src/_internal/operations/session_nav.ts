@@ -1,5 +1,6 @@
 import { runCommand } from "./command.js";
 import { assertName } from "./names.js";
+import { guardPlacements, placementRefusal, type Placement } from "./plans.js";
 import type { RuntimeContext } from "../runtime/context.js";
 
 export async function renameSession(
@@ -29,6 +30,7 @@ export async function selectWindowIn(
   runtime: RuntimeContext,
   sessionId: string | null,
   target: string,
+  held?: Pick<Placement, "daemon" | "windowId">,
 ): Promise<void> {
   const scope = sessionId == null ? [] : ["-t", sessionId];
   if (target === "last") return void (await runCommand(runtime, ["last-window", ...scope]));
@@ -37,5 +39,21 @@ export async function selectWindowIn(
     return void (await runCommand(runtime, ["previous-window", ...scope]));
   }
   const qualified = sessionId == null ? target : `${sessionId}:${target}`;
-  await runCommand(runtime, ["select-window", "-t", qualified]);
+  const select = ["select-window", "-t", qualified];
+  if (held === undefined || sessionId == null) {
+    await runCommand(runtime, select);
+    return;
+  }
+  // A window handle names an index only because it held it when it was read.
+  try {
+    await runCommand(
+      runtime,
+      guardPlacements([{ target: qualified, windowId: held.windowId }], select),
+      {
+        daemon: held.daemon,
+      },
+    );
+  } catch (error) {
+    throw placementRefusal(error);
+  }
 }

@@ -1,6 +1,6 @@
 import type { FormatFieldName } from "../../_generated/format_field_names.js";
 import type { Client } from "../../client.js";
-import type { LogicalRef } from "../../common.js";
+import type { DaemonEpoch, LogicalRef } from "../../common.js";
 import { LibTmuxError, TmuxServerRestartedError } from "../../errors.js";
 import type { Pane } from "../../pane.js";
 import type { Server } from "../../server.js";
@@ -18,7 +18,12 @@ import {
   type NormalizedGraph,
 } from "../graph/model.js";
 import type { WinlinkRef } from "../graph/refs.js";
-import { lastObservedDaemon, runtimeForServer, type RuntimeContext } from "./context.js";
+import {
+  lastObservedDaemon,
+  runtimeForServer,
+  type DaemonIdentity,
+  type RuntimeContext,
+} from "./context.js";
 
 type Child = Client | Pane | Session | Window;
 type LogicalHandle = Pane | Session | Window;
@@ -253,6 +258,30 @@ export function runtimeForHandle(handle: Child): RuntimeContext {
     );
   }
   return runtime;
+}
+
+/** Where a handle was read from: the runtime that made it and the daemon it answered. */
+export interface HandleOrigin {
+  /** The daemon the handle was captured from; absent only for a stored legacy capture. */
+  readonly daemon: DaemonIdentity | undefined;
+  /** The runtime's daemon epoch when the handle was captured. */
+  readonly epoch: DaemonEpoch;
+  readonly runtime: RuntimeContext;
+}
+
+/**
+ * The origin a handle's plans are bound to, without refusing a stale handle.
+ *
+ * A plan is only a description, so a handle the daemon has outlived may still
+ * describe one. It is refused when the plan would run, not when it is written.
+ */
+export function originForHandle(handle: Child): HandleOrigin {
+  const state = requireState(handle);
+  return Object.freeze({
+    daemon: state.graph.capture.daemon,
+    epoch: state.graph.capture.epoch,
+    runtime: runtimeForServer(state.server),
+  });
 }
 
 export function entityRefForHandle(handle: Child): GraphEntityRef {

@@ -1,10 +1,14 @@
 import { PANE_DIRECTION_FLAG_MAP, WINDOW_DIRECTION_FLAG_MAP } from "../../constants.js";
-import { LibTmuxError } from "../../errors.js";
+import type { CommandOptions } from "../../common.js";
+import type { DaemonGuard } from "../../engine.js";
+import { LibTmuxError, TmuxCommandError } from "../../errors.js";
 import {
   splitSize as authenticateSplitSize,
   type NewSessionOptions,
   type NewWindowOptions,
+  type PlanOptions,
   type PlannedOperation,
+  type ServerSnapshot,
   type SplitOptions,
 } from "../../types.js";
 import type { Pane } from "../../pane.js";
@@ -13,6 +17,42 @@ import type { Window } from "../../window.js";
 import { quoteCommand } from "../transport/lexer.js";
 import { uniqueUnknownCommand } from "../transport/refusal.js";
 import { assertName } from "./names.js";
+
+/** What a plan carries of the options its direct call would honour. */
+function planOptions(options: CommandOptions): NonNullable<PlannedOperation<unknown>["options"]> {
+  const { signal, timeoutMs } = options;
+  return {
+    ...(signal === undefined ? {} : { signal }),
+    ...(timeoutMs === undefined ? {} : { timeoutMs }),
+  };
+}
+
+/**
+ * Refuse the one option a plan cannot carry.
+ *
+ * The types already do; this is for the caller they do not reach, because a
+ * `stdin` that is accepted and ignored reads as one that was fed.
+ */
+export function refuseStdin(options: object | undefined, builder: string): void {
+  if ((options as { readonly stdin?: unknown } | undefined)?.stdin !== undefined) {
+    throw new TypeError(
+      `${builder} describes a command without running it, so it takes no stdin: a plan honours signal and timeoutMs, and stdin belongs to the direct call.`,
+    );
+  }
+}
+
+/** Read a plan's result, handing it a snapshot only when it declared it needs one. */
+export function resolvePlan<T>(
+  plan: PlannedOperation<T>,
+  snapshot: ServerSnapshot | undefined,
+  lines: readonly string[],
+): T {
+  if (plan.needsSnapshot === false) return plan.resolve(undefined, lines);
+  if (snapshot === undefined) {
+    throw new LibTmuxError(`${plan.argv[0] ?? "a plan"} needs a snapshot and none was taken`);
+  }
+  return plan.resolve(snapshot, lines);
+}
 
 function requireIdentity(lines: readonly string[], command: string): string {
   const identity = lines[0];
@@ -56,7 +96,10 @@ function newSessionArgs(options: NewSessionOptions): readonly string[] {
   ];
 }
 
-function newWindowArgs(sessionId: string | null, options: NewWindowOptions): readonly string[] {
+function newWindowArgs(
+  sessionId: string | null,
+  options: PlanOptions<NewWindowOptions>,
+): readonly string[] {
   if (options.index !== undefined) {
     if (!Number.isInteger(options.index) || options.index < 0 || options.index > 2_147_483_647) {
       throw new TypeError("window index must be an integer from 0 to 2147483647");
@@ -89,7 +132,10 @@ function renderSplitSize(value: NonNullable<SplitOptions["size"]>): string {
   return String(authenticateSplitSize(value));
 }
 
-function splitWindowArgs(target: string | null, options: SplitOptions): readonly string[] {
+function splitWindowArgs(
+  target: string | null,
+  options: PlanOptions<SplitOptions>,
+): readonly string[] {
   if (options.direction !== undefined && options.vertical !== undefined) {
     throw new TypeError("Choose direction without the deprecated vertical option");
   }
@@ -118,6 +164,7 @@ function splitWindowArgs(target: string | null, options: SplitOptions): readonly
 export function planNewSession(options: NewSessionOptions = {}): PlannedOperation<Session> {
   return {
     argv: newSessionArgs(options),
+    options: planOptions(options),
     resolve: (snapshot, lines) => {
       const identity = requireIdentity(lines, "new-session");
       return found(snapshot.sessions.first({ id: identity }), "new-session", identity);
@@ -127,10 +174,11 @@ export function planNewSession(options: NewSessionOptions = {}): PlannedOperatio
 
 export function planNewWindow(
   sessionId: string | null,
-  options: NewWindowOptions = {},
+  options: PlanOptions<NewWindowOptions> = {},
 ): PlannedOperation<Window> {
   return {
     argv: newWindowArgs(sessionId, options),
+    options: planOptions(options),
     resolve: (snapshot, lines) => {
       const identity = requireIdentity(lines, "new-window");
       return found(
@@ -148,10 +196,11 @@ export function planNewWindow(
 
 export function planSplitWindow(
   target: string | null,
-  options: SplitOptions = {},
+  options: PlanOptions<SplitOptions> = {},
 ): PlannedOperation<Pane> {
   return {
     argv: splitWindowArgs(target, options),
+    options: planOptions(options),
     resolve: (snapshot, lines) => {
       const identity = requireIdentity(lines, "split-window");
       return found(snapshot.panes.first({ id: identity }), "split-window", identity);
@@ -165,6 +214,7 @@ export function planKill(
 ): PlannedOperation<void> {
   return {
     argv: [command, ...(target == null ? [] : ["-t", target])],
+    needsSnapshot: false,
     resolve: () => undefined,
   };
 }
@@ -195,19 +245,83 @@ export function planKillPaneIfUnshared(target: string): PlannedOperation<void> {
       ["kill-pane", "-t", target],
       "shared-window",
     ),
+    needsSnapshot: false,
     resolve: () => undefined,
   };
 }
 
+/**
+ * A window placement as tmux addresses one, and the window it was captured as.
+ *
+ * `session:index` names a slot, and a window can leave it while a handle still
+ * holds the index. The window id says which window the caller meant.
+ */
+export interface Placement {
+  /** The daemon the handle was read from, so tmux refuses the command on any other. */
+  readonly daemon?: DaemonGuard | undefined;
+  readonly target: string;
+  readonly windowId: string;
+}
+
+/**
+ * Run `command` only while tmux finds each captured window at its placement.
+ *
+ * The comparison is made by tmux in the same command queue that then runs the
+ * command, so nothing can reorder windows between the check and the act. A
+ * mismatch, or an index that holds no window at all, runs a unique unknown
+ * command instead, which fails the invocation and leaves the command unrun, as
+ * {@link planRemoveWindowPlacement}'s group check does. The first placement is
+ * checked first; a swap guards both by passing both.
+ */
+export function guardPlacements(
+  placements: readonly Pick<Placement, "target" | "windowId">[],
+  command: readonly string[],
+): readonly string[] {
+  return placements.reduceRight(
+    (inner, placement) =>
+      conditionalTargetMutation(
+        placement.target,
+        `#{==:#{window_id},${placement.windowId}}`,
+        inner,
+        "placement-moved",
+      ),
+    command,
+  );
+}
+
+/**
+ * Say plainly that a placement no longer holds the window a handle captured.
+ *
+ * tmux can only report the guard's refusal as an unknown command, so this
+ * recognises it by its prefix and returns a readable error that keeps the
+ * original as its cause. Anything else comes back unchanged.
+ */
+export function placementRefusal(error: unknown): unknown {
+  if (
+    error instanceof TmuxCommandError &&
+    error.stderr.some((line) => line.includes("unknown command: libtmux-placement-moved-"))
+  ) {
+    return new LibTmuxError(
+      "the window is no longer at the placement this handle names; read it back from a fresh snapshot",
+      { cause: error },
+    );
+  }
+  return error;
+}
+
 /** Remove one ungrouped placement, destroying the window only when it is last. */
-export function planRemoveWindowPlacement(target: string): PlannedOperation<void> {
+export function planRemoveWindowPlacement(placement: Placement): PlannedOperation<void> {
   return {
-    argv: conditionalTargetMutation(
-      target,
-      "#{==:#{session_grouped},0}",
-      ["unlink-window", "-k", "-t", target],
-      "grouped-session",
+    argv: guardPlacements(
+      [placement],
+      conditionalTargetMutation(
+        placement.target,
+        "#{==:#{session_grouped},0}",
+        ["unlink-window", "-k", "-t", placement.target],
+        "grouped-session",
+      ),
     ),
+    needsSnapshot: false,
     resolve: () => undefined,
   };
 }
