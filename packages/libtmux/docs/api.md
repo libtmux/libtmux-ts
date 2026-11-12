@@ -3169,6 +3169,66 @@ Whether `other` carries the same `%n`, wherever it came from.
 pane.sameTmuxIdAs(await pane.refreshed()); // true
 ```
 
+## PaneSet
+
+Ordered pane actions with a result for every slot, including duplicates.
+
+Captures are separate samples; input submissions are separate invocations.
+Neither forms a multi-pane transaction. The group borrows its handles and
+never closes their servers. Limits apply to each call, including concurrent
+calls on one group; native timeoutMs applies to each dispatched invocation.
+
+[`panes`](#panesetpanes) · [`capture`](#panesetcapture) · [`sendKeys`](#panesetsendkeys)
+
+### Properties
+
+#### `PaneSet.panes`
+
+```ts
+readonly panes: readonly Pane[]
+```
+
+The copied, frozen target list in caller order.
+
+```ts
+import { PaneSet } from "libtmux";
+const group = new PaneSet([pane, pane]);
+group.panes.length; // 2
+```
+
+### Methods
+
+#### `PaneSet.capture`
+
+```ts
+capture(options: CaptureOptions = {}): Promise<readonly PaneSetOutcome<readonly string[]>[]>
+```
+
+Capture each slot, retaining its text and original command result.
+
+```ts
+import { PaneSet } from "libtmux";
+const captures = await new PaneSet([pane]).capture({ start: -100 });
+captures[0]?.value?.join("\n");
+```
+
+#### `PaneSet.sendKeys`
+
+```ts
+sendKeys(keys: string, options: SendKeysOptions = {}): Promise<readonly PaneSetOutcome<void>[]>
+```
+
+Submit keys using the pane's ordinary enter/literal semantics.
+
+A conclusive reply means submission, not application completion. An
+interrupted submitted invocation is unknown and is never retried.
+
+```ts
+import { PaneSet } from "libtmux";
+const submissions = await new PaneSet([pane]).sendKeys("go", { literal: true });
+submissions[0]?.status;
+```
+
 ## Program
 
 A program started by [`Server.spawn`](#serverspawn), running in a pane of its own.

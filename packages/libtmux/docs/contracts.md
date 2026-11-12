@@ -20,6 +20,33 @@ advanced in place would leave `where({ name: "old" })` matching an object whose
 `name` had become `"new"`. A window keeps its placement, so one linked into two
 sessions stays on the one you resolved.
 
+## Pane groups
+
+`PaneSet` copies and freezes its ordered pane list. Repeated handles remain
+separate slots. Its `capture` and `sendKeys` methods use the ordinary guarded
+pane operations and retain their native command results and original errors.
+Neither method is an atomic snapshot or multi-pane transaction.
+
+`concurrency` defaults to four workers per call and `maxTargets` to 1024 slots.
+Both must be positive safe integers; excess targets raise `RangeError` before
+effects. Empty groups return an empty array. Concurrent calls each have their
+own worker bound. A slow active call retains its worker until it settles;
+queued targets are claimed in input order as workers become available.
+
+Native `signal` and `timeoutMs` options apply to each dispatched invocation.
+The deadline does not include time queued by the group and is not an overall
+group deadline. Pre-cancelled slots are `skipped` with `not_started` delivery.
+A conclusive command refusal is `failed`; an interrupted submitted invocation
+with uncertain delivery is `unknown`. Every started call settles before the
+group returns. The group never retries input or closes borrowed servers.
+Custom engines retain their existing cancellation obligations.
+
+The result array, slot records, pane references, capture lines and command
+results are immutable. Original error objects retain their identity and are
+not frozen by the group. Values remain available in memory while retained;
+the group supplies no persistent storage, serialization format, replay or
+missed-output recovery. Captured text contains no terminal-column positions.
+
 ## Querying
 
 Most programs need equality and a relation: `one({ id })` to re-find something
