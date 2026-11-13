@@ -1520,7 +1520,7 @@ const throughEngine = new Server({
       return {
         cmd: argv,
         exitCode,
-        signal: child.signalCode,
+        signal: child.signalCode?.toString() ?? null,
         stderr: new Uint8Array(stderr),
         stdout: new Uint8Array(stdout),
       };

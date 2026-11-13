@@ -47,7 +47,7 @@ export async function throughACustomEngine(reference: Server): Promise<number> {
       return {
         cmd: argv,
         exitCode,
-        signal: child.signalCode,
+        signal: child.signalCode?.toString() ?? null,
         stderr: new Uint8Array(stderr),
         stdout: new Uint8Array(stdout),
       };
