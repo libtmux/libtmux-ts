@@ -240,7 +240,8 @@ export async function runBoundedCommand(
     const [exitCode, stdoutText, stderrText] = await Promise.all([exit, stdout.text, stderr.text]);
     return {
       exitCode,
-      signalCode: child.signalCode,
+      // A signal without a name reports its number.
+      signalCode: child.signalCode === null ? null : String(child.signalCode),
       stderr: stderrText,
       stdout: stdoutText,
       termination: forcedTermination ?? (child.signalCode === null ? "exited" : "signaled"),
