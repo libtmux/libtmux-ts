@@ -14,7 +14,7 @@
 **Typed control of tmux for Bun and TypeScript — immutable snapshots, declarative queries, and a library that ships zero runtime dependencies.**
 
 [Quickstart](#quickstart) •
-[Querying](#what-querying-looks-like) •
+[Querying](#find-sessions-windows-and-panes) •
 [Packages](#packages) •
 [API reference](packages/libtmux/docs/api.md) •
 [Hosted API reference][ref-reference] •
@@ -31,27 +31,20 @@
 ---
 
 > [!WARNING]
-> Releases are numbered `0.1.N`, and each release increments `N`. The API is not
-> settled: any release may change or remove exported identifiers, and each
-> package's changelog marks its breaks. Pin an exact version to avoid one.
-> The [root changelog](CHANGELOG.md) summarizes each release. Read the
-> changelog of each package you use before you upgrade:
-> [`libtmux`](packages/libtmux/CHANGELOG.md),
-> [`@libtmux/mcp`](packages/mcp/CHANGELOG.md),
-> [`@libtmux/workspace`](packages/workspace/CHANGELOG.md) and
-> [`@libtmux/workspace-cli`](packages/workspace-cli/CHANGELOG.md).
+> Releases are numbered `0.1.N`. The API is not settled: any release may change
+> or remove exported identifiers. Pin an exact version, and read the changelog
+> of each package you use before you upgrade. The [root changelog](CHANGELOG.md)
+> summarizes each release and links the package changelogs.
 
 ## Is this for you?
 
-**Yes, if** you drive tmux from a program — an agent that runs commands and reads
-what they printed, a workspace launcher, a test harness, a dashboard — and you
-want the terminal's state as typed data rather than as parsed strings.
-
-**Probably not, if** you want a `.tmux.conf` generator or a TUI. This library
-controls a running server; it does not write your tmux configuration.
-
-**The idea in one line:** read the whole server once into an immutable snapshot,
-then query it like data.
+- **Yes, if** you drive tmux from a program (an agent, a workspace launcher, a
+  test harness, a dashboard) and want the terminal's state as typed data, not
+  parsed strings.
+- **Probably not, if** you want a `.tmux.conf` generator or a TUI. It controls a
+  running server; it does not write your configuration.
+- **The idea:** read the whole server once into an immutable snapshot, then
+  query it like data.
 
 ## Quickstart
 
@@ -76,15 +69,43 @@ $ yarn add libtmux
 
 </details>
 
-Requires [Bun](https://bun.sh) 1.3.14+ or Node 22+, and tmux 3.3a or newer.
+- tmux 3.3a or newer. An older daemon is refused with
+  [`VersionTooLowError`][ref-versiontoolowerror] before any command runs.
+- [Bun](https://bun.sh) 1.3.14 or newer, or Node 22 or newer.
+- Runs on Linux, including WSL. macOS is supported on a best-effort basis,
+  and CI coverage for it is highly limited.
 
-- The version that counts is the running daemon's.
-- An older daemon, or an executable that would start one, is refused with
-  [`VersionTooLowError`][ref-versiontoolowerror] before any command takes effect.
-- A client reporting a newer release does not change that.
+Create a session, split a window, and read it back. The program starts a tmux
+server of its own and stops it on the way out:
 
-Runs on Linux, including WSL. macOS is supported on a best-effort basis,
-and CI coverage for it is highly limited.
+```ts
+import { Server } from "libtmux";
+
+const server = new Server({ socketName: "libtmux-demo" });
+try {
+  const session = await server.newSession({ name: "work" });
+  const editor = await session.newWindow({ name: "editor" });
+  await editor.split();
+
+  // One read of the server. Everything after it resolves locally.
+  const snapshot = await server.snapshot();
+  const found = snapshot.windows.where({ name: "editor" }).one();
+  console.log(found.panes.length);
+  // 2
+} finally {
+  await server.kill();
+}
+```
+
+More: [`examples/quickstart`](examples/quickstart) runs the same calls and adds a
+pane action and a failed command.
+
+## Find sessions, windows and panes
+
+### [`Server.snapshot`][ref-server-snapshot]: read the server once
+
+`new Server()` reaches the server your own `tmux` command does. A snapshot
+reads it once, then answers every query without another tmux call:
 
 ```ts
 import { Server } from "libtmux";
@@ -92,53 +113,14 @@ import { Server } from "libtmux";
 const server = new Server();
 const snapshot = await server.snapshot();
 
-// No further tmux calls: everything below resolves against the snapshot.
 const editors = snapshot.panes.where({ currentCommand: "vim" });
 console.log(editors.count(), editors.at(0)?.session?.name);
 ```
 
-Building something rather than reading it looks like this — and this block is a
-literal excerpt of [`examples/quickstart/quickstart.ts`](examples/quickstart/quickstart.ts), which the
-integration suite runs against a real tmux server:
+### [`Selection.where`][ref-selection-where]: criteria as data
 
-<!-- runs: examples/quickstart/quickstart.ts -->
-
-```ts
-const session = await server.newSession({ name: "quickstart" });
-const editor = await session.newWindow({ name: "editor" });
-await editor.split();
-
-const snapshot = await server.snapshot();
-
-const found = snapshot.windows.where({ name: "editor" }).one();
-
-const paneCount = found.panes.length;
-```
-
-## Refresh an object
-
-A `Session`, `Window` or `Pane` you hold is what tmux said when it was read.
-Changing tmux does not change it. [`refreshed()`][ref-window-refreshed] reads it
-again and returns a new handle, the way Python libtmux's `.refresh()` does,
-except that the handle you called it on stays as it was:
-
-<!-- runs: examples/quickstart/quickstart.ts -->
-
-```ts
-const window = snapshot.windows.one({ name: "editor" });
-await window.rename("build");
-const stale = window.name;
-const fresh = (await window.refreshed()).name;
-console.log(stale, fresh);
-// editor build
-```
-
-[`Session`][ref-session] and [`Pane`][ref-pane] have the same method.
-
-## What querying looks like
-
-This is the part worth judging the library on. [`.where()`][ref-selection-where] takes declarative,
-serializable criteria; [`.filter()`][ref-selection-filter] takes an ordinary predicate. They are
+[`.where()`][ref-selection-where] takes declarative, serializable criteria;
+[`.filter()`][ref-selection-filter] takes an ordinary predicate. They are
 [never overloaded into each other](packages/libtmux/README.md#find-sessions-windows-and-panes).
 
 ```ts
@@ -157,7 +139,10 @@ snapshot.windows.where({ session: { is: { name: "work" } } });
 snapshot.sessions.where({ name: { contains: "API", mode: "insensitive" } });
 ```
 
-A [`Selection`][ref-selection] is immutable, ordered, replayable, and `Iterable`.
+More: [every field and operator](packages/libtmux/docs/criteria.md).
+
+### [`Selection`][ref-selection]: immutable, ordered, iterable
+
 It is not an `Array`:
 
 ```ts
@@ -171,12 +156,104 @@ selection.oneOrUndefined({ name: "work" });
 selection.exists({ name: "work" });
 ```
 
-Criteria are data. [`encodeWhereDocument`][ref-encodewheredocument] writes a model-tagged query;
-[`decodeWhereDocument`][ref-decodewheredocument] validates one read from a config file, MCP call, or CLI.
+### [`encodeWhereDocument`][ref-encodewheredocument]: store a query
+
+Criteria are data. `encodeWhereDocument` writes a model-tagged query;
+[`decodeWhereDocument`][ref-decodewheredocument] validates one read from a
+config file, MCP call, or CLI.
+
+## Refresh an object
+
+### [`Window.refreshed`][ref-window-refreshed]: read a handle again
+
+A `Session`, `Window` or `Pane` you hold is what tmux said when it was read.
+`refreshed()` reads it again and returns a new handle, and the handle you called
+it on stays as it was. [`Session`][ref-session] and [`Pane`][ref-pane] have it too.
+
+```ts
+import { Server } from "libtmux";
+
+const server = new Server({ socketName: "libtmux-refresh" });
+try {
+  await server.newSession({ name: "work", windowName: "editor" });
+  const window = (await server.snapshot()).windows.one({ name: "editor" });
+
+  await window.rename("build");
+  console.log(window.name, (await window.refreshed()).name);
+  // editor build
+} finally {
+  await server.kill();
+}
+```
+
+## Run several commands at once
+
+### [`Server.batch`][ref-server-batch]: plan, then run
+
+[`plan`][ref-session-plan] describes a mutation without running it. `batch` runs
+the planned commands in order and resolves each to a typed handle, from one
+final snapshot:
+
+```ts
+import { Server } from "libtmux";
+
+const server = new Server({ socketName: "libtmux-batch" });
+try {
+  const session = await server.newSession({ name: "work" });
+  const [editor, logs] = await server.batch([
+    session.plan.newWindow({ name: "editor" }),
+    session.plan.newWindow({ name: "logs" }),
+  ]);
+  const [pane] = await server.batch([editor.plan.split()]);
+
+  await pane.sendKeys("echo hello");
+  console.log(editor.name, logs.name);
+  // editor logs
+} finally {
+  await server.kill();
+}
+```
+
+[`pipeline`][ref-server-pipeline] runs raw tmux arguments the same way, one
+result each. More:
+[batching](packages/libtmux/README.md#run-several-commands-at-once).
+
+## Watch tmux change
+
+### [`Server.watch`][ref-server-watch]: control mode, no polling
+
+`watch()` holds one persistent `tmux -C` connection and yields each change as
+tmux announces it. Open it, await `ready()`, then act:
+
+```ts
+import { Server } from "libtmux";
+
+const server = new Server({ socketName: "libtmux-watch" });
+try {
+  const session = await server.newSession({ name: "work" });
+  await using events = server.watch({ target: session.id });
+  await events.ready();
+
+  await session.newWindow({ name: "build" });
+  const opened = await events.find((event) => event.kind === "window-add", {
+    timeoutMs: 10_000,
+  });
+  console.log(opened?.kind);
+  // window-add
+} finally {
+  await server.kill();
+}
+```
+
+- Needs tmux 3.7 or newer.
+- [`Server.connect`][ref-server-connect] pairs the same observer with a server's
+  commands, and [`waitFor`][ref-connected-waitfor] waits for a state to hold.
+
+More: [watching](packages/libtmux/README.md#watch-tmux-change).
 
 ## Packages
 
-The library, MCP server, workspace builder, and workspace CLI share one release version.
+The four packages share one release version.
 
 | Package                                              | What it is                                                                     | npm                                                                                                                                                  |
 | ---------------------------------------------------- | ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -188,10 +265,11 @@ The library, MCP server, workspace builder, and workspace CLI share one release 
 
 ---
 
-### [libtmux](https://github.com/libtmux/libtmux-ts/tree/master/packages/libtmux) — the library
+### [libtmux](https://github.com/libtmux/libtmux-ts/tree/master/packages/libtmux): the library
 
-The library: [`Server`][ref-server], [`Session`][ref-session], [`Window`][ref-window], [`Pane`][ref-pane] and [`Client`][ref-client] handles over an
-immutable snapshot of tmux.
+[`Server`][ref-server], [`Session`][ref-session], [`Window`][ref-window],
+[`Pane`][ref-pane] and [`Client`][ref-client] handles over an immutable snapshot
+of tmux.
 
 [API reference][ref-reference] ·
 [npm](https://www.npmjs.com/package/libtmux) ·
@@ -204,13 +282,17 @@ $ bun add libtmux
 ```ts
 import { Server } from "libtmux";
 
-const server = new Server();
-const session = await server.newSession({ name: "work" });
-const editor = await session.newWindow({ name: "editor" });
-await editor.split();
+const server = new Server({ socketName: "libtmux-package" });
+try {
+  const session = await server.newSession({ name: "work" });
+  const editor = await session.newWindow({ name: "editor" });
+  await editor.split();
 
-await editor.panes.at(0)?.sendKeys("echo hello");
-const lines = await editor.panes.at(0)?.capture();
+  await editor.panes.at(0)?.sendKeys("echo hello");
+  const lines = await editor.panes.at(0)?.capture();
+} finally {
+  await server.kill();
+}
 ```
 
 Read next: [Snapshots](packages/libtmux/README.md#read-what-tmux-holds) ·
@@ -221,10 +303,10 @@ Read next: [Snapshots](packages/libtmux/README.md#read-what-tmux-holds) ·
 [Errors](packages/libtmux/README.md#errors) ·
 [API reference](packages/libtmux/docs/api.md)
 
-### [@libtmux/mcp](https://github.com/libtmux/libtmux-ts/tree/master/packages/mcp) — tmux for an AI agent
+### [@libtmux/mcp](https://github.com/libtmux/libtmux-ts/tree/master/packages/mcp): tmux for an AI agent
 
 A stdio MCP server. Point it at a socket and an agent can list sessions, read a
-pane, send keys, and **wait for output** rather than polling for it.
+pane, send keys, and wait for output instead of polling for it.
 
 [API reference][mcpref-reference] ·
 [Tools][mcp-tools] ·
@@ -272,16 +354,15 @@ The tools an agent reaches for first:
 | [`run_shell_command`][tool-run_shell_command] | Runs a command through a pane and reports output and exit status   |
 | [`create_session`][mcp-tools-create_session]  | Creates a session without accepting a command or environment value |
 
-The tools are split into `inspect`, `manage`, `execute`, and `teardown`.
-[`tmux://capabilities`][mcp-resources-capabilities] is the only resource; the server exposes no prompts,
-resource templates, background jobs, or generic mutation tools.
+Tools are grouped in the toolsets `inspect`, `manage`, `execute` and `teardown`.
+[`tmux://capabilities`][mcp-resources-capabilities] is the one resource.
 
 Read next: [Why it exists](packages/mcp/README.md#why-this-exists) ·
 [Configuration](packages/mcp/README.md#point-it-at-a-server) ·
 [Toolsets and trust](packages/mcp/README.md#toolsets-and-trust) ·
 [Choosing the right tool](packages/mcp/README.md#choosing-the-right-tool)
 
-### [@libtmux/workspace](https://github.com/libtmux/libtmux-ts/tree/master/packages/workspace) — declarative sessions
+### [@libtmux/workspace](https://github.com/libtmux/libtmux-ts/tree/master/packages/workspace): declarative sessions
 
 Describe a session; apply it. Applying twice converges rather than duplicating.
 
@@ -297,24 +378,27 @@ $ bun add @libtmux/workspace libtmux
 import { Server } from "libtmux";
 import { applyWorkspace } from "@libtmux/workspace";
 
-const server = new Server();
-
-await applyWorkspace(server, {
-  session_name: "api",
-  windows: [
-    { window_name: "editor", panes: ["vim", "git status"] },
-    { window_name: "server", panes: [{ shell_command: "bun dev", focus: true }] },
-  ],
-});
+const server = new Server({ socketName: "libtmux-workspace" });
+try {
+  await applyWorkspace(server, {
+    session_name: "api",
+    windows: [
+      { window_name: "editor", panes: ["vim", "git status"] },
+      { window_name: "server", panes: [{ shell_command: "bun dev", focus: true }] },
+    ],
+  });
+} finally {
+  await server.kill();
+}
 ```
 
 Read next: [The config shape](packages/workspace/README.md#describe-a-session) ·
 [Converging](packages/workspace/README.md#apply-it)
 
-### [@libtmux/workspace-cli](https://github.com/libtmux/libtmux-ts/tree/master/packages/workspace-cli) — tmuxp workspaces from the shell
+### [@libtmux/workspace-cli](https://github.com/libtmux/libtmux-ts/tree/master/packages/workspace-cli): tmuxp workspaces from the shell
 
-[`tmux-workspace`][cli-reference] loads, captures and converts tmuxp workspace files on Node or
-Bun. Ordinary loads start no Python.
+[`tmux-workspace`][cli-reference] loads, captures and converts tmuxp workspace
+files on Node or Bun. Ordinary loads start no Python.
 
 [Command reference][cli-reference] ·
 [npm](https://www.npmjs.com/package/@libtmux/workspace-cli) ·
@@ -344,11 +428,10 @@ Read next: [Install](packages/workspace-cli/README.md#install) ·
 [Load and capture](packages/workspace-cli/README.md#load-and-capture) ·
 [Command reference](packages/workspace-cli/docs/command-reference.md)
 
-### [examples](examples) — runnable, and run
+### [examples](examples): runnable programs
 
-Programs covering acquisition, control-mode watching, the act-then-wait
-loop an agent needs, and building a workspace. Each is executed by the
-integration suite, so the code there is the code that runs.
+Reading a server, watching it, driving a pane and waiting, and building a
+workspace.
 
 ```console
 $ bun test examples
@@ -356,8 +439,9 @@ $ bun test examples
 
 ## How work is arranged
 
-Observation, planning and concurrency compose around the same command engine —
-[the full table is here](packages/libtmux/README.md#choosing-how-work-is-arranged).
+Observation, planning and concurrency compose around one command engine.
+[The full table](packages/libtmux/README.md#choosing-how-work-is-arranged) has
+more.
 
 | Mode       | Turn it on                                        | When to use it                                      |
 | ---------- | ------------------------------------------------- | --------------------------------------------------- |
@@ -367,44 +451,63 @@ Observation, planning and concurrency compose around the same command engine —
 | planned    | `.plan` + [`server.batch([…])`][ref-server-batch] | Ordered mutations that must return typed handles    |
 | concurrent | `Promise.all`                                     | Independent work that may safely overlap            |
 
-Creating twelve windows costs, each figure including the one query that reads
-the result back:
-
-- 25 tmux invocations one at a time, 13 through
-  [`pipeline`][ref-server-pipeline], and 14 through
-  [`batch`][ref-server-batch], whose extra is the snapshot that turns printed ids
-  into typed handles.
+- Twelve windows cost 25 tmux invocations one at a time, 13 through
+  [`pipeline`][ref-server-pipeline] and 14 through [`batch`][ref-server-batch].
+  Each count includes the query that reads the result back.
 - A snapshot is one invocation whatever the server's size, and querying it is
   none.
-- The wall-clock beside those counts, and why `Promise.all` buys nothing over
-  doing the same work in order, are in
-  [the benchmarks](packages/libtmux/docs/benchmarks.md).
+- [The benchmarks](packages/libtmux/docs/benchmarks.md) add wall-clock time and
+  say why `Promise.all` buys nothing over doing the same work in order.
 
 ```console
 $ bun packages/libtmux/scripts/bench-modes.ts
 ```
 
-## What this project promises
+### [`maxInFlight`][ref-serveroptions]: bound the tmux processes
 
-- **The library ships zero runtime dependencies.** [A test](packages/libtmux/tests/unit/package_contract.test.ts) holds it. `@libtmux/mcp` and `@libtmux/workspace` declare their own.
-- **Real tmux, every commit.** [CI](.github/workflows/typescript.yml) runs the suite against tmux 3.3a and 3.8 on each push, and against every release from 3.3a to 3.8, the `release_3.8a` branch and tmux master before each release — no mocks stand in for a server.
-- **Documentation is a gate.** Every public symbol carries a compiled example, [the API reference](packages/libtmux/docs/api.md) is generated from the source that implements it, and every link, install command and recipe on this page is checked on each run.
-- **Softly tracks Python [libtmux](https://github.com/tmux-python/libtmux).** Names and shapes follow 0.62.0 where TypeScript agrees with them; each departure is a decision a gate holds to the code.
+Every invocation is a tmux client process, so a `Promise.all` over a whole
+server starts that many. `maxInFlight` caps them. A custom
+[`TmuxEngine`][ref-tmuxengine] runs tmux over SSH or in a container instead.
+
+```ts
+import { Server } from "libtmux";
+
+const server = new Server({ socketName: "libtmux-bounded", maxInFlight: 4 });
+try {
+  const session = await server.newSession({ name: "work" });
+  const names = ["a", "b", "c", "d", "e", "f"];
+  await Promise.all(names.map(async (name) => session.newWindow({ name })));
+  console.log((await server.snapshot()).windows.count());
+  // 7
+} finally {
+  await server.kill();
+}
+```
+
+## Support and status
+
+- **No runtime dependencies in the library.** A
+  [test](packages/libtmux/tests/unit/package_contract.test.ts) holds it.
+  `@libtmux/mcp` and `@libtmux/workspace` declare their own.
+- **Real tmux.** [CI](.github/workflows/typescript.yml) runs the suite against
+  real servers, with no mocks standing in for tmux.
+- **Tracks Python [libtmux](https://github.com/tmux-python/libtmux).** Names and
+  shapes follow it where TypeScript agrees. Each departure is a recorded
+  decision.
 
 ## Repository
 
 ```
-packages/libtmux     the library
-packages/mcp         the MCP server
-packages/workspace   the workspace builder
-packages/workspace-cli the tmux-workspace command
-examples             runnable examples, used as tests
-attic                reference notes
+packages/libtmux         the library
+packages/mcp             the MCP server
+packages/workspace       the workspace builder
+packages/workspace-cli   the tmux-workspace command
+examples                 runnable examples
+attic                    reference notes
 ```
 
-Working here: [AGENTS.md](AGENTS.md) routes to the policy that governs a
-change. The layout and the change discipline live there; how we write is in
-[.github/WRITING.md](.github/WRITING.md), and the gates, real tmux, and
+Working here: [AGENTS.md](AGENTS.md) routes to the policy for a change. Writing
+rules are in [.github/WRITING.md](.github/WRITING.md); gates, real tmux and
 releases are in [.github/CONTRIBUTING.md](.github/CONTRIBUTING.md).
 
 ## AI policy
@@ -438,6 +541,7 @@ Please use the following BibTeX template to cite libtmux-ts in scientific discou
 [mcp-tools-create_session]: https://libtmux.org/en/ts/latest/mcp/tools/create_session/
 [mcpref-reference]: https://libtmux.org/en/ts/latest/mcp/reference/
 [ref-client]: https://libtmux.org/en/ts/latest/reference/client-client/
+[ref-connected-waitfor]: https://libtmux.org/en/ts/latest/reference/types-connectedserver-waitfor/
 [ref-decodewheredocument]: https://libtmux.org/en/ts/latest/reference/selection-decodewheredocument/
 [ref-encodewheredocument]: https://libtmux.org/en/ts/latest/reference/selection-encodewheredocument/
 [ref-pane]: https://libtmux.org/en/ts/latest/reference/pane-pane/
@@ -449,8 +553,12 @@ Please use the following BibTeX template to cite libtmux-ts in scientific discou
 [ref-server-batch]: https://libtmux.org/en/ts/latest/reference/server-server-batch/
 [ref-server-connect]: https://libtmux.org/en/ts/latest/reference/server-server-connect/
 [ref-server-pipeline]: https://libtmux.org/en/ts/latest/reference/server-server-pipeline/
+[ref-server-snapshot]: https://libtmux.org/en/ts/latest/reference/server-server-snapshot/
 [ref-server-watch]: https://libtmux.org/en/ts/latest/reference/server-server-watch/
+[ref-serveroptions]: https://libtmux.org/en/ts/latest/reference/server-serveroptions/
 [ref-session]: https://libtmux.org/en/ts/latest/reference/session-session/
+[ref-session-plan]: https://libtmux.org/en/ts/latest/reference/session-session-plan/
+[ref-tmuxengine]: https://libtmux.org/en/ts/latest/reference/engine-tmuxengine/
 [ref-versiontoolowerror]: https://libtmux.org/en/ts/latest/reference/errors-versiontoolowerror/
 [ref-window]: https://libtmux.org/en/ts/latest/reference/window-window/
 [ref-window-refreshed]: https://libtmux.org/en/ts/latest/reference/window-window-refreshed/
