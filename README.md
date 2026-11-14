@@ -186,6 +186,37 @@ try {
 }
 ```
 
+## Type into a pane
+
+### [`Pane.sendKeys`][ref-pane-sendkeys] and [`Pane.capture`][ref-pane-capture]: type, then read
+
+[`Window.split`][ref-window-split] makes the pane and
+[`Pane.resize`][ref-pane-resize] sets its height. `sendKeys` returns when tmux
+has the keys, so read until `cat` has echoed them:
+
+```ts
+import { Server } from "libtmux";
+
+const server = new Server({ socketName: "libtmux-pane" });
+try {
+  const session = await server.newSession({ name: "work" });
+  const pane = await session.windows.one().split({ shellCommand: "cat" });
+  await pane.resize({ height: 5 });
+
+  await pane.sendKeys("hello");
+  let lines = await pane.capture();
+  while (lines.length === 0) lines = await pane.capture();
+  console.log(lines[0], (await pane.refreshed()).height);
+  // hello 5
+} finally {
+  await server.kill();
+}
+```
+
+More: [options and hooks](packages/libtmux/README.md#options-and-hooks), from
+[`Session.setOption`][ref-session-setoption] to
+[`Server.setHook`][ref-server-sethook].
+
 ## Run several commands at once
 
 ### [`Server.batch`][ref-server-batch]: plan, then run
@@ -545,6 +576,9 @@ Please use the following BibTeX template to cite libtmux-ts in scientific discou
 [ref-decodewheredocument]: https://libtmux.org/en/ts/latest/reference/selection-decodewheredocument/
 [ref-encodewheredocument]: https://libtmux.org/en/ts/latest/reference/selection-encodewheredocument/
 [ref-pane]: https://libtmux.org/en/ts/latest/reference/pane-pane/
+[ref-pane-capture]: https://libtmux.org/en/ts/latest/reference/pane-pane-capture/
+[ref-pane-resize]: https://libtmux.org/en/ts/latest/reference/pane-pane-resize/
+[ref-pane-sendkeys]: https://libtmux.org/en/ts/latest/reference/pane-pane-sendkeys/
 [ref-reference]: https://libtmux.org/en/ts/latest/reference/
 [ref-selection]: https://libtmux.org/en/ts/latest/reference/selection-selection/
 [ref-selection-filter]: https://libtmux.org/en/ts/latest/reference/selection-selection-filter/
@@ -553,15 +587,18 @@ Please use the following BibTeX template to cite libtmux-ts in scientific discou
 [ref-server-batch]: https://libtmux.org/en/ts/latest/reference/server-server-batch/
 [ref-server-connect]: https://libtmux.org/en/ts/latest/reference/server-server-connect/
 [ref-server-pipeline]: https://libtmux.org/en/ts/latest/reference/server-server-pipeline/
+[ref-server-sethook]: https://libtmux.org/en/ts/latest/reference/server-server-sethook/
 [ref-server-snapshot]: https://libtmux.org/en/ts/latest/reference/server-server-snapshot/
 [ref-server-watch]: https://libtmux.org/en/ts/latest/reference/server-server-watch/
 [ref-serveroptions]: https://libtmux.org/en/ts/latest/reference/server-serveroptions/
 [ref-session]: https://libtmux.org/en/ts/latest/reference/session-session/
 [ref-session-plan]: https://libtmux.org/en/ts/latest/reference/session-session-plan/
+[ref-session-setoption]: https://libtmux.org/en/ts/latest/reference/session-session-setoption/
 [ref-tmuxengine]: https://libtmux.org/en/ts/latest/reference/engine-tmuxengine/
 [ref-versiontoolowerror]: https://libtmux.org/en/ts/latest/reference/errors-versiontoolowerror/
 [ref-window]: https://libtmux.org/en/ts/latest/reference/window-window/
 [ref-window-refreshed]: https://libtmux.org/en/ts/latest/reference/window-window-refreshed/
+[ref-window-split]: https://libtmux.org/en/ts/latest/reference/window-window-split/
 [tool-capture_since]: https://libtmux.org/en/ts/latest/mcp/tools/capture_since/
 [tool-list_sessions]: https://libtmux.org/en/ts/latest/mcp/tools/list_sessions/
 [tool-run_shell_command]: https://libtmux.org/en/ts/latest/mcp/tools/run_shell_command/
