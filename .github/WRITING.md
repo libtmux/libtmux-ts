@@ -77,6 +77,43 @@ any amount of description.
 Headings stay conventional and stable, because people deep-link them and
 `docs:links` checks the anchors. Badges are few and load-bearing.
 
+## README shape
+
+A README reads at a glance. A paragraph is the exception.
+
+- The header is the logo block, a centred title, and a badge row: CI, the
+  registry version when the package is published, the libtmux.org docs, and the
+  license. A badge links only a page that returns 200.
+- A `##` section is a task in the reader's words, such as "Find sessions,
+  windows and panes".
+- A `###` heading is one API: its name in a code span linked to its libtmux.org
+  reference page, then a colon and its job in plain words.
+- Under a heading go a line or two naming linked sibling APIs, the example, what
+  it prints, at most one short note, and a `More:` link to the guide.
+- No paragraph runs past three lines. A list of facts is a bullet list.
+- No feature inventory. The sections and their examples show what exists.
+- A requirement is a floor a reader can act on, such as "tmux 3.3a or newer" or
+  "Node 22 or newer". Leave out the patch version of the toolchain you used,
+  narration of the CI matrix, and kernel details; link the page that holds them.
+- Cut what a reader assumes or never needs: that examples are tested, how the
+  docs are built, what the checks cover, and "evidence", "qualification" and
+  "contract" boilerplate.
+- Packages keep their table, then one heading per package linking its source
+  directory, a one-line description, and a line of links: API reference,
+  registry, changelog.
+- "What it leaves out" and "Support and status" are short bold-lead bullets.
+- An example starts with its imports. Where a section quotes excerpts, its first
+  example is a whole program, and later excerpts continue from it.
+- An example starts its own tmux server through the library, does its work, and
+  stops the server through the library on the way out. A README never asks the
+  reader to run `tmux` to set up or clean up.
+- Every displayed example comes from a file CI compiles and runs: a `ts` block in
+  a checked README, or a program under `examples/` that a block quotes under a
+  `runs:` marker.
+- The root README shows the queries, command batching, optimization switches and
+  control mode the library has, each under an API-linked heading with an
+  example. It describes no feature the library lacks.
+
 ## The changelog
 
 The changelog is a ledger. It is scanned, and the question a reader is asking
