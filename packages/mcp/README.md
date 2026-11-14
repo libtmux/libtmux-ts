@@ -32,24 +32,15 @@ Built on
 [`libtmux`](https://github.com/libtmux/libtmux-ts/tree/master/packages/libtmux).
 
 > [!WARNING]
-> Releases are numbered `0.1.N`, and each release increments `N`. The API is not
-> settled: any release may change or remove exported identifiers, and the
-> changelog marks each break. Pin an exact version to avoid one.
-> Read the [changelog](CHANGELOG.md) before you upgrade.
-
-Every launch line and printed startup line on this page is started and compared
-by [`tests/readme_launch.test.ts`](tests/readme_launch.test.ts).
-
-The `ts` blocks are compiled by `typecheck:readme`. The in-memory excerpt is
-matched to
-[`examples/mcp-agent/mcp-agent.ts`](../../examples/mcp-agent/mcp-agent.ts),
-which the integration suite runs against real tmux.
+> Releases are numbered `0.1.N`. The API is not settled: any release may change
+> or remove exported identifiers. Pin an exact version, and read the
+> [changelog](CHANGELOG.md) before you upgrade.
 
 ## Quick start
 
-You need Node 22+ or [Bun](https://bun.sh) 1.3.14+, and tmux 3.3a or newer. An
-MCP client launches the server as a subprocess and speaks MCP over stdio, so
-nothing needs installing ahead of time or keeping running.
+Needs tmux 3.3a or newer, and Node 22 or newer or [Bun](https://bun.sh) 1.3.14
+or newer. An MCP client launches the server as a stdio subprocess, so nothing
+needs installing ahead of time or keeping running.
 
 ### `npx`: start the server
 
@@ -65,11 +56,12 @@ tmux's default socket. To pin the package in a project instead:
 $ bun add --exact @libtmux/mcp@0.1.2
 ```
 
-Closing the subprocess's stdin cancels pending waits and joins its control
-connections before exit, and SIGTERM, SIGINT or SIGHUP does the same, then
-exits with 128 plus the signal's number. Programs it started end with it.
-Existing tmux sessions and panes keep running. Backend cleanup failures produce
-a nonzero exit status.
+When stdin closes, or on SIGTERM, SIGINT or SIGHUP:
+
+- Pending waits cancel and control connections close. Programs it started end
+  with it.
+- Existing tmux sessions and panes keep running.
+- The exit status is 128 plus the signal number, and nonzero if cleanup fails.
 
 ### `claude mcp add`: tell Claude Code about it
 
@@ -118,32 +110,40 @@ across supported clients with the
 ### [`createTmuxMcpServer`][mcpref-mcp-server-createtmuxmcpserver]: run it inside your own program
 
 The server is a library too. To drive it in-process, as a test or a host that is
-both ends, link a transport pair instead of spawning anything.
-
-This is a literal excerpt of
-[`examples/mcp-agent/mcp-agent.ts`](../../examples/mcp-agent/mcp-agent.ts),
-which the integration suite runs against a real tmux server:
-
-<!-- runs: examples/mcp-agent/mcp-agent.ts -->
+both ends, link a transport pair instead of spawning anything. The program
+starts a tmux server of its own and stops it on the way out:
 
 ```ts
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { Server } from "libtmux";
 
 import { createTmuxMcpServer } from "@libtmux/mcp";
 
-const client = new Client({ name: "example", version: "0.0.0" });
-const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
-await Promise.all([
-  createTmuxMcpServer(server, {
-    environment: { LIBTMUX_TOOLSETS: "inspect,execute" },
-  }).connect(serverSide),
-  client.connect(clientSide),
-]);
+const server = new Server({ socketName: "libtmux-mcp-demo" });
+try {
+  await server.newSession({ name: "work" });
+
+  const client = new Client({ name: "example", version: "0.0.0" });
+  const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
+  await Promise.all([
+    createTmuxMcpServer(server, {
+      environment: { LIBTMUX_TOOLSETS: "inspect,execute" },
+    }).connect(serverSide),
+    client.connect(clientSide),
+  ]);
+
+  const { tools } = await client.listTools();
+  console.log(tools.some((tool) => tool.name === "list_sessions"));
+  // true
+  await client.close();
+} finally {
+  await server.kill();
+}
 ```
 
-[Embedding it](#embedding-it) covers the defaults and the settings an embedder
-controls.
+More: [Embedding it](#embedding-it) covers the defaults and the settings an
+embedder controls.
 
 ## Why this exists
 
@@ -169,8 +169,7 @@ carries notifications; commands use the library's command engine.
 
 An MCP client gives the server an environment and a command line, and nothing
 else. [`serverFromEnvironment`][mcpref-mcp-server-serverfromenvironment] reads
-that environment. The library reads the two socket variables from it, and this
-checks what they chose.
+the socket variables from that environment.
 
 ### [`LIBTMUX_SOCKET`][guide-start-the-stdio-server]: choose the tmux server
 
@@ -181,10 +180,8 @@ checks what they chose.
 | [`LIBTMUX_TMUX_CONFIG`][guide-choose-another-endpoint] | Absolute path to the config used for a new server          |
 | [`LIBTMUX_TMUX_BIN`][guide-choose-another-endpoint]    | The `tmux` executable to use                               |
 
-With neither variable set, the server passes tmux no socket and tmux picks the
-server: the one `TMUX` names when the server is launched from a tmux pane,
-otherwise tmux's default socket. A variable that is empty or only whitespace
-counts as unset, each one alone.
+A variable that is empty or only whitespace counts as unset, each one alone.
+With neither set, [tmux picks the server](#let-tmux-pick-the-server).
 
 - The executable and socket selector are validated and frozen before any tmux
   connection; control characters are refused.
@@ -319,14 +316,15 @@ the selected sets, while the retired variable was an exact allowlist.
 ### [`libtmux-mcp`][mcpref-mcp-server-main]: read the startup line
 
 The startup line on stderr names the selected socket, effective toolsets, named
-inclusions, and exclusions. Stdout stays exclusively MCP JSON-RPC, so the
-diagnostic cannot corrupt the protocol stream.
+inclusions, and exclusions. Stdout stays MCP JSON-RPC alone.
 
-The verb says whether a tmux server was already running on that socket
-(`serving existing`) or not (`serving`). It is the only notice that an agent is
-sharing a daemon with whoever else is on it. With no socket chosen the line
-names the one tmux picked: the socket `TMUX` names, otherwise `default`. Launched
-from a tmux pane, it ends with `from pane %0 on` and that pane's socket.
+- The verb says whether a tmux server was already running on that socket
+  (`serving existing`) or not (`serving`). It is the only notice that an agent
+  shares a daemon with whoever else is on it.
+- With no socket chosen, the line names the one tmux picked: the socket `TMUX`
+  names, otherwise `default`.
+- Launched from a tmux pane, it ends with `from pane %0 on` and that pane's
+  socket.
 
 With no server running on tmux's default socket, that diagnostic is:
 
@@ -484,44 +482,35 @@ const ran = await callTool<CommandResult>(client, "run_program", { argv, input }
 ```
 
 - `argv` runs as given: no shell parses it, so `$HOME` and `*` reach the program
-  unexpanded. Pipes and redirections need `["sh", "-c", "…"]`; variables go
-  first, `["env", "CI=1", "make"]`. Use `run_shell_command` when the command
-  needs an existing pane's shell, its directory, environment, or activated
-  tools.
+  unexpanded. Pipes and redirections need `["sh", "-c", "…"]`. Use
+  `run_shell_command` when the command needs an existing pane's shell,
+  directory or environment.
 - `fromPaneId` starts it in that pane's directory and session, with the
   session's tmux environment: in a background window, or with
-  `placement: "split"` in a split beside the pane, where a person watching sees
-  it run. Focus stays where it was.
-- `inheritShell: true` adds the variables that pane's shell exported, and a
-  list such as `["PATH", "VIRTUAL_ENV"]` adds only those. It types one framed
-  `env` into the shell first, so the shell must be an idle POSIX one, as
-  `run_shell_command` requires.
+  `placement: "split"` beside the pane, where a person sees it run.
+- `inheritShell: true` adds the variables that pane's shell exported; a list
+  such as `["PATH", "VIRTUAL_ENV"]` adds only those. The shell must be an idle
+  POSIX one, as `run_shell_command` requires.
 - `keep: true` leaves the pane, dead and showing the output, for a person to
   read and close. Set it only when a person asked to see the run.
 - `input` is the program's stdin, read from a private file the pane never shows.
-  Without it the program has only the terminal, and one that prompts waits
-  until the timeout.
-- `separateStderr: true` returns what the program writes to stderr as
-  `stderr`, so `output` is stdout alone; stderr is then no terminal. It needs
-  the tmux server on this machine, as `input` does.
-- The program finds commands on this server's `PATH`, since tmux gives a pane
-  the `PATH` of the client that asked for it, and gets `PAGER=cat`
-  and `GIT_PAGER=cat`. One not found or not executable, or a `startDirectory`
-  it cannot enter, fails the call before anything runs, with the reason; a
-  program's own exit 127 is its `exitStatus`.
-- `timeoutMs` defaults to 30 seconds and is capped by `LIBTMUX_MCP_WAIT_MAX_MS`.
-  Unlike `run_shell_command`'s, it ends the program: one still running gets
-  SIGTERM, then SIGKILL, and is reported `timed_out`.
-- The pane is removed before the call returns, unless `keep` is set. Should
-  this server die mid-run, tmux ends the program and removes its pane within a
-  minute: the server holds a lease on it that only a live server renews.
-- The output is the terminal's rendering, stderr included, scrollback too.
-  `outputComplete` is false when scrollback, `maxLines` or the result's byte
-  limit cut it, when `lostEnd` says tmux closed the pane before reading the
-  end, or when the timeout ended the program.
-- Needs tmux 3.8 or newer; earlier servers answer with a refusal that points
-  at `run_shell_command`.
-- [Program runs](docs/contracts.md#run_program-program-runs).
+  Without it, a program that prompts waits until the timeout.
+- `separateStderr: true` returns stderr as `stderr`, so `output` is stdout alone.
+  Like `input`, it needs the tmux server on this machine.
+- The program finds commands on this server's `PATH` and gets `PAGER=cat` and
+  `GIT_PAGER=cat`. One not found or not executable, or a `startDirectory` it
+  cannot enter, fails the call before anything runs, with the reason.
+- `timeoutMs` defaults to 30 seconds, capped by `LIBTMUX_MCP_WAIT_MAX_MS`. Unlike
+  `run_shell_command`'s, it ends the program: SIGTERM, then SIGKILL, reported
+  `timed_out`.
+- The pane is removed before the call returns, unless `keep` is set. Should this
+  server die mid-run, tmux ends the program and removes its pane within a minute.
+- `output` is the terminal's rendering, stderr included. `outputComplete` is
+  false when scrollback, `maxLines` or the byte limit cut it, when `lostEnd`
+  says tmux closed the pane before the end was read, or when the timeout ended
+  the program.
+- Needs tmux 3.8 or newer; earlier servers refuse and point at
+  `run_shell_command`. [Program runs](docs/contracts.md#run_program-program-runs).
 
 ### [`start_program`][tool-start_program], [`read_program`][tool-read_program] and [`stop_program`][tool-stop_program]: a program that outlives one call
 
@@ -529,10 +518,8 @@ const ran = await callTool<CommandResult>(client, "run_program", { argv, input }
 cuts short. A build or a server that runs longer is started, read as it
 writes, and stopped.
 
-This is a literal excerpt of
-[`examples/mcp-agent/mcp-agent.ts`](../../examples/mcp-agent/mcp-agent.ts),
-which the integration suite runs against a real tmux server; `callTool` there
-returns a result's `structuredContent`:
+From a client, as [`examples/mcp-agent`](../../examples/mcp-agent/mcp-agent.ts)
+calls them; `callTool` there returns a result's `structuredContent`:
 
 <!-- runs: examples/mcp-agent/mcp-agent.ts -->
 
@@ -562,46 +549,28 @@ try {
 ```
 
 - `start_program` returns a `programId` and the `paneId`, which `send_keys` and
-  `capture_pane` reach while the program runs. Its pane is removed once it
-  exits, except a window or split beside `fromPaneId`, which stays on screen
-  until `stop_program` or its lifetime. It takes `fromPaneId`, `placement`, `startDirectory`, `width` and
-  `height` as `run_program` does, but not `input`, `keep`, `inheritShell` or
-  `separateStderr`;
-  `PAGER` and `GIT_PAGER` are `cat`. This server reads each running program's
-  output from a file it polls.
-- Each `read_program` waits up to its `timeoutMs` for new output or the exit
-  and returns a `cursor`. A read that times out returns no text; the next one
-  with the same cursor carries on, past any wait ceiling.
-- A page holds up to about 24,000 characters of JSON, ending on a line break
-  when it has one, or `maxLines` lines when that is fewer. The budget holds
-  the whole result, which carries the text twice, under the 50,000 characters
-  Claude Code shows inline. `cursor` is a byte offset and never splits a
-  character; call again with it for the rest.
-- The text is the byte stream with escape sequences removed, as
-  `capture_since` gives it, and a carriage return on its own starts a new
-  line: a progress bar that rewrites its line reads as a line for each state,
-  where `run_program` and `capture_pane` show only the screen's last.
-  `ended` turns true once the program ended and
-  every byte was read, and `outcome` says how: `completed` with `exitStatus`
-  or `signal`, `not_started` when it never ran, with the shell's 127 or 126,
-  `expired` at its lifetime, `stopped` by `stop_program`, or
-  `gone`. A program a signal ended reports `signal`, with `exitStatus` null.
-- Every read after the end reports `outcome` and the status, so an output too
-  long for one result says how the program ended on its first page, and its
-  status line reads `more output after cursor N` until `ended` turns true.
-- `outputCut` turns true once the copy reaches its limit, while the program
-  runs on, and `lostEnd` when tmux closed the pane before reading the end.
-- A program's lifetime is `lifetimeMs` on `start_program`, capped by the server
-  and reported as `effectiveLifetimeMs`. When it runs out, this server ends the
-  program and removes its pane, even if no later call arrives; should this
-  server die or restart, tmux does within 30 seconds, through a lease only a
-  live server renews.
-- Sixteen programs run at once at most, and a start past that is refused.
-  The sixteen most recently ended stay readable until `stop_program` forgets
-  one. Each copy stops at 4 MiB, so this server holds at most 128 MiB of
-  program output.
-- The program's process group is what ends; a process that daemonizes out of
-  it is not followed.
+  `capture_pane` reach while the program runs. It takes `fromPaneId`,
+  `placement`, `startDirectory`, `width` and `height` as `run_program` does, but
+  not `input`, `keep`, `inheritShell` or `separateStderr`.
+- Each `read_program` waits up to its `timeoutMs` for new output or the exit and
+  returns a `cursor`. A read that times out returns no text; the next one with
+  the same cursor carries on, past any wait ceiling.
+- A page of output is bounded, and ends on a line break when it can. Pass the
+  `cursor` back for the rest.
+- The text is the byte stream with escape sequences removed, as `capture_since`
+  gives it. A carriage return on its own starts a new line, so a progress bar
+  reads as a line per state.
+- `ended` turns true once the program has ended and every byte was read.
+  `outcome` says how: `completed` with `exitStatus` or `signal`, `not_started`,
+  `expired`, `stopped` or `gone`.
+- A program's lifetime is `lifetimeMs`, capped by the server and reported as
+  `effectiveLifetimeMs`. When it runs out, this server ends the program and
+  removes its pane. If this server dies, tmux does within 30 seconds.
+- At most sixteen programs run at once, and a start past that is refused. The
+  most recently ended stay readable until `stop_program` forgets one.
+- Only the program's process group ends; a process that daemonizes out of it is
+  not followed.
+- [Details](docs/contracts.md#start_program-read_program-and-stop_program).
 
 ### [`run_shell_command`][tool-run_shell_command]: run a command and get its exit status
 
@@ -852,13 +821,10 @@ That waits through tmux's notifications and comes back with `exitStatus`,
 `outcome`, and the output — one call.
 
 **When only the output matters, use [`run_program`][tool-run_program].** It
-starts the command in a pane of its own and returns only what it printed,
-where a typed command shares its pane with the prompt, the echo, and anyone
-else typing there. Keep `run_shell_command` for a command that needs that
-pane's shell. Its timeout ends the program and is capped by
-`LIBTMUX_MCP_WAIT_MAX_MS`. A build longer than that goes to
-[`start_program`][tool-start_program] and is read with
-[`read_program`][tool-read_program] until it exits.
+returns only what the command printed, with no prompt or echo. Keep
+`run_shell_command` for a command that needs that pane's shell. A build longer
+than the wait ceiling goes to [`start_program`][tool-start_program] and is read
+with [`read_program`][tool-read_program].
 
 ```text
 run_program  argv=["git","diff","--stat"]
@@ -871,10 +837,10 @@ a longer command can still surface its own echo.
 [`run_shell_command`][tool-run_shell_command] is immune by construction;
 `wait_for_text` is for output somebody else wrote.
 
-**Do not re-read the screen.** Use [`snapshot_pane`][tool-snapshot_pane] when
-one response needs bounded content and pane metadata. For later deltas, call
-[`capture_since`][tool-capture_since] without a cursor once, then pass back the
-opaque cursor it returns:
+**Do not re-read the screen.** Use [`snapshot_pane`][tool-snapshot_pane] for
+bounded content and metadata in one response. For later deltas, call
+[`capture_since`][tool-capture_since] once without a cursor, then pass back the
+cursor it returns:
 
 ```text
 snapshot_pane  paneId=%1
@@ -978,24 +944,21 @@ const mcp = createTmuxMcpServer(serverFromEnvironment());
 
 ## Support and status
 
-- **Requirements.** Node 22+ or [Bun](https://bun.sh) 1.3.14+, and tmux 3.3a or
-  newer.
+- **Requirements.** tmux 3.3a or newer, and Node 22 or newer or
+  [Bun](https://bun.sh) 1.3.14 or newer.
 - **Older tmux.** A server older than 3.3a is refused with a result that names
   the fix: upgrade tmux and restart the server, or pin the previous release.
 - **Features above the floor.** `run_program`, `start_program` and
   `wait_for_exit` need tmux 3.8, live streaming (`LIBTMUX_MCP_LIVE`) 3.7, and
-  `paste_text` 3.4. On an older tmux, `run_program` and `start_program` refuse
-  and point at `run_shell_command`, `wait_for_exit` and `paste_text` refuse with
-  the version they need, `wait_for_text` and captures read the pane, and
-  `run_shell_command` reads the pane and types its script instead of staging it.
+  `paste_text` 3.4. Below that, the program tools point at `run_shell_command`,
+  `wait_for_exit` and `paste_text` name the version they need, and waits and
+  captures read the pane instead.
 - **Version check.** [`get_server_info`][tool-get_server_info] reports the
   running `version` and the `minimumVersion`.
-- **Platforms.** Runs on Linux, including WSL. macOS is supported on a best-effort
-  basis, and CI coverage for it is highly limited.
-- **Releases.** Releases are numbered `0.1.N`, and each release increments `N`. The API is not
-  settled: any release may change or remove exported identifiers, and the
-  changelog marks each break. Pin an exact version to avoid one.
-  Read the [changelog](CHANGELOG.md) before you upgrade.
+- **Platforms.** Runs on Linux, including WSL. macOS is supported on a
+  best-effort basis, and CI coverage for it is highly limited.
+- **Releases.** Any `0.1.N` release may change or remove exports. Pin an exact
+  version; the [changelog](CHANGELOG.md) marks each break.
 
 ## See also
 

@@ -25,8 +25,8 @@ Typed, Bun-first TypeScript control of [tmux](https://github.com/tmux/tmux).
 Read a server once into an [immutable snapshot][ref-server-snapshot],
 [query it][ref-selection-where] with declarative criteria,
 [change it][ref-session-newwindow] with typed calls, and
-[hear about changes][ref-server-watch] as tmux makes them. It suits agents,
-launchers, test harnesses and dashboards.
+[hear changes][ref-server-watch] as tmux makes them. For agents, launchers, test
+harnesses and dashboards.
 
 Part of [libtmux for Bun and TypeScript](https://github.com/libtmux/libtmux-ts#readme).
 An MCP server, a workspace builder and a workspace command build on this
@@ -38,17 +38,16 @@ Add it to your project:
 $ bun add libtmux
 ```
 
-Requires tmux 3.3a or newer, Node 22+ or Bun 1.3.14+, and TypeScript 5.7+ —
-5.6 and below ship no `ES2024` lib, which these declarations are built against.
+Needs tmux 3.3a or newer, Node 22 or newer or Bun 1.3.14 or newer, and
+TypeScript 5.7 or newer.
 
 Runs on Linux, including WSL. macOS is supported on a best-effort basis,
 and CI coverage for it is highly limited.
 
 > [!WARNING]
-> Releases are numbered `0.1.N`, and each release increments `N`. The API is not
-> settled: any release may change or remove exported identifiers, and the
-> changelog marks each break. Pin an exact version to avoid one.
-> Read the [changelog](CHANGELOG.md) before you upgrade.
+> Releases are numbered `0.1.N`. The API is not settled: any release may change
+> or remove exported identifiers. Pin an exact version, and read the
+> [changelog](CHANGELOG.md) before you upgrade.
 
 **Contents** — [Quick start](#quick-start) ·
 [Read what tmux holds](#read-what-tmux-holds) ·
@@ -70,37 +69,36 @@ and CI coverage for it is highly limited.
 
 ## Quick start
 
-Create a session, split a window, read the result back from a snapshot, and
-type into a pane. This is the whole program:
+Create a session, split a window, read it back from a snapshot, and type into a
+pane. The program starts a tmux server of its own and stops it on the way out:
 
 ```ts
 import { Server } from "libtmux";
 
-const server = new Server();
+const server = new Server({ socketName: "libtmux-quickstart" });
+try {
+  const session = await server.newSession({ name: "work" });
+  const editor = await session.newWindow({ name: "editor" });
+  await editor.split();
 
-const session = await server.newSession({ name: "work" });
-const editor = await session.newWindow({ name: "editor" });
-await editor.split();
+  const snapshot = await server.snapshot();
+  const window = snapshot.windows.where({ name: "editor" }).one();
 
-const snapshot = await server.snapshot();
-const window = snapshot.windows.where({ name: "editor" }).one();
-
-console.log(window.panes.length); // 2
-await window.panes.at(0)?.sendKeys("echo hello");
+  console.log(window.panes.length); // 2
+  await window.panes.at(0)?.sendKeys("echo hello");
+} finally {
+  await server.kill();
+}
 ```
 
-`new Server()` drives the tmux server your own `tmux` command does: the one
-`TMUX` names inside tmux, otherwise tmux's default socket. Set
-`LIBTMUX_SOCKET_PATH` to a socket path, or `LIBTMUX_SOCKET` to a socket name,
-to drive another; the path wins when both are set. Pass `socketName` or
-`socketPath` to [`ServerOptions`][ref-serveroptions] for a private one, which
-the variables never override. The program prints `2`: the `editor` window holds
-two panes after the split.
+- With no `socketName` or `socketPath`, `new Server()` drives the server your own
+  `tmux` command does: the one `TMUX` names inside tmux, otherwise tmux's
+  default socket.
+- `LIBTMUX_SOCKET_PATH` (a path) or `LIBTMUX_SOCKET` (a name) choose another;
+  the path wins. A `socketName` or `socketPath` in
+  [`ServerOptions`][ref-serveroptions] is never overridden by them.
 
-Every TypeScript block here is type-checked by `bun run typecheck:readme` and,
-unless a comment says otherwise, run against a real tmux server by
-`bun run test:readme`. The programs in [`examples/`](../../examples) are run by
-the integration suite.
+More: [`examples/`](../../examples) are runnable programs.
 
 ## Start here
 
@@ -121,12 +119,8 @@ each one uses the last:
 A snapshot answers _what is true now_; a watch answers _what changed_. Most
 programs need the first, and reach for the second when they have to react.
 
-What follows those five — deadlines, engines, observation, options,
-environments, errors — is depth for when a program needs it.
-
-Call costs on this page are measured: [`examples/observe/`](../../examples/observe/README.md)
-counts the invocations a snapshot and a hundred queries make, against a real
-server.
+More: [`examples/observe/`](../../examples/observe/README.md) counts the tmux
+invocations a snapshot and a hundred queries make.
 
 <details>
 <summary><b>Everything on this page</b></summary>
@@ -251,18 +245,25 @@ resolves locally, and it never changes.
 
 ### [`Server.snapshot`][ref-server-snapshot]: read the whole server once
 
-`snapshot()` acquires the server in one round of commands and returns a
-[`ServerSnapshot`][ref-serversnapshot] whose
-properties are [`Selection`][ref-selection]s of sessions, windows, panes and
-clients:
+`snapshot()` reads the server in one round of commands and returns a
+[`ServerSnapshot`][ref-serversnapshot] of [`Selection`][ref-selection]s: sessions,
+windows, panes and clients.
 
 ```ts
-const snapshot = await server.snapshot();
+import { Server } from "libtmux";
 
-snapshot.sessions; // Selection<Session>
-snapshot.windows; // Selection<Window>
-snapshot.panes; // Selection<Pane>
-snapshot.clients; // Selection<Client>
+const server = new Server({ socketName: "libtmux-snapshot" });
+try {
+  await server.newSession({ name: "work" });
+  const snapshot = await server.snapshot();
+
+  snapshot.sessions; // Selection<Session>
+  snapshot.windows; // Selection<Window>
+  snapshot.panes; // Selection<Pane>
+  snapshot.clients; // Selection<Client>
+} finally {
+  await server.kill();
+}
 ```
 
 Reading a property issues no tmux command.
@@ -311,10 +312,9 @@ why a handle never advances in place.
 ## Find sessions, windows, and panes
 
 Ask a snapshot for what you want. [`.where()`][ref-selection-where] takes
-declarative criteria and [`.filter()`][ref-selection-filter] takes a predicate;
-they are never overloaded into each other. The hosted
-[querying guide][guide-querying] and [queries concept][concept-queries] cover
-the same ground.
+declarative criteria and [`.filter()`][ref-selection-filter] a predicate; they
+are never overloaded into each other. More: the [querying guide][guide-querying]
+and [queries concept][concept-queries].
 
 ### [`Selection.where`][ref-selection-where] and [`Selection.filter`][ref-selection-filter]: criteria or a predicate
 
@@ -323,9 +323,19 @@ serializes them in a model-tagged document. `.filter()` takes an ordinary
 predicate, and `.map()` returns an array:
 
 ```ts
-snapshot.panes.where({ currentCommand: "vim" });
-snapshot.panes.filter((pane) => pane.currentCommand?.startsWith("v") === true);
-snapshot.panes.map((pane) => pane.id); // an array, not a Selection
+import { Server } from "libtmux";
+
+const server = new Server({ socketName: "libtmux-find" });
+try {
+  await server.newSession({ name: "work" });
+  const snapshot = await server.snapshot();
+
+  snapshot.panes.where({ currentCommand: "vim" });
+  snapshot.panes.filter((pane) => pane.currentCommand?.startsWith("v") === true);
+  snapshot.panes.map((pane) => pane.id); // an array, not a Selection
+} finally {
+  await server.kill();
+}
 ```
 
 - Most programs need only equality and a relation: [`one({ id })`][ref-selection-one]
@@ -358,17 +368,15 @@ Matching is case-sensitive unless you say otherwise:
 snapshot.sessions.where({ name: { contains: "API", mode: "insensitive" } });
 ```
 
-[`decodeWhereDocument`][ref-decodewheredocument] validates a document read back
-from a config file, an MCP call or a CLI. Every field and operator is in the
-[criteria reference](docs/criteria.md), generated from the table the compiler
-matches against.
+[`decodeWhereDocument`][ref-decodewheredocument] validates a document read from a
+config file, an MCP call or a CLI. Every field and operator is in the
+[criteria reference](docs/criteria.md).
 
 ### [`ClientWhere`][ref-clientwhere]: clients are queryable too
 
 [`SessionWhere`][ref-sessionwhere], [`WindowWhere`][ref-windowwhere] and
-[`PaneWhere`][ref-panewhere] have a sibling for clients. tmux gives a client no
-id, so one is identified by the terminal it occupies, and a control client
-occupies none:
+[`PaneWhere`][ref-panewhere] have a sibling for clients. A client has no id, so
+it is identified by its terminal, and a control client has none:
 
 <!-- static: names a terminal device that exists only on the reader's machine -->
 
@@ -601,9 +609,19 @@ A mutation resolves to nothing and leaves the handle reading the instant it was
 acquired at, so a mutation you need the result of is two calls:
 
 ```ts
-await window.rename("build");
-window.name; // still "editor": the instant this handle was read at
-(await window.refreshed()).name; // "build"
+import { Server } from "libtmux";
+
+const server = new Server({ socketName: "libtmux-change" });
+try {
+  const session = await server.newSession({ name: "work", windowName: "editor" });
+  const window = session.windows.one({ name: "editor" });
+
+  await window.rename("build");
+  window.name; // still "editor": the instant this handle was read at
+  (await window.refreshed()).name; // "build"
+} finally {
+  await server.kill();
+}
 ```
 
 ### [`Session.newWindow`][ref-session-newwindow] and [`Window.split`][ref-window-split]: the everyday calls
@@ -656,9 +674,8 @@ await pane.kill();
 ### [`PaneDirection`][ref-panedirection]: which side a split lands on
 
 `direction` says which side a split lands on, where a new window sits
-([`WindowDirection`][ref-windowdirection]), and lets a resize adjust rather
-than set. tmux reaches "above" and "left" only by pairing an axis with `-b`, so
-a boolean cannot express them:
+([`WindowDirection`][ref-windowdirection]), and lets a resize adjust rather than
+set. A boolean cannot express "above" and "left", which tmux reaches with `-b`:
 
 ```ts
 import { PaneDirection, ResizeAdjustmentDirection, WindowDirection } from "libtmux";
@@ -862,10 +879,9 @@ await window.cmd("rotate-window");
 await server.cmd("display-message", ["-p", "#{version}"], { target: null });
 ```
 
-A handle sends its own id as the target, so `pane.cmd("clock-mode")` addresses
-that pane. Pass `target` to address something else, or `null` for a command that
-takes none. Failure raises [`TmuxCommandError`][ref-tmuxcommanderror] carrying
-tmux's own stderr.
+A handle sends its own id as the target. Pass `target` to address something
+else, or `null` for a command that takes none. Failure raises
+[`TmuxCommandError`][ref-tmuxcommanderror] with tmux's own stderr.
 
 ## Run several commands at once
 
@@ -876,13 +892,21 @@ takes and resolves to what the direct call resolves to; `batch` runs the planned
 commands in order and resolves all of them from one final snapshot:
 
 ```ts
-const [first, second] = await server.batch([
-  session.plan.newWindow({ name: "editor" }),
-  session.plan.newWindow({ name: "logs" }),
-]);
+import { Server } from "libtmux";
+
+const server = new Server({ socketName: "libtmux-batch" });
+try {
+  const session = await server.newSession({ name: "work" });
+  const [first, second] = await server.batch([
+    session.plan.newWindow({ name: "editor" }),
+    session.plan.newWindow({ name: "logs" }),
+  ]);
+} finally {
+  await server.kill();
+}
 ```
 
-[`first`][ref-selection-first] and `second` are [`Window`][ref-window] handles, typed one by one. A
+`first` and `second` are [`Window`][ref-window] handles, typed one by one. A
 batch mixing kinds keeps each element's own type, so a planned split comes back
 as a [`Pane`][ref-pane] with `Pane` methods on it:
 
@@ -946,49 +970,47 @@ shell.name; // "shell"
 ## Run a program and read its output
 
 Use `run` when the result is all you need, and `spawn` when the program needs
-keys, a live stream of its output, or a lifetime of your choosing. The recipes
-after the first are literal excerpts of
-[`examples/program/program.ts`](../../examples/program/program.ts), which the
-integration suite runs against a real tmux server.
+keys, a live stream of its output, or a lifetime of your choosing. The later
+recipes are excerpts of
+[`examples/program/program.ts`](../../examples/program/program.ts).
 
 ### [`Server.run`][ref-server-run]: one call, only the output
 
 ```ts
-const result = await server.run(["git", "--version"], { timeoutMs: 10_000 });
+import { Server } from "libtmux";
 
-result.success; // true
-result.output.startsWith("git version"); // true
+const server = new Server({ socketName: "libtmux-run" });
+try {
+  await server.newSession({ name: "work" });
+  const result = await server.run(["git", "--version"], { timeoutMs: 10_000 });
+
+  result.success; // true
+  result.output.startsWith("git version"); // true
+} finally {
+  await server.kill();
+}
 ```
 
 - By default the program runs in a detached session of its own, removed before
-  the call returns, and tmux removes it should this process die first. Nothing
-  is typed, so `output` holds no command line or echo, and `argv` reaches the
-  program unexpanded: `["echo", "$HOME"]` prints `$HOME`.
+  the call returns. Nothing is typed, so `output` holds no command line or echo,
+  and `argv` reaches the program unexpanded: `["echo", "$HOME"]` prints `$HOME`.
 - A server left with no session exits, unless its `exit-empty` option is off,
-  and the next run starts it again. A session of your own keeps it up;
-  [Benchmarks](docs/benchmarks.md#running-a-program) has what each costs.
-- `output` is the terminal's rendering, scrollback included: NUL and other
-  control bytes are dropped and wrapped lines joined. `lostStart` says the
-  start scrolled past `historyLimit`, and `lostEnd` that tmux closed the pane
-  before reading the end; the exit status is exact either way.
-- `historyLimit` bounds `output`: at most that many rows of scrollback plus the
-  screen, each as wide as the pane, the newest kept. The default, 100000 rows
-  of 80 columns, holds at most about 8 MB of ASCII; pass a lower one to bound a
-  run's output.
-- A program that never ran, because `argv[0]` was not found or is not
-  executable, or `startDirectory` could not be entered, rejects with
-  [`ProgramStartError`][ref-programstarterror]. Its `reason` says which, and
-  its `exitCode` is the 127 or 126 a shell would report; a program's own exit
-  127 is still its `exitCode`, and so is a script's whose `#!` interpreter is
-  missing, since `exec` meets that past the check.
+  and the next run starts it again. A session of your own keeps it up.
+- `output` is the terminal's rendering, scrollback included. `lostStart` says
+  the start scrolled past `historyLimit`, and `lostEnd` that tmux closed the pane
+  before reading the end. The exit status is exact either way.
+- `historyLimit` bounds `output` to that many rows of scrollback plus the
+  screen, newest kept. Pass a lower one to bound a run's output.
+- A program that never ran rejects with
+  [`ProgramStartError`][ref-programstarterror]. Its `reason` says why, and its
+  `exitCode` is the 127 or 126 a shell would report.
 - `timeoutMs` ends the program and reports `timedOut` with what it printed so
   far; `signal` ends it and rejects.
-- `{ from: pane }` runs it in a background window of that pane's session, in
-  the pane's directory and with the session's tmux environment. What the pane's
-  shell exported stays in that shell: [`Pane.sendKeys`][ref-pane-sendkeys] is
-  the way into it.
+- `{ from: pane }` runs it in a background window of that pane's session, in the
+  pane's directory, with the session's tmux environment.
+  [`Pane.sendKeys`][ref-pane-sendkeys] is the way into the pane's own shell.
 - The program runs on the tmux server's machine, which need not be this one;
-  only `input`, `separateStderr` and `stream: true` need it here.
+  `input`, `separateStderr` and `stream: true` need it here.
 - Needs tmux 3.8 or newer. [Details](docs/contracts.md#program-runs).
 
 ### [`Server.spawn`][ref-server-spawn]: drive it, then wait
@@ -1005,23 +1027,18 @@ const { exitCode } = await vim.wait({ timeoutMs: 10_000 });
 ```
 
 - `spawn` returns a [`Program`][ref-program] once the program has started. A
-  full-screen program may still be setting up its terminal then, and can
-  discard what was typed before, so the keys wait for vim's first screen.
-  [`Pane.waitForText`][ref-pane-waitfortext] reads the screen each time tmux
-  says the pane printed, and resolves with the first line that matches. A
-  line the pane's width wrapped is one line to it, returned whole.
+  full-screen program may still be setting up its terminal then and discard
+  early keys, so wait for its first screen with
+  [`Pane.waitForText`][ref-pane-waitfortext] before typing.
 - Each running program holds one tmux client, its exit watch, until it ends.
-- `await using` ends the program and removes its pane however the scope
-  leaves; without it, call [`kill()`][ref-program-kill] in a `finally`, which
-  is safe after the program has ended. A `wait` that gives up throws
-  `WaitTimeoutError` and leaves the program running, where `run` ends it and
-  reports `timedOut`.
+- `await using` ends the program and removes its pane however the scope leaves.
+  Without it, call [`kill()`][ref-program-kill] in a `finally`.
+- A `wait` that gives up throws `WaitTimeoutError` and leaves the program
+  running, where `run` ends it and reports `timedOut`.
 - With `{ stream: true }`, [`program.stream()`][ref-program-stream] yields what
-  the program writes, as UTF-8 text, until it exits, and ends with
-  `OutputLostError` if tmux closed the pane before reading the end.
-  `maxStreamBytes` caps the copy; the stream then throws
-  [`StreamLimitError`][ref-streamlimiterror] after what it kept, and the
-  program runs on. The copy is read every 25 ms.
+  the program writes until it exits. `maxStreamBytes` caps the copy, and the
+  stream then throws [`StreamLimitError`][ref-streamlimiterror]. If tmux closes
+  the pane before the end is read, it ends with `OutputLostError`.
 
 ### [`Program.stream`][ref-program-stream]: follow it as it writes
 
@@ -1167,10 +1184,20 @@ integration suite runs against a real tmux server.
 ### [`Pane.sendKeys`][ref-pane-sendkeys]: type, then read what it said
 
 ```ts
-await pane.sendKeys("git status --short");
+import { Server } from "libtmux";
 
-const lines = await pane.capture();
-const changed = lines.filter((line) => line.trim() !== "").length;
+const server = new Server({ socketName: "libtmux-type" });
+try {
+  const session = await server.newSession({ name: "work" });
+  const pane = session.panes.one();
+
+  await pane.sendKeys("git status --short");
+
+  const lines = await pane.capture();
+  const changed = lines.filter((line) => line.trim() !== "").length;
+} finally {
+  await server.kill();
+}
 ```
 
 - [`capture()`][ref-pane-capture] reads the visible pane; pass `start` to reach
@@ -1288,12 +1315,20 @@ Each `watch()` or `connect()` owns a real attached tmux client until it closes:
 <!-- static: reads every event until the process is interrupted -->
 
 ```ts
-await using events = server.watch({ target: session.id });
-await events.ready(); // attached; changes from here on are announced
+import { Server } from "libtmux";
 
-for await (const event of events) {
-  if (event.kind === "window-add") console.log("opened", event.windowId);
-  if (event.kind === "output") process.stdout.write(event.data);
+const server = new Server({ socketName: "libtmux-watch" });
+try {
+  const session = await server.newSession({ name: "work" });
+  await using events = server.watch({ target: session.id });
+  await events.ready(); // attached; changes from here on are announced
+
+  for await (const event of events) {
+    if (event.kind === "window-add") console.log("opened", event.windowId);
+    if (event.kind === "output") process.stdout.write(event.data);
+  }
+} finally {
+  await server.kill();
 }
 ```
 
@@ -1438,6 +1473,8 @@ Every invocation is a tmux client process with its own pipes, so a
 bounds them, and defaults to 16:
 
 ```ts
+import { Server } from "libtmux";
+
 const bounded = new Server({ maxInFlight: 4 });
 bounded.tmuxBin;
 ```
@@ -1631,34 +1668,46 @@ await lines.catch(() => undefined);
 [options and hooks topic][topic-options-and-hooks] has the rest:
 
 ```ts
-// A pane keeps history-limit lines and a stream reader keeps a bounded buffer,
-// so output larger than either is gone before anything asks. tmux can send it
-// somewhere durable instead, and write a buffer out without reading it back.
-await pane.pipeTo("cat >> /tmp/build.log");
-await pane.pipeTo();
-await server.saveBuffer("captured", "/tmp/captured.txt");
+import { Server } from "libtmux";
 
-await session.setOption("status-left", "[work] ");
-(await session.showOptions()).get("status-left");
-await session.unsetOption("status-left");
+const server = new Server({ socketName: "libtmux-options" });
+try {
+  const session = await server.newSession({ name: "work" });
+  const window = session.windows.one();
+  const pane = session.panes.one();
+  await server.setBuffer("captured", "captured text");
 
-// A handle reports its own view. A session that has set nothing reports
-// nothing, while the defaults governing it are tmux's global tables.
-(await server.showGlobalOptions("session")).get("history-limit");
-await server.setGlobalOption("window", "remain-on-exit", "on");
-await server.unsetGlobalOption("window", "remain-on-exit");
+  // A pane keeps history-limit lines and a stream reader keeps a bounded buffer,
+  // so output larger than either is gone before anything asks. tmux can send it
+  // somewhere durable instead, and write a buffer out without reading it back.
+  await pane.pipeTo("cat >> /tmp/build.log");
+  await pane.pipeTo();
+  await server.saveBuffer("captured", "/tmp/captured.txt");
 
-// Or ask what governs one object, own and inherited resolved together.
-(await session.showResolvedOptions()).get("history-limit");
-(await window.showResolvedOptions()).get("main-pane-width");
-(await pane.showResolvedOptions()).get("allow-rename");
-(await server.showResolvedOptions()).get("message-limit");
+  await session.setOption("status-left", "[work] ");
+  (await session.showOptions()).get("status-left");
+  await session.unsetOption("status-left");
 
-// A hook holds a list of commands; a write replaces it unless it appends.
-await server.setHook("after-new-window", "display-message created");
-await server.setHook("after-new-window", "display-message again", { append: true });
-await server.showHooks();
-await server.unsetHook("after-new-window");
+  // A handle reports its own view. A session that has set nothing reports
+  // nothing, while the defaults governing it are tmux's global tables.
+  (await server.showGlobalOptions("session")).get("history-limit");
+  await server.setGlobalOption("window", "remain-on-exit", "on");
+  await server.unsetGlobalOption("window", "remain-on-exit");
+
+  // Or ask what governs one object, own and inherited resolved together.
+  (await session.showResolvedOptions()).get("history-limit");
+  (await window.showResolvedOptions()).get("main-pane-width");
+  (await pane.showResolvedOptions()).get("allow-rename");
+  (await server.showResolvedOptions()).get("message-limit");
+
+  // A hook holds a list of commands; a write replaces it unless it appends.
+  await server.setHook("after-new-window", "display-message created");
+  await server.setHook("after-new-window", "display-message again", { append: true });
+  await server.showHooks();
+  await server.unsetHook("after-new-window");
+} finally {
+  await server.kill();
+}
 ```
 
 - Typed option and hook methods treat names as literal data, including `#`. Use
@@ -1676,12 +1725,21 @@ A session's environment is what tmux hands to the processes it starts. [`Server`
 carries the global environment and [`Session`][ref-session] its own:
 
 ```ts
-await session.setEnvironment("DATABASE_URL", "postgres://localhost/dev");
-await session.getEnvironment("DATABASE_URL");
-await session.showEnvironment();
-await session.unsetEnvironment("DATABASE_URL");
-await session.removeEnvironment("SSH_AUTH_SOCK");
-await server.setEnvironment("EDITOR", "vim");
+import { Server } from "libtmux";
+
+const server = new Server({ socketName: "libtmux-environment" });
+try {
+  const session = await server.newSession({ name: "work" });
+
+  await session.setEnvironment("DATABASE_URL", "postgres://localhost/dev");
+  await session.getEnvironment("DATABASE_URL");
+  await session.showEnvironment();
+  await session.unsetEnvironment("DATABASE_URL");
+  await session.removeEnvironment("SSH_AUTH_SOCK");
+  await server.setEnvironment("EDITOR", "vim");
+} finally {
+  await server.kill();
+}
 ```
 
 A variable is in one of three states, which is why the value type is
@@ -1714,17 +1772,25 @@ message. The [errors topic][topic-errors] describes the whole family.
 A failing tmux command raises it with its parts:
 
 ```ts
-import { TmuxCommandError } from "libtmux";
+import { Server, TmuxCommandError } from "libtmux";
 
+const server = new Server({ socketName: "libtmux-errors" });
 try {
-  await pane.capture();
-} catch (error) {
-  if (error instanceof TmuxCommandError) {
-    error.args; // the argument vector
-    error.exitCode;
-    error.stderr; // tmux's own lines
-    error.target; // the -t target, when there was one
+  const session = await server.newSession({ name: "work" });
+  const pane = session.panes.one();
+
+  try {
+    await pane.capture();
+  } catch (error) {
+    if (error instanceof TmuxCommandError) {
+      error.args; // the argument vector
+      error.exitCode;
+      error.stderr; // tmux's own lines
+      error.target; // the -t target, when there was one
+    }
   }
+} finally {
+  await server.kill();
 }
 ```
 
@@ -1883,7 +1949,10 @@ covers isolated servers for tests that do:
 <!-- static: the recording is written by a run against a real server -->
 
 ```ts
+import { Server } from "libtmux";
 import { recordInvocations, replayInvocations } from "libtmux/testing";
+
+const server = new Server();
 
 // Once, against real tmux: wrap the engine and keep what it answered.
 const recorder = recordInvocations();
@@ -1916,13 +1985,10 @@ pane moves, so the session is resolved through `$TMUX_PANE`.
 
 ## tmux versions
 
-The package supports tmux 3.3a and newer, and the format registry withholds
-newer fields from an older server, so each version is asked only for the fields
-it has.
-
-tmux release candidates are not supported: a feature can require one only
-until its release ships, and a candidate such as `X.Y-rcN` ranks below `X.Y`.
-See [Release candidates](https://libtmux.org/en/tmux/guides/tmux-support/#release-candidates).
+- tmux 3.3a and newer. The format registry withholds newer fields from an older
+  server, so each version is asked only for the fields it has.
+- Release candidates are not supported:
+  [why](https://libtmux.org/en/tmux/guides/tmux-support/#release-candidates).
 
 ### [`Server.version`][ref-server-version] and [`versionAtLeast`][ref-server-versionatleast]: gate your own code
 
@@ -1930,10 +1996,19 @@ Ask the server rather than parsing `#{version}` yourself. The version is probed
 once per connection and cached, so asking repeatedly costs nothing:
 
 ```ts
-const version = await server.version(); // { major, minor, suffix, raw }
+import { Server } from "libtmux";
 
-if (await server.versionAtLeast("3.4")) {
-  await pane.customizeMode();
+const server = new Server({ socketName: "libtmux-version" });
+try {
+  await server.newSession({ name: "work" });
+  const version = await server.version(); // { major, minor, suffix, raw }
+
+  await server.setBuffer("scratch", "text");
+  if (await server.versionAtLeast("3.4")) {
+    await server.deleteBuffer("scratch"); // needs tmux 3.4
+  }
+} finally {
+  await server.kill();
 }
 ```
 
@@ -1995,69 +2070,29 @@ sends anything, and the rest of the package keeps working there.
 | `split-window -p`, as literal argv                                               | not exactly 3.4 | refused on 3.4 only                    |
 | `refresh-client -l`, as literal argv ([why 3.6a][tmux-3-6a-changes])             | 3.6a            | refused before it can stop tmux        |
 
-On an older tmux the MCP server answers a wait or a capture by reading the pane
-and types `run_shell_command`'s script instead of staging it; `paste_text`
-refuses with the version it needs.
-A polling wait runs `capture-pane` on every poll, so an `after-capture-pane`
-hook fires each time, and it joins wrapped rows as the stream does.
-
-The guard reads each command's own argv. A command carried inside a string that
-tmux parses itself is sent as written: the body of `if-shell`, the argument of
-`run-shell -C`, a brace block, a hook, a key binding or a sourced file. These
-are the refused commands, the releases they affect, and what happens there:
-
-- `break-pane` without `-n`: exact tmux 3.7 only. The server exits. tmux 3.7a
-  fixes it ([`CHANGES`](https://github.com/tmux/tmux/blob/3.7a/CHANGES#L3),
-  [the inverted name test in 3.7](https://github.com/tmux/tmux/blob/3.7/cmd-break-pane.c#L117-L124)).
-- `select-layout` with a string tmux cannot parse: tmux 3.3 and 3.3a. The server
-  exits. 3.4 answers "invalid layout".
-- `refresh-client -l`: below 3.6a, and only with an attached client. The server
-  exits at once on 3.3a when the client's terminal has the `Ms` clipboard
-  capability, such as `xterm-256color` or `tmux-256color`, and on 3.4 to 3.6
-  when the client leaves before its terminal answers.
-- `delete-buffer -b NAME`, and `set-buffer -b NAME -n`: below 3.4. No crash; a
-  name that does not exist acts on the newest buffer instead, so the wrong
-  buffer is deleted or renamed.
-- `split-window -p`: exactly 3.4. tmux answers "size missing" and changes
-  nothing.
-- `break-pane -n NAME` without `-P`: exactly 3.7. No crash; tmux accepts the
-  command and ignores the name, so the window keeps its default name.
-- Names containing `:` or `.`: exactly 3.7. tmux answers "invalid window name"
-  and changes nothing.
-
-On exact tmux 3.7 the guard refuses a direct `break-pane` that has no `-n` and
-a direct `break-pane -n NAME` that has no `-P`. It accepts `break-pane -n NAME
--P`, which is the supported spelling. Only a nested or key-bound `break-pane`
-reaches tmux without that check, so give each of those a name, or upgrade to
-3.7a. The [default `prefix !` binding](https://github.com/tmux/tmux/blob/3.7/key-bindings.c#L358)
-is itself a nameless `break-pane`, which no library check can reach.
-
-Each refusal is tested against a daemon of the release it covers, with the
-sentinel session or buffer it must leave untouched, and against a release that
-allows it. Behaviour of a release that no CI lane builds is unverified.
+The guard reads each command's own argv. A command carried inside a string tmux
+parses itself, such as an `if-shell` body, a hook or a key binding, is sent as
+written. More: [which commands are refused, and where](docs/contracts.md#refused-commands).
 
 ## Consumers
 
-Three working consumers live in this repository:
+Built on this library, in this repository:
 
-- [`packages/mcp`](../mcp) — an MCP server exposing tmux through this library.
-  Its waits stream tmux's notifications on tmux 3.7 and later and poll the
-  pane on earlier releases, and its
-  [`run_shell_command`](https://libtmux.org/en/ts/latest/mcp/tools/run_shell_command/) frames what it sends so a pane's echo cannot be read as
-  output.
-- [`packages/workspace`](../workspace) — a tmuxp-shaped workspace builder.
-  Applying a workspace twice converges the running session rather than
-  duplicating it.
-- [`packages/workspace-cli`](../workspace-cli) — the [`tmux-workspace`](https://libtmux.org/en/ts/latest/workspace/cli/) command.
+- [`packages/mcp`](../mcp): an MCP server exposing tmux to agents.
+- [`packages/workspace`](../workspace): a tmuxp-shaped workspace builder.
+  Applying a workspace twice converges the session instead of duplicating it.
+- [`packages/workspace-cli`](../workspace-cli): the
+  [`tmux-workspace`](https://libtmux.org/en/ts/latest/workspace/cli/) command.
 
 ## Packages
 
 ### [`@libtmux/mcp`](https://github.com/libtmux/libtmux-ts/tree/master/packages/mcp): a tmux server for agents
 
 A stdio MCP server: an agent lists sessions, reads a pane, sends keys, and
-waits for output instead of polling for it. Reference:
-[API][mcpref-reference], [tools][mcp-tools] and
-[npm](https://www.npmjs.com/package/@libtmux/mcp).
+waits for output instead of polling for it.
+
+[API reference][mcpref-reference] · [Tools][mcp-tools] ·
+[npm](https://www.npmjs.com/package/@libtmux/mcp)
 
 An MCP client launches it from this configuration:
 
@@ -2075,9 +2110,10 @@ An MCP client launches it from this configuration:
 
 ### [`@libtmux/workspace`](https://github.com/libtmux/libtmux-ts/tree/master/packages/workspace): tmuxp-style workspaces as data
 
-Describes a session as tmuxp-shaped data and applies it. Reference:
-[API][wsref-reference] and
-[npm](https://www.npmjs.com/package/@libtmux/workspace).
+Describes a session as tmuxp-shaped data and applies it.
+
+[API reference][wsref-reference] ·
+[npm](https://www.npmjs.com/package/@libtmux/workspace)
 
 ```console
 $ bun add @libtmux/workspace libtmux
@@ -2089,9 +2125,10 @@ the [package README](https://github.com/libtmux/libtmux-ts/tree/master/packages/
 ### [`@libtmux/workspace-cli`](https://github.com/libtmux/libtmux-ts/tree/master/packages/workspace-cli): `tmux-workspace` for the shell
 
 [`tmux-workspace`][cli-reference] loads, captures, converts and imports tmuxp
-workspace files on Node or Bun. Ordinary loads start no Python. Reference:
-[commands][cli-reference] and
-[npm](https://www.npmjs.com/package/@libtmux/workspace-cli).
+workspace files on Node or Bun.
+
+[Command reference][cli-reference] ·
+[npm](https://www.npmjs.com/package/@libtmux/workspace-cli)
 
 Save this document as `workspace.yaml`:
 
@@ -2130,18 +2167,15 @@ constant surface. Each model is also its own subpath:
 
 ## Parity with the Python library
 
-[`parity/python-0.62.0.json`](parity/python-0.62.0.json) is a ledger against
-libtmux 0.62.0:
+The [parity ledger](parity/python-0.62.0.json) records a decision for every
+public symbol of the Python release it names:
 
-- Every public symbol in that release carries a decision: ported directly,
-  adapted to a shape that suits TypeScript better, or not ported for a recorded
-  reason.
-- A ported or adapted symbol names the TypeScript that covers it and the test
-  that proves it. A gate checks that every symbol the ledger names exists.
-- What is not ported falls into three groups: neo.py, the pytest helpers, and
-  tmux's interactive commands. The last is reachable through
-  [`cmd`][ref-server-cmd], so "not ported" means "no typed wrapper", not "out of
-  reach". [More](docs/contracts.md#parity-with-the-python-library).
+- **Ported, adapted, or not ported**, with a reason for the last.
+- **Not ported** means neo.py, the pytest helpers, and tmux's interactive
+  commands. The last stay reachable through [`cmd`][ref-server-cmd]: no typed
+  wrapper, not out of reach.
+
+More: [parity](docs/contracts.md#parity-with-the-python-library).
 
 ## What it leaves out
 
@@ -2160,16 +2194,13 @@ libtmux 0.62.0:
 
 ## Support and status
 
-Releases are numbered `0.1.N`, and each release increments `N`. The API is not
-settled: any release may change or remove exported identifiers, and the
-changelog marks each break. Pin an exact version to avoid one.
-Read the [changelog](CHANGELOG.md) before you upgrade.
-
+- **Unsettled API.** Any `0.1.N` release may change or remove exports. Pin an
+  exact version; the [changelog](CHANGELOG.md) marks each break.
 - **No runtime dependencies.** The package installs a tmux client and nothing
-  else. A small internal validator checks tmux's own output.
+  else.
 - **tmux 3.3a or newer**, checked against the running daemon: see
   [tmux versions](#tmux-versions).
-- **Node 22+ or Bun 1.3.14+**, and TypeScript 5.7+.
+- **Node 22 or newer, or Bun 1.3.14 or newer**, and TypeScript 5.7 or newer.
 - **Linux**, including WSL. CI runs the real-tmux test suites there only.
 
 ## Documentation

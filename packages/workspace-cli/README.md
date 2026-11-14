@@ -11,9 +11,9 @@
 
 # Workspace CLI
 
-Manage tmux workspaces from YAML and JSON with Node.js 22.12+ or Bun 1.3.14+.
-[`tmux-workspace`](https://libtmux.org/en/ts/latest/workspace/cli/) loads, captures, converts and imports tmuxp workspace files.
-This implementation is in development.
+[`tmux-workspace`](https://libtmux.org/en/ts/latest/workspace/cli/) loads,
+captures, converts and imports tmuxp workspace files, on Node 22.12 or newer or
+Bun 1.3.14 or newer.
 
 [Command reference](https://libtmux.org/en/ts/latest/workspace/cli/) •
 [Guides](https://libtmux.org/en/ts/latest/workspace/guides/) •
@@ -26,10 +26,6 @@ This implementation is in development.
 
 Part of [libtmux for Bun and TypeScript](https://github.com/libtmux/libtmux-ts#readme).
 Built on [`libtmux`](https://github.com/libtmux/libtmux-ts/tree/master/packages/libtmux).
-
-The [`tmux-workspace`][cli-index] and `npx` commands on this page are run by
-this repository's README tests (`packages/workspace-cli/tests/readme.test.ts`),
-each against a tmux directory of its own.
 
 ## Quick start
 
@@ -65,8 +61,8 @@ $ tmux-workspace load ./workspace.yaml \
 It creates the `dev` session and prints one [JSON result][wsref-output] that
 names the session and the windows and panes it made.
 
-Join the session with `tmux -L workspace-cli-demo attach`. Remove it and the
-demo server with `tmux -L workspace-cli-demo kill-server`.
+Join the session with `tmux -L workspace-cli-demo attach`. Remove the demo
+server with `tmux -L workspace-cli-demo kill-server`.
 
 ## Install
 
@@ -444,9 +440,9 @@ cursors.
 Read it through `resources/read` to verify the selected socket and the
 advertised tools.
 
-Closing the MCP subprocess's stdin cancels pending waits and joins its control
-connections. The loaded workspace stays in tmux. The
-[inspect guide][guide-inspect-with-mcp] walks through the whole path.
+Closing the MCP subprocess's stdin cancels pending waits. The loaded workspace
+stays in tmux. The [inspect guide][guide-inspect-with-mcp] walks through the
+whole path.
 
 ## Use it in scripts and CI
 
@@ -544,9 +540,8 @@ For automation, `--json` and `--ndjson` wrap the script in a structured result.
 - The scripts complete commands, options, enum values and file paths without
   starting Node, Bun or tmux.
 - Saved workspace names and live sessions are outside their completion scope.
-- Completion is tested on Linux with Bash 5.2, Zsh 5.9 and fish 4.8. Bash 3.2 is
-  a syntax target; older shells and filenames containing newlines are
-  unverified.
+- Completion is tested on Linux. Older shells and filenames containing newlines
+  are unverified.
 
 ## What it leaves out
 
@@ -607,12 +602,11 @@ current.
 
 ## Development status
 
-- Native discovery, conversion, imports, common searches, detached load, append,
-  capture, editor invocation, diagnostics, and the Python shell have executable
-  tests.
-- The Linux installed-package check packs the CLI and core, installs both
-  offline into an empty project, and exercises every command in JSON and NDJSON
-  on Node 22 and Bun. It needs the optional Python runtime
+- Discovery, conversion, imports, searches, detached load, append, capture,
+  editor invocation, diagnostics, and the Python shell have executable tests.
+- The installed-package check packs the CLI and core, installs both offline into
+  an empty project, and runs every command in JSON and NDJSON on Node and Bun.
+  It needs the optional Python runtime
   ([setup](#use-python-plugins-builders-and-the-shell)):
 
 ```console
@@ -620,15 +614,12 @@ $ bun run --cwd packages/workspace-cli test:install
 ```
 
 - Plugin and custom-builder execution has output, cancellation and
-  borrowed-state tests using the optional interpreter.
-- Confirmation and destination choices use explicit command-line flags.
+  borrowed-state tests.
 - The native process and terminal tests run on Linux, including WSL. macOS is
   supported on a best-effort basis, and CI coverage for it is highly limited.
-  Benchmark results cover isolated Linux fixtures.
 - The core library keeps its zero-runtime-dependency contract. Commander, YAML,
   and terminal text helpers are bundled into this CLI; `libtmux` remains a
   separate package.
-- Machine commands skip loading the progress renderer.
 
 [cli-completion]: https://libtmux.org/en/ts/latest/workspace/cli/completion/
 [cli-convert]: https://libtmux.org/en/ts/latest/workspace/cli/convert/

@@ -30,14 +30,9 @@ Part of [libtmux for Bun and TypeScript](https://github.com/libtmux/libtmux-ts#r
 [`libtmux`](https://github.com/libtmux/libtmux-ts/tree/master/packages/libtmux).
 
 > [!WARNING]
-> Releases are numbered `0.1.N`, and each release increments `N`. The API is not
-> settled: any release may change or remove exported identifiers, and the
-> changelog marks each break. Pin an exact version to avoid one.
-> Read the [changelog](CHANGELOG.md) before you upgrade.
-
-This repository's README checks compile each `ts` example on this page and run
-it against a real tmux server. The CLI package's README test runs the
-[`tmux-workspace`][cli-tmux-workspace] command.
+> Releases are numbered `0.1.N`. The API is not settled: any release may change
+> or remove exported identifiers. Pin an exact version, and read the
+> [changelog](CHANGELOG.md) before you upgrade.
 
 ## Quick start
 
@@ -65,39 +60,42 @@ $ yarn add @libtmux/workspace libtmux
 
 </details>
 
-Requires Node 22+ or [Bun](https://bun.sh) 1.3.14+, and tmux 3.3a or newer.
+Needs tmux 3.3a or newer, and Node 22 or newer or [Bun](https://bun.sh) 1.3.14
+or newer.
 
 Runs on Linux, including WSL. macOS is supported on a best-effort basis,
 and CI coverage for it is highly limited.
 
 This builds a session called `api` with two windows, or converges it when it
-already exists:
+already exists. The program starts a tmux server of its own and stops it on the
+way out:
 
 ```ts
 import { Server } from "libtmux";
 import { applyWorkspace } from "@libtmux/workspace";
 
-const server = new Server();
-
-await applyWorkspace(server, {
-  session_name: "api",
-  windows: [
-    { window_name: "editor", panes: ["vim", "git status"] },
-    {
-      window_name: "server",
-      layout: "even-horizontal",
-      panes: [{ shell_command: "bun dev", focus: true }, "bun test --watch"],
-    },
-  ],
-});
+const server = new Server({ socketName: "libtmux-workspace" });
+try {
+  await applyWorkspace(server, {
+    session_name: "api",
+    windows: [
+      { window_name: "editor", panes: ["vim", "git status"] },
+      {
+        window_name: "server",
+        layout: "even-horizontal",
+        panes: [{ shell_command: "bun dev", focus: true }, "bun test --watch"],
+      },
+    ],
+  });
+} finally {
+  await server.kill();
+}
 ```
 
 [`applyWorkspace`][wsref-applyworkspace] resolves to the
 [`Session`][ref-session] it built or converged. Run it again and nothing is
-duplicated.
-
-The session stays on tmux's default socket. Remove it with
-`tmux kill-session -t =api`.
+duplicated. Drop `socketName` to build on the server your own `tmux` command
+reaches.
 
 ## Describe a session
 
@@ -212,6 +210,8 @@ created. Surplus is whatever the workspace no longer describes.
 the workspace did not create:
 
 ```ts
+import { applyWorkspace } from "@libtmux/workspace";
+
 await applyWorkspace(
   server,
   { session_name: "api", windows: [{ panes: ["vim"] }] },
@@ -264,17 +264,14 @@ plan.renamesWindows; // an array, so duplicate current names stay distinct
 plan.retains; // surplus plus the policy or sharing reason
 ```
 
-The removals are in [`removesWindows`][wsref-workspaceplan-removeswindows] and
-[`removesPanes`][wsref-workspaceplan-removespanes];
-[`renamesWindows`][wsref-workspaceplan-renameswindows] lists the renames.
-[`retains`][wsref-workspaceplan-retains] says what stays and why, and
-[`owned`][wsref-workspaceplan-owned] says whether this package created the
-session.
-
+Removals are in [`removesWindows`][wsref-workspaceplan-removeswindows] and
+[`removesPanes`][wsref-workspaceplan-removespanes], renames in
+[`renamesWindows`][wsref-workspaceplan-renameswindows], and what stays and why
+in [`retains`][wsref-workspaceplan-retains]. [`owned`][wsref-workspaceplan-owned]
+says whether this package created the session. What an apply would add is in
 [`createsSession`][wsref-workspaceplan-createssession],
 [`createsWindows`][wsref-workspaceplan-createswindows] and
-[`createsPanes`][wsref-workspaceplan-createspanes] report what an apply would
-add.
+[`createsPanes`][wsref-workspaceplan-createspanes].
 
 - Entries are frozen data carrying tmux IDs, indexes, positions, and names.
 - The plan covers session, window, and pane membership, not options, layouts,
@@ -378,8 +375,7 @@ $ npx -y @libtmux/workspace-cli@0.1.2 load ./workspace.yaml \
 
 [`examples/workspace/workspace.ts`](../../examples/workspace/workspace.ts)
 builds a declared workspace with [`applyWorkspace`][wsref-applyworkspace] and
-tears it down while treating "already gone" as an answer. The integration suite
-runs it against a real tmux server.
+tears it down, treating "already gone" as an answer.
 
 To run it from a checkout of the repository:
 
@@ -407,15 +403,13 @@ $ bun test examples/workspace
 
 ## Support and status
 
-- **Runtime.** Node 22+ or Bun 1.3.14+.
+- **Runtime.** Node 22 or newer, or Bun 1.3.14 or newer.
   [`parseWorkspaceYaml`][wsref-parseworkspaceyaml] needs Bun's YAML parser.
 - **tmux.** 3.3a or newer. JSON layouts need 3.8 or newer.
 - **Dependencies.** `zod` at runtime. `libtmux` is a peer dependency pinned to
   the same release.
-- **Releases.** Releases are numbered `0.1.N`, and each release increments `N`. The API is not
-  settled: any release may change or remove exported identifiers, and the
-  changelog marks each break. Pin an exact version to avoid one.
-  Read the [changelog](CHANGELOG.md) before you upgrade.
+- **Releases.** Any `0.1.N` release may change or remove exports. Pin an exact
+  version; the [changelog](CHANGELOG.md) marks each break.
 
 ## See also
 
