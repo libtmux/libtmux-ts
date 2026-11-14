@@ -798,6 +798,47 @@ refused before anything is sent to it, with `VersionTooLowError` and a
 `master`, is refused the same way. To continue, upgrade tmux and restart the
 server, or pin the previous libtmux release:
 
+### Refused commands
+
+On an older tmux the MCP server answers a wait or a capture by reading the pane
+and types `run_shell_command`'s script instead of staging it; `paste_text`
+refuses with the version it needs.
+A polling wait runs `capture-pane` on every poll, so an `after-capture-pane`
+hook fires each time, and it joins wrapped rows as the stream does.
+
+The guard reads each command's own argv. A command carried inside a string that
+tmux parses itself is sent as written: the body of `if-shell`, the argument of
+`run-shell -C`, a brace block, a hook, a key binding or a sourced file. These
+are the refused commands, the releases they affect, and what happens there:
+
+- `break-pane` without `-n`: exact tmux 3.7 only. The server exits. tmux 3.7a
+  fixes it ([`CHANGES`](https://github.com/tmux/tmux/blob/3.7a/CHANGES#L3),
+  [the inverted name test in 3.7](https://github.com/tmux/tmux/blob/3.7/cmd-break-pane.c#L117-L124)).
+- `select-layout` with a string tmux cannot parse: tmux 3.3 and 3.3a. The server
+  exits. 3.4 answers "invalid layout".
+- `refresh-client -l`: below 3.6a, and only with an attached client. The server
+  exits at once on 3.3a when the client's terminal has the `Ms` clipboard
+  capability, such as `xterm-256color` or `tmux-256color`, and on 3.4 to 3.6
+  when the client leaves before its terminal answers.
+- `delete-buffer -b NAME`, and `set-buffer -b NAME -n`: below 3.4. No crash; a
+  name that does not exist acts on the newest buffer instead, so the wrong
+  buffer is deleted or renamed.
+- `split-window -p`: exactly 3.4. tmux answers "size missing" and changes
+  nothing.
+- `break-pane -n NAME` without `-P`: exactly 3.7. No crash; tmux accepts the
+  command and ignores the name, so the window keeps its default name.
+- Names containing `:` or `.`: exactly 3.7. tmux answers "invalid window name"
+  and changes nothing.
+
+On exact tmux 3.7 the guard refuses a direct `break-pane` that has no `-n` and
+a direct `break-pane -n NAME` that has no `-P`. It accepts `break-pane -n NAME
+-P`, which is the supported spelling. Only a nested or key-bound `break-pane`
+reaches tmux without that check, so give each of those a name, or upgrade to
+3.7a. The [default `prefix !` binding](https://github.com/tmux/tmux/blob/3.7/key-bindings.c#L358)
+is itself a nameless `break-pane`, which no library check can reach.
+
+Behaviour on a release that no CI lane builds is unverified.
+
 ## Parity with the Python library
 
 `parity/python-0.62.0.json` is a ledger against libtmux 0.62.0. Every public
