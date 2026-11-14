@@ -26,27 +26,31 @@ $ bun install
 $ bun test examples/workspace
 ```
 
-The test builds each workspace against a real tmux server the suite starts on
-a socket of its own, asserts on the windows and panes it produced, and tears
-the server down afterwards. Requires tmux 3.3a or newer.
+Needs tmux 3.3a or newer.
 
 ## The quick way
 
 <!-- runs: examples/workspace/workspace.ts -->
 
 ```ts
-const built = await server.newSession({
-  name: "work",
-  shellCommand: "sleep 30",
-  windowName: "editor",
-});
+import type { Server } from "libtmux/server";
+import type { Session } from "libtmux/session";
 
-const [logs, shell] = await server.batch([
-  built.plan.newWindow({ name: "logs", shellCommand: "tail -f /dev/null" }),
-  built.plan.newWindow({ name: "shell" }),
-]);
+export async function buildSimpleWorkspace(server: Server): Promise<Session> {
+  const built = await server.newSession({
+    name: "work",
+    shellCommand: "sleep 30",
+    windowName: "editor",
+  });
 
-await logs.selectLayout("even-horizontal");
+  const [logs, shell] = await server.batch([
+    built.plan.newWindow({ name: "logs", shellCommand: "tail -f /dev/null" }),
+    built.plan.newWindow({ name: "shell" }),
+  ]);
+
+  await logs.selectLayout("even-horizontal");
+  return built;
+}
 ```
 
 `server.batch` plans every window first and resolves all of them from one final
@@ -59,10 +63,8 @@ panes. `buildWorkspace` passes it to `applyWorkspace`, which adopts tmux's
 initial window and pane and reconciles an existing owned session. See
 [`workspace.ts`](workspace.ts) for the full function.
 
-This page's first snippet is a literal excerpt of `workspace.ts`, which
-`workspace.test.ts` runs against a real tmux server, and which the
-[library README](../../packages/libtmux/README.md#servernewsession-build-a-workspace) quotes the same
-way.
+The [library README](../../packages/libtmux/README.md#servernewsession-build-a-workspace)
+quotes the same excerpt.
 
 ## Where to go next
 

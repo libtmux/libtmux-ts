@@ -18,38 +18,32 @@ $ bun install
 $ bun test examples/program
 ```
 
-The test drives each function against a real tmux server the suite starts on a
-socket of its own. Requires tmux 3.8 or newer; below it the test checks that
-the library refuses.
+Needs tmux 3.8 or newer; below it the library refuses.
 
 ## What it shows
 
-`server.run` is the one-call form: by default the program runs in a detached
-session of its own, gone when the call returns. Its `output` is the terminal's
-rendering, so colors are applied rather than returned and a progress bar that
-redrew itself shows only its last frame. `timedOut` is part of the result, with
-the output printed so far. `sortLines` gives the program a stdin with `input`,
-and `readJson` keeps its stderr apart with `separateStderr`, so `output` is
-stdout alone. `runUnlessCancelled` ends a run when a signal fires, and reports
-from the cancel's `delivery` whether the program had started.
+`server.run` is the one-call form. The program runs in a detached session of
+its own, gone when the call returns, and `output` is the terminal's rendering.
 
-`runBeside` runs a program in a split beside a pane, where a person sees it,
-and leaves the pane showing the output with `keep`.
+- `timedOut` is part of the result, with the output printed so far.
+- `sortLines` gives the program a stdin with `input`.
+- `readJson` keeps stderr apart with `separateStderr`, so `output` is stdout
+  alone.
+- `runUnlessCancelled` ends a run when a signal fires, and the cancel's
+  `delivery` says whether the program had started.
+- `runBeside` runs a program in a split beside a pane, where a person sees it,
+  and `keep` leaves the pane showing the output.
 
-`server.spawn` keeps the program running and hands it back once it has
-started. `prependLine` drives vim with keys, after its first screen: a program
-still setting up its terminal can discard what was typed before.
+`server.spawn` hands the program back once it has started.
 
-`stream: true` copies everything the program writes, and `stream()` yields it as
-UTF-8 text until the program exits. It is the terminal's text, `\r\n` line ends
-and escape sequences included. `followOutput` caps the copy at a mebibyte, and
-`startService` reads the stream until the program says it is ready.
-
-Every program holds a lease: should this process die without ending it, tmux
-does. `startService` shortens it with `orphanAfterMs`.
-
-`await using` removes the program's pane however the function leaves,
-including on a throw.
+- `prependLine` drives vim with keys after its first screen: a program still
+  setting up its terminal can discard what was typed before.
+- With `stream: true`, `stream()` yields the terminal's text as UTF-8 until the
+  program exits. `followOutput` caps the copy, and `startService` reads the
+  stream until the program says it is ready.
+- Every program holds a lease: should this process die without ending it, tmux
+  does. `startService` shortens it with `orphanAfterMs`.
+- `await using` removes the program's pane however the function leaves.
 
 ## Where to go next
 

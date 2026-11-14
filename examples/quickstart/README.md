@@ -19,24 +19,27 @@ $ bun install
 $ bun test examples/quickstart
 ```
 
-The test drives `quickstart()` against a real tmux server the suite starts on
-a socket of its own, asserts on what it built, and tears the server down
-afterwards. Requires tmux 3.3a or newer.
+Needs tmux 3.3a or newer.
 
 ## What it shows
 
 <!-- runs: examples/quickstart/quickstart.ts -->
 
 ```ts
-const session = await server.newSession({ name: "quickstart" });
-const editor = await session.newWindow({ name: "editor" });
-await editor.split();
+import { Server, TmuxCommandError, type ServerSnapshot } from "libtmux";
 
-const snapshot = await server.snapshot();
+export async function quickstart(server: Server): Promise<ServerSnapshot> {
+  const session = await server.newSession({ name: "quickstart" });
+  const editor = await session.newWindow({ name: "editor" });
+  await editor.split();
 
-const found = snapshot.windows.where({ name: "editor" }).one();
+  const snapshot = await server.snapshot();
 
-const paneCount = found.panes.length;
+  const found = snapshot.windows.where({ name: "editor" }).one();
+
+  const paneCount = found.panes.length;
+  return snapshot;
+}
 ```
 
 The mutations above send commands to tmux. After `.snapshot()` returns,
@@ -45,9 +48,8 @@ The mutations above send commands to tmux. After `.snapshot()` returns,
 walked with no `await`, a literal `sendKeys`, and a failed command caught as a
 typed `TmuxCommandError`.
 
-This is a literal excerpt of [`quickstart.ts`](quickstart.ts), which
-`quickstart.test.ts` runs against a real tmux server, and which the root
-[README](../../README.md#quickstart) quotes the same way.
+The root [README](../../README.md#quickstart) runs the same calls on a private
+server.
 
 ## Where to go next
 

@@ -18,8 +18,7 @@ $ bun install
 $ bun test examples/fields
 ```
 
-The test drives `reportPanes()` against a real tmux server the suite starts on
-a socket of its own, and tears it down afterwards. Requires tmux 3.3a or newer.
+Needs tmux 3.3a or newer.
 
 ## What it shows
 
@@ -28,8 +27,8 @@ arrives as arithmetic rather than as text to parse, and a flag arrives as
 `false` rather than as the string `"0"` — which is truthy, and is the bug this
 decoding exists to prevent.
 
-`fields.ts` is the source `packages/libtmux/README.md` quotes for its criteria
-recipe, so what the reference shows is what this file runs.
+[The library README](../../packages/libtmux/README.md#find-sessions-windows-and-panes)
+quotes this file's criteria recipe.
 
 ## Where to go next
 

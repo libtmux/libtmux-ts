@@ -1,11 +1,6 @@
 # Examples
 
-Runnable programs, each executed by the integration suite against a real,
-isolated tmux server — so the code here is the code that runs, and a README
-recipe drawn from it is [checked against it](../scripts/check-doc-runnable.ts)
-on every commit.
-
-Part of [libtmux for Bun and TypeScript](../README.md).
+Runnable programs for [libtmux for Bun and TypeScript](../README.md).
 
 ## Run them
 
@@ -23,36 +18,38 @@ Or one at a time, each being a package of its own:
 $ bun test examples/watch
 ```
 
-Every example exports a function taking a `Server` rather than constructing
-one, so the suite can hand it an isolated fixture — and you can hand it a
-server of your own:
+Every example exports a function that takes a `Server`, so a program can hand
+it a server of its own. This one starts a private server, reads it, and stops it:
 
 ```ts
 import { Server } from "libtmux";
 
-const server = new Server();
-const snapshot = await server.snapshot();
+const server = new Server({ socketName: "libtmux-examples" });
+try {
+  await server.newSession({ name: "work" });
+  const snapshot = await server.snapshot();
 
-console.log(snapshot.sessions.count());
+  console.log(snapshot.sessions.count());
+  // 1
+} finally {
+  await server.kill();
+}
 ```
 
-Requires tmux 3.3a or newer.
+Needs tmux 3.3a or newer.
 
 ### They cannot touch your tmux
 
 Each example runs against a server the suite starts for it, on a socket of its
-own — something like:
+own, such as:
 
 ```
 /tmp/ltx-examples-PE2i8W/run, root/t-6028-17d6a81a-1fc/s
 ```
 
-A fresh directory per run, a generated socket name per fixture, and the whole
-thing removed afterwards. That is checked rather than assumed: every example
-asserts, before it sends a single key, that the socket it was handed carries
-this package's own prefix and is not the server this process is attached to.
-Point the suite anywhere else and every one of them fails instead of quietly
-driving your session.
+The directory is new each run and removed afterwards. Every example asserts,
+before it sends a key, that its socket carries this package's prefix and is not
+the server this process is attached to.
 
 ## What each one shows
 
@@ -69,39 +66,27 @@ driving your session.
 | [`engine/`](engine/README.md)         | tmux is not where the library assumes — ssh, a container, a daemon    |
 | [`observe/`](observe/README.md)       | You need to see what it sent, or bound how much runs at once          |
 
-Each is a package of its own: a `README.md` saying what it shows and when to
-reach for it, the code beside it, and a test that runs the code against a real
-tmux server. Start with the README, read the code when the README has earned
-it.
+Each is a package of its own: a `README.md`, the code beside it, and a test
+that runs the code against a real tmux server.
 
 ## Quoting an example in a README
 
-A recipe in a README can be tied to the example that runs it. Name the file it
-comes from, immediately above the block:
+A README block can be tied to the example that runs it. Name the file
+immediately above the block:
 
 ```
 <!-- runs: examples/agent/agent.ts -->
 ```
 
-[`check-doc-runnable.ts`](../scripts/check-doc-runnable.ts) then requires every
-line the block shows to appear in that file, in order. The path has to start
-with `examples/` and has to exist, because the whole claim of the marker is
-that the integration suite executes what it names.
+[`check-doc-runnable.ts`](../scripts/check-doc-runnable.ts) requires every line
+the block shows to appear in that file, in order. The path must start with
+`examples/` and exist.
 
-What a block may leave out is generous: blank lines, `//` comments, and the
-continuation lines of a doc comment are never compared, so a recipe can drop
-the error handling and the commentary and still match. What it may not do is
-reorder, reword, or invent. A line matches on its exact text once trimmed, and
-the search only moves forward — so renaming a variable in the example turns
-every line after it into a miss, and the failure names the first line it could
-not place.
-
-The loop runs one way. Edit the example, run it, then bring the excerpt across;
-never edit the block and expect the example to follow, because only the example
-is executed.
-
-Compiling a snippet proves it typechecks. The marker checks that its lines come
-from an example the integration suite executes.
+- A block may leave out blank lines, `//` comments, and the continuation lines of
+  a doc comment. It may not reorder, reword, or invent: a line matches on its
+  exact trimmed text, and the search only moves forward.
+- Edit the example, run it, then bring the excerpt across. Only the example is
+  executed.
 
 ## Where to go next
 

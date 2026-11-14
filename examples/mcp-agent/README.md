@@ -17,10 +17,7 @@ $ bun install
 $ bun test examples/mcp-agent
 ```
 
-The test connects a real MCP client to `@libtmux/mcp` over an in-memory
-transport, against a real tmux server the suite starts on a socket of its own.
-Requires tmux 3.3a or newer; the program and exit helpers need 3.8, and their
-test is skipped below it.
+Needs tmux 3.3a or newer; the program and exit helpers need 3.8.
 
 ## What it shows
 
@@ -41,8 +38,7 @@ through `read_program`'s cursor, stopping it however the read ends.
 `runWithInput` hands `run_program` a stdin, and `waitForExit` waits for a
 program somebody else started.
 
-No subprocess and no socket of its own: the client and server share memory, so
-this is the cheapest way to see the tool surface end to end.
+The client and server share memory, so there is no subprocess to start.
 
 ## Where to go next
 

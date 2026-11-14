@@ -17,8 +17,7 @@ $ bun install
 $ bun test examples/engine
 ```
 
-The test drives `throughACustomEngine()` against a real tmux server the suite
-starts on a socket of its own. Requires tmux 3.3a or newer.
+Needs tmux 3.3a or newer.
 
 ## What it shows
 
