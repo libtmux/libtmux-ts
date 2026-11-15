@@ -1,6 +1,12 @@
+import { constants } from "node:fs";
+import { open, rm } from "node:fs/promises";
+import { homedir } from "node:os";
+import { isAbsolute } from "node:path";
+
 import { adaptRawResult, prepareCommandRequest } from "./request.js";
 import { isColdEndpoint, runCommand, runCommandBytes } from "./command.js";
-import { TmuxTransportError } from "../../errors.js";
+import { literalFormat } from "./options.js";
+import { TmuxCommandError, TmuxTransportError } from "../../errors.js";
 import type { SaveBufferOptions } from "../../types.js";
 import type { RuntimeContext } from "../runtime/context.js";
 
@@ -88,6 +94,36 @@ export async function listBuffers(runtime: RuntimeContext): Promise<readonly str
 }
 
 /**
+ * Make the file tmux is about to write, readable by its owner alone.
+ *
+ * tmux creates a missing file with the umask of the process that opens it,
+ * usually 0644, and keeps the mode of one that exists, so creating it first is
+ * the only way to keep a pane's text from other users. Resolves to the path made,
+ * or `undefined` when nothing was: `-` is tmux's stdout, a file that exists
+ * keeps its mode, and one that cannot be made is left for tmux to report. A
+ * relative path and a leading `~/` are resolved as tmux resolves them.
+ */
+async function createPrivateFile(path: string): Promise<string | undefined> {
+  if (path === "-") return undefined;
+  const target = path.startsWith("~/")
+    ? `${homedir()}${path.slice(1)}`
+    : isAbsolute(path)
+      ? path
+      : `${process.cwd()}/${path}`;
+  try {
+    const handle = await open(
+      target,
+      constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL,
+      0o600,
+    );
+    await handle.close();
+    return target;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * Write a paste buffer to a file, rather than returning it as text.
  *
  * `showBuffer` brings the contents back through this process, which for a
@@ -95,6 +131,9 @@ export async function listBuffers(runtime: RuntimeContext): Promise<readonly str
  * context on bytes it only wants stored. tmux writes the file itself, so
  * neither happens. The path is resolved by the tmux server, so it is on the
  * machine tmux runs on rather than this one.
+ *
+ * The file is created here, with mode 0600, just before tmux writes it, because
+ * tmux has no flag for a mode. `#` in the path is literal.
  */
 export async function saveBuffer(
   runtime: RuntimeContext,
@@ -102,13 +141,31 @@ export async function saveBuffer(
   path: string,
   options: SaveBufferOptions = {},
 ): Promise<void> {
-  await runCommand(
-    runtime,
-    // `--` keeps a path starting with `-` from being read as one of
-    // save-buffer's own flags.
-    ["save-buffer", ...(options.append === true ? ["-a"] : []), "-b", name, "--", path],
-    options,
-  );
+  const created = await createPrivateFile(path);
+  try {
+    await runCommand(
+      runtime,
+      // `--` keeps a path starting with `-` from being read as one of
+      // save-buffer's own flags.
+      [
+        "save-buffer",
+        ...(options.append === true ? ["-a"] : []),
+        "-b",
+        name,
+        "--",
+        literalFormat(path),
+      ],
+      options,
+    );
+  } catch (error) {
+    // tmux refusing the save means it wrote nothing. After a timeout or a
+    // cancellation it may still write, and an empty file only its owner can
+    // read is the safe thing to leave.
+    if (created !== undefined && error instanceof TmuxCommandError) {
+      await rm(created, { force: true }).catch(() => undefined);
+    }
+    throw error;
+  }
 }
 
 /** Discard a named paste buffer. */

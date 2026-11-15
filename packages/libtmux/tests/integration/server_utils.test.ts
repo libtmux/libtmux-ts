@@ -1,4 +1,4 @@
-import { rm, writeFile } from "node:fs/promises";
+import { chmod, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { describe, expect, test } from "bun:test";
@@ -125,6 +125,50 @@ describe("server utilities", () => {
       expect(failure).toBeInstanceOf(TmuxCommandError);
       expect((failure as TmuxCommandError).stderrIncludes("-nonexistent-ltx-dir")).toBe(true);
     });
+  }, 40_000);
+
+  test("saves a buffer to a file only its owner can read, and keeps an existing file's mode", async () => {
+    // tmux creates a missing file under the umask of whichever process opens
+    // it, so the usual 022 is what makes a saved buffer world-readable.
+    const previous = process.umask(0o022);
+    try {
+      await withServer(async (fixture, parent) => {
+        const server = serverFor(fixture);
+        const mode = async (path: string): Promise<number> => (await stat(path)).mode & 0o777;
+        await server.setBuffer("saved", "payload");
+
+        const fresh = join(parent, "fresh.txt");
+        await server.saveBuffer("saved", fresh);
+        expect(await readFile(fresh, "utf8")).toBe("payload");
+        expect(await mode(fresh)).toBe(0o600);
+
+        const appended = join(parent, "appended.txt");
+        await server.saveBuffer("saved", appended, { append: true });
+        expect(await mode(appended)).toBe(0o600);
+
+        // `#` is tmux's format escape; the file is created where the caller said.
+        const hashed = join(parent, "name#S.txt");
+        await server.saveBuffer("saved", hashed);
+        expect(await readFile(hashed, "utf8")).toBe("payload");
+        expect(await mode(hashed)).toBe(0o600);
+
+        const existing = join(parent, "existing.txt");
+        await writeFile(existing, "old");
+        await chmod(existing, 0o644);
+        await server.saveBuffer("saved", existing);
+        expect(await readFile(existing, "utf8")).toBe("payload");
+        expect(await mode(existing)).toBe(0o644);
+
+        // A save tmux refuses leaves no file behind.
+        const refused = join(parent, "refused.txt");
+        await expect(server.saveBuffer("no-such-buffer", refused)).rejects.toBeInstanceOf(
+          TmuxCommandError,
+        );
+        await expect(stat(refused)).rejects.toMatchObject({ code: "ENOENT" });
+      });
+    } finally {
+      process.umask(previous);
+    }
   }, 40_000);
 
   test("lists tmux commands", async () => {

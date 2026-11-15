@@ -177,7 +177,7 @@ describe("command option forwarding", () => {
     await server.setHook("after-new-window", "display-message hi", { timeoutMs: 13 });
     await server.setEnvironment("EDITOR", "vim", { timeoutMs: 14 });
     await server.ifShell("true", "display-message hi", { timeoutMs: 15 });
-    await server.saveBuffer("scratch", "/tmp/ltx-nowhere", { timeoutMs: 16 });
+    await server.saveBuffer("scratch", "/ltx-nowhere/out", { timeoutMs: 16 });
 
     expect(requests.map((request) => request.timeoutMs)).toEqual([11, 12, 13, 14, 15, 16]);
   });

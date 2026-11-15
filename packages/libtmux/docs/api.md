@@ -897,6 +897,14 @@ Write a paste buffer to a file instead of reading it back.
 that means holding it in memory to put it somewhere else. tmux writes the
 file itself, on the machine tmux is running on.
 
+A file this call creates has mode 0600, whatever the umask, because the
+buffer may hold a pane's text or a secret. This process makes it just
+before tmux writes it, so a tmux server on another host, or run by another
+user, cannot save to a path made here. A file that exists keeps its mode and
+is replaced, or appended to with `append`. If tmux refuses the save, the
+file this call created is removed; after a timeout or cancellation it stays,
+because tmux may still write it. `#` in `path` is literal.
+
 ```ts
 await server.saveBuffer("captured", "/tmp/build.log");
 ```
