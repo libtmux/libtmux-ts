@@ -38,9 +38,9 @@
   },
   "devDependencies": {
     "cli-truncate": "6.2.0",
-    "commander": "15.0.0",
-    "oxfmt": "0.76.0",
-    "string-width": "8.3.0",
+    "commander": "15.1.0",
+    "oxfmt": "0.78.0",
+    "string-width": "9.0.0",
     "yaml": "2.9.1"
   },
   "engines": {
