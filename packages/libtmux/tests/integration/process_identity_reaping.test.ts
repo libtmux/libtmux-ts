@@ -199,7 +199,7 @@ describe("identity-safe inaccessible-socket fallback", () => {
 
   test("bounds and reaps a pidfd helper that ignores TERM and keeps pipes open", async () => {
     const { parent, root } = await createIsolatedRunRoot("hanging-pidfd-helper");
-    const helper = join(parent, "hanging-python");
+    const helper = join(parent, "hanging-bun");
     const helperMarker = join(parent, "helper.pid");
     await writeFile(
       helper,
@@ -210,7 +210,7 @@ describe("identity-safe inaccessible-socket fallback", () => {
       environment: {
         ...process.env,
         LIBTMUX_HELPER_MARKER: helperMarker,
-        LIBTMUX_TEST_PYTHON: helper,
+        LIBTMUX_TEST_BUN: helper,
       },
       runRoot: root,
     });

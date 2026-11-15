@@ -30,13 +30,11 @@ export type {
   ReservationCapability,
 } from "./fixture_launch.js";
 export {
-  pidfdHelper,
   prepareRunRoot,
   reapFixture,
   reapOwnedRunRoot,
   reapStaleRunRoot,
   retireFixtureGeneration,
-  resolvePidfdInterpreter,
   sweepStaleRunRoots,
 } from "./reaper.js";
 export type { ReapReport } from "./reaper.js";

@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { chmod, link, lstat, mkdir, readdir, rename, rmdir, unlink } from "node:fs/promises";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { NodeSpawnTransport } from "../transport/node_spawn_transport.js";
 import {
@@ -176,154 +177,18 @@ async function collectChild(
   });
 }
 
-export const pidfdHelper: string = String.raw`
-import json, os, select, signal, sys
-
-def identity(pid):
-    with open("/proc/sys/kernel/random/boot_id", encoding="ascii") as stream:
-        boot = stream.read().strip()
-    with open(f"/proc/{pid}/stat", encoding="utf-8") as stream:
-        text = stream.read()
-    fields = text[text.rfind(") ") + 2:].split()
-    return f"linux:{boot}:{fields[19]}"
-
-def daemon_identity(pid):
-    with open(f"/proc/{pid}/comm", encoding="utf-8") as stream:
-        comm = stream.read().strip()
-    executable = os.path.realpath(f"/proc/{pid}/exe")
-    return identity(pid), comm, executable
-
-def nul_frames(path):
-    with open(path, "rb") as stream:
-        raw = stream.read()
-    if not raw or raw[-1:] != b"\0":
-        return None
-    try:
-        values = raw.decode("utf-8", errors="strict").split("\0")
-    except UnicodeDecodeError:
-        return None
-    if values and values[-1] == "":
-        values.pop()
-    if any(value == "" for value in values):
-        return None
-    return values
-
-def launch_matches(pid, expected_argv, generation_name, generation_value):
-    arguments = nul_frames(f"/proc/{pid}/cmdline")
-    with open(f"/proc/{pid}/environ", "rb") as stream:
-        environment = stream.read()
-    expected_generation = f"{generation_name}={generation_value}".encode("ascii")
-    generation_prefix = f"{generation_name}=".encode("ascii")
-    valid_environment = bool(environment) and environment[-1:] == b"\0"
-    frames = environment[:-1].split(b"\0") if valid_environment else []
-    return (
-        arguments == expected_argv
-        and valid_environment
-        and all(frame for frame in frames)
-        and [entry for entry in frames if entry.startswith(generation_prefix)]
-            == [expected_generation]
-    )
-
-def matches(pid, expected_identity, expected_comm, expected_executable, expected_argv, generation_name, generation_value):
-    return (
-        daemon_identity(pid) == (expected_identity, expected_comm, expected_executable)
-        and launch_matches(pid, expected_argv, generation_name, generation_value)
-    )
-
-def refuse(pid, expected_identity):
-    # An exited, unreaped daemon keeps its stat line, start time included, while
-    # its exe, cmdline and environ go: that is the daemon gone, not another one.
-    with open(f"/proc/{pid}/stat", encoding="utf-8") as stream:
-        text = stream.read()
-    if text[text.rfind(") ") + 2:].split()[0] in ("Z", "X") and identity(pid) == expected_identity:
-        print(json.dumps({"status": "gone"}))
-        raise SystemExit(0)
-    print(json.dumps({"status": "identity-mismatch"}))
-    raise SystemExit(3)
-
-pid = int(sys.argv[1])
-expected = sys.argv[2]
-expected_comm = sys.argv[3]
-expected_executable = sys.argv[4]
-expected_argv = json.loads(sys.argv[5])
-generation_name = sys.argv[6]
-generation_value = sys.argv[7]
-try:
-    if not matches(pid, expected, expected_comm, expected_executable, expected_argv, generation_name, generation_value):
-        refuse(pid, expected)
-    descriptor = os.pidfd_open(pid, 0)
-    try:
-        if not matches(pid, expected, expected_comm, expected_executable, expected_argv, generation_name, generation_value):
-            refuse(pid, expected)
-        signal.pidfd_send_signal(descriptor, signal.SIGTERM)
-        poller = select.poll()
-        poller.register(descriptor, select.POLLIN)
-        escalated = not bool(poller.poll(500))
-        if escalated:
-            if not matches(pid, expected, expected_comm, expected_executable, expected_argv, generation_name, generation_value):
-                # Exit can race the identity read after the TERM wait.
-                if any(
-                    fd == descriptor
-                    and events & select.POLLIN
-                    and not events & (select.POLLERR | select.POLLNVAL)
-                    for fd, events in poller.poll(0)
-                ):
-                    print(json.dumps({"status": "gone"}))
-                    raise SystemExit(0)
-                refuse(pid, expected)
-            signal.pidfd_send_signal(descriptor, signal.SIGKILL)
-        if not poller.poll(2000):
-            print(json.dumps({"status": "still-live"}))
-            raise SystemExit(4)
-        print(json.dumps({"escalated": escalated, "status": "reaped"}))
-    finally:
-        os.close(descriptor)
-except (ProcessLookupError, FileNotFoundError):
-    print(json.dumps({"status": "gone"}))
-except (AttributeError, NotImplementedError, OSError) as error:
-    print(json.dumps({"status": "unavailable", "error": str(error)}))
-    raise SystemExit(5)
-`;
-
-const PIDFD_PROBE_SOURCE = "import os, sys; sys.exit(0 if hasattr(os, 'pidfd_open') else 1)";
-const PIDFD_INTERPRETER_CANDIDATES: readonly string[] = ["python3", "/usr/bin/python3"];
+const pidfdScript = fileURLToPath(new URL("../../../scripts/pidfd_reap.ts", import.meta.url));
 
 /**
- * CPython gates `os.pidfd_open` on a build-time capability check, so an
- * interpreter first on `PATH` — a virtualenv, or a free-threading build — can
- * lack it while another on the same machine has it. Reaping a daemon whose
- * socket was already unlinked has no other route, and an interpreter chosen
- * without checking presents that gap as substrate flakiness: the daemon and its
- * reservation survive, and the next run inherits them.
+ * Bun runs the pidfd helper, because Node has no pidfd binding. Under Bun that
+ * is this process's own executable; under Node it is `bun` on `PATH`, which the
+ * runners that start the Node lane already require. `LIBTMUX_TEST_BUN` names
+ * another, and is never probed or substituted.
  */
-export async function resolvePidfdInterpreter(
-  candidates: readonly string[],
-  probe: (executable: string) => Promise<boolean>,
-): Promise<string | undefined> {
-  for (const candidate of candidates) {
-    try {
-      // eslint-disable-next-line no-await-in-loop -- First match wins, so later candidates must never be spawned.
-      if (await probe(candidate)) return candidate;
-    } catch {
-      // A candidate that cannot be spawned is simply not a usable interpreter.
-    }
-  }
-  return undefined;
-}
-
-async function probePidfdInterpreter(executable: string): Promise<boolean> {
-  const result = await collectChild(executable, ["-I", "-c", PIDFD_PROBE_SOURCE]);
-  return result.code === 0;
-}
-
-let resolvedPidfdInterpreter: Promise<string | undefined> | undefined;
-
-function defaultPidfdInterpreter(): Promise<string | undefined> {
-  resolvedPidfdInterpreter ??= resolvePidfdInterpreter(
-    PIDFD_INTERPRETER_CANDIDATES,
-    probePidfdInterpreter,
+function pidfdExecutable(environment: NodeJS.ProcessEnv): string {
+  return (
+    environment.LIBTMUX_TEST_BUN ?? (process.versions.bun === undefined ? "bun" : process.execPath)
   );
-  return resolvedPidfdInterpreter;
 }
 
 async function reapViaPidfd(
@@ -332,19 +197,10 @@ async function reapViaPidfd(
   identity: DaemonIdentity,
 ): Promise<string | undefined> {
   const environment = controllerEnvironment(capability, record.generation.name);
-  // An explicitly configured interpreter is authoritative and is never probed
-  // or substituted; probing it would both override the choice and hang on a
-  // helper written to hang.
-  const python = environment.LIBTMUX_TEST_PYTHON ?? (await defaultPidfdInterpreter());
-  if (python === undefined) {
-    return `pidfd cleanup unavailable: no interpreter in ${PIDFD_INTERPRETER_CANDIDATES.join(", ")} exposes os.pidfd_open; set LIBTMUX_TEST_PYTHON to one that does`;
-  }
   const result = await collectChild(
-    python,
+    pidfdExecutable(environment),
     [
-      "-I",
-      "-c",
-      pidfdHelper,
+      pidfdScript,
       String(identity.pid),
       identity.startIdentity,
       identity.comm,

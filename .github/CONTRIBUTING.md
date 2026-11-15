@@ -314,6 +314,10 @@ and start identity rather than by age, so a root a concurrent run still holds is
 refused. Set `LIBTMUX_TEST_DEADLINE_SCALE` on a machine slower or busier than
 the ones these bounds were tuned on.
 
+A daemon whose socket is already gone is stopped through a pidfd by
+`packages/libtmux/scripts/pidfd_reap.ts`, which Bun runs under both runtimes
+because Node has no pidfd binding. `LIBTMUX_TEST_BUN` names another `bun`.
+
 Ownership is a name prefix. Nesting
 everything under `/tmp/libtmux-ts-test/` was tried: it cost fifteen bytes of
 the socket path budget, which put the longest fixture path at 104 and failed
