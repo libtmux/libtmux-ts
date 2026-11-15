@@ -43,6 +43,15 @@ are in the [`libtmux` changelog](../libtmux/CHANGELOG.md).
 
 ## Unreleased
 
+### `@libtmux/mcp`
+
+Add `LIBTMUX_START_SESSION`, the name of a session to create when no tmux server
+answers on the socket `LIBTMUX_SOCKET` or `LIBTMUX_SOCKET_PATH` names. The
+executable starts the server with that session, so a client needs no `tmux
+new-session` beforehand, and the startup line ends `started session` and the
+name. A server that already answers is left alone. Without a socket variable,
+startup stops, because tmux would start its default server. (#211)
+
 ## 0.1.2 (2026-10-31)
 
 ### `@libtmux/mcp`
