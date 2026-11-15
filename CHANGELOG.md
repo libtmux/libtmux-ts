@@ -48,6 +48,20 @@ changelog has the documentation, CI and release tooling entries up to 0.1.2.
 
 ### Development
 
+- No test, script or CI step in the core package compares this port with Python
+  libtmux or starts a Python interpreter. The `where_regex` corpus, the
+  differential suite that cloned Python libtmux on every tmux lane, the parity
+  ledger and its fixtures, and the stale notes under `attic/` are removed, so a
+  tmux lane no longer sets up uv or Python libtmux, and the release gate is the
+  integration suite alone. The test runners' pidfd reaper, launch-hold wrapper
+  and record-lock probe run as TypeScript under Bun, and `LIBTMUX_TEST_BUN`
+  replaces `LIBTMUX_TEST_PYTHON` for the reaper. The workspace CLI keeps
+  `LIBTMUX_TEST_PYTHON` for its tmuxp bridge tests. (#214)
+- The workspace CLI tests compare each of tmuxp's example files with a structure
+  written by hand from what tmuxp documents, build it on a private tmux to
+  compare the window and pane tree, and check
+  `tests/fixtures/tmuxp-examples/syntax-support.json` against the loader. No
+  test needs tmuxp or Python for them. (#202)
 - CI builds tmux and runs `apt-get` through the shared build-tmux and apt-get
   actions of `libtmux/.github`, pinned by commit. The repository no longer
   carries its own `tmux_build.py`, `tmux-releases.toml`, `scripts/apt-get.sh`
