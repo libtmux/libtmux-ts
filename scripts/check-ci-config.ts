@@ -21,8 +21,8 @@ import { rawAptFailures } from "./ci_apt.js";
  * What this deliberately does not claim: that every ecosystem dependabot could
  * file for is configured. Action pins are checked below, after the workflow
  * set has been found, so a version tag cannot silently move the code CI runs.
- * The same pass refuses a `run` script that calls `apt-get` without
- * `scripts/apt-get.sh`.
+ * The same pass refuses a `run` script that calls `apt-get` itself instead of
+ * the shared apt-get action.
  */
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
@@ -204,7 +204,7 @@ if (workflows.length === 0) {
 }
 
 // A local action's own steps run what the workflows delegate to it, so they
-// are held to the same pins and the same apt-get wrapper.
+// are held to the same pins and the same apt-get rule.
 const localActions = await Array.fromAsync(
   new Bun.Glob("actions/*/action.yml").scan({ cwd: join(repositoryRoot, ".github"), dot: true }),
 );

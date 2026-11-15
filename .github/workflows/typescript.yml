@@ -137,9 +137,10 @@ jobs:
       # floor and each release between are the version job's.
       - name: Build tmux 3.8
         id: tmux
-        uses: ./.github/actions/build-tmux
+        uses: libtmux/.github/actions/build-tmux@a3e6718f34fef208acaeb1c7d1a38b3d9d1e46f6
         with:
           ref: "3.8"
+          add-to-path: "true"
 
       - run: echo "$TMUX_PREFIX/bin" >> "$GITHUB_PATH"
         env:
@@ -148,7 +149,9 @@ jobs:
 
       # fish proves non-POSIX-shell refusal; zsh exercises trap preservation.
       - name: Install test shells
-        run: ./scripts/apt-get.sh install -y fish zsh
+        uses: libtmux/.github/actions/apt-get@a3e6718f34fef208acaeb1c7d1a38b3d9d1e46f6
+        with:
+          args: install -y fish zsh
 
       - run: bun install --frozen-lockfile
 
@@ -350,9 +353,10 @@ jobs:
       # for good, which is the one thing a master lane exists to avoid.
       - name: Build tmux ${{ matrix.tmux-version }}
         id: tmux
-        uses: ./.github/actions/build-tmux
+        uses: libtmux/.github/actions/build-tmux@a3e6718f34fef208acaeb1c7d1a38b3d9d1e46f6
         with:
           ref: ${{ matrix.tmux-version }}
+          add-to-path: "true"
 
       - name: Open a tmate session before the tests
         if: ${{ matrix.tmate == 'before-tests' }}
@@ -389,11 +393,14 @@ jobs:
           bun run test:integration
           bun run test:differential
 
+      - name: Install test shells
+        uses: libtmux/.github/actions/apt-get@a3e6718f34fef208acaeb1c7d1a38b3d9d1e46f6
+        with:
+          args: install -y fish zsh
+
       - name: Exercise the workspace CLI on this tmux
         working-directory: packages/workspace-cli
-        run: |
-          "$GITHUB_WORKSPACE/scripts/apt-get.sh" install -y fish zsh
-          bun run test
+        run: bun run test
 
       - name: Open a tmate session after a failure
         if: ${{ failure() && matrix.tmate == 'on-failure' }}
