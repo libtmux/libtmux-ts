@@ -454,7 +454,6 @@ testControl(
 // that returns first, or finds its pane killed, removes the directory itself.
 test("a run past its timeout no longer needs its private directory", async () => {
   await withServer(async (fixture) => {
-    await fixture.executeText(["set-option", "-g", "default-command", "sh"]);
     const scratchTmp = await mkdtemp(join(tmpdir(), "ltxscratch-"));
     try {
       await withClient(
@@ -466,12 +465,12 @@ test("a run past its timeout no longer needs its private directory", async () =>
               name: "create_session",
             }),
           );
-          const result = structured<{ outcome: string }>(
-            await client.callTool({
-              arguments: { command: "sleep 3", paneId: created.paneId, timeoutMs: 1_000 },
-              name: "run_shell_command",
-            }),
-          );
+          const answer = await client.callTool({
+            arguments: { command: "sleep 3", paneId: created.paneId, timeoutMs: 1_000 },
+            name: "run_shell_command",
+          });
+          expect(answer.isError, JSON.stringify(answer)).not.toBe(true);
+          const result = structured<{ outcome: string }>(answer);
           expect(result.outcome).toBe("timed_out");
           // The shell holds the script open once it starts, so nothing waits on its trailer.
           const leftover = await readdir(scratchTmp);
@@ -563,7 +562,9 @@ test("a pane killed mid-run returns what it printed and takes its private direct
           await fixture.executeText(["kill-pane", "-t", created.paneId]);
           const killed = performance.now();
 
-          const result = structured<{ outcome: string; output: string }>(await running);
+          const answer = await running;
+          expect(answer.isError, JSON.stringify(answer)).not.toBe(true);
+          const result = structured<{ outcome: string; output: string }>(answer);
           expect(result.outcome).toBe("pane_died");
           expect(result.output).toBe("one\ntwo\n");
           // Answered once the pane is seen gone, not at the timeout.
