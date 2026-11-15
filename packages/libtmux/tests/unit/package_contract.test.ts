@@ -54,7 +54,6 @@ const expectedScripts = {
   "generate:check": "bun scripts/generate-formats.ts --check",
   lint: "oxlint . --ignore-pattern tests/fixtures/type-aware-lint/** --deny-warnings --report-unused-disable-directives && bun scripts/check-type-aware-lint.ts",
   "lint:unused": "knip",
-  parity: "bun scripts/check-parity.ts",
   "test:differential": "bun scripts/run-differential-tests.ts",
   "test:integration": "bun scripts/run-integration-tests.ts",
   "test:node": "bun run build && bun scripts/test-node.ts --expect-major 22",
@@ -273,7 +272,6 @@ describe("package contract", () => {
       "./errors",
       "./exc",
       "./constants",
-      "./formats",
       "./types",
       "./field-types",
       "./server",
@@ -316,12 +314,6 @@ describe("package contract", () => {
       bun: "./src/constants.ts",
       import: "./dist/constants.js",
       default: "./dist/constants.js",
-    });
-    expect(packageManifest.exports["./formats"]).toEqual({
-      types: "./dist/formats.d.ts",
-      bun: "./src/formats.ts",
-      import: "./dist/formats.js",
-      default: "./dist/formats.js",
     });
     expect(packageManifest.exports["./types"]).toEqual({
       types: "./dist/types.d.ts",
@@ -380,7 +372,7 @@ describe("package contract", () => {
     expect(mcpManifest.dependencies?.libtmux).toBe(packageManifest.version);
     expect(workspaceManifest.peerDependencies?.libtmux).toBe(packageManifest.version);
     // A command has no host project to provide a peer, and Yarn installs none:
-    // `yarn dlx` could not import libtmux while the CLI declared it as one.
+    // `yarn dlx` could not load libtmux while the CLI declared it as one.
     expect(cliManifest.dependencies?.libtmux).toBe(packageManifest.version);
     expect(cliManifest.peerDependencies).toBeUndefined();
     // Absent, not empty: an empty `dependencies` object is noise in a manifest.
@@ -546,7 +538,7 @@ describe("package contract", () => {
 
       const declarations = await Promise.all([
         readFile(join(outputDirectory, "index.d.ts"), "utf8"),
-        readFile(join(outputDirectory, "formats.d.ts"), "utf8"),
+        readFile(join(outputDirectory, "field_types.d.ts"), "utf8"),
       ]);
       // The root entrypoint carries the public surface, so it has to name the
       // classes rather than be empty.
@@ -573,8 +565,8 @@ describe("package contract", () => {
           expect(declaration).not.toContain(forbidden);
         }
       }
-      // The format entrypoint additionally must not drag the model classes in;
-      // the root entrypoint is where those legitimately live.
+      // The field-types entrypoint additionally must not drag the model classes
+      // in; the root entrypoint is where those legitimately live.
       expect(declarations[1]).not.toContain("Server");
 
       await writeFile(
@@ -585,7 +577,6 @@ describe("package contract", () => {
               ".": { types: "./types/index.d.ts" },
               "./engine": { types: "./types/engine.d.ts" },
               "./field-types": { types: "./types/field_types.d.ts" },
-              "./formats": { types: "./types/formats.d.ts" },
               "./server": { types: "./types/server.d.ts" },
               "./types": { types: "./types/types.d.ts" },
             },
@@ -599,13 +590,6 @@ describe("package contract", () => {
       await writeFile(
         join(temporary, "consumer.ts"),
         `import {
-  CLIENT_FORMATS,
-  FORMAT_SEPARATOR,
-  PANE_FORMATS,
-  SESSION_FORMATS,
-  WINDOW_FORMATS,
-} from "libtmux/formats";
-import {
   Client,
   LibTmuxException,
   NoMatchError,
@@ -695,8 +679,6 @@ void [
   NoMatchError,
   ServerFromSubpath,
 ];
-
-void [CLIENT_FORMATS, FORMAT_SEPARATOR, PANE_FORMATS, SESSION_FORMATS, WINDOW_FORMATS];
 
 // @ts-expect-error The format vocabulary is internal; there is no neo subpath.
 void import("libtmux/neo");

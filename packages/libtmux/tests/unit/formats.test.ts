@@ -5,16 +5,9 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, test } from "bun:test";
 
-import { generateFormats, renderTask5ParityManifest } from "../../scripts/generate-formats.js";
-import { parseTmuxVersion, releaseAtLeast } from "../../src/_internal/runtime/tmux_version.js";
+import { generateFormats } from "../../scripts/generate-formats.js";
+import { releaseAtLeast } from "../../src/_internal/runtime/tmux_version.js";
 import { MINIMUM_TMUX } from "../../src/_internal/support/versions.js";
-import {
-  CLIENT_FORMATS,
-  FORMAT_SEPARATOR,
-  PANE_FORMATS,
-  SESSION_FORMATS,
-  WINDOW_FORMATS,
-} from "../../src/formats.js";
 import type { FormatFieldName, FormatScope } from "../../src/_generated/format_field_names.js";
 import { FORMAT_FIELD_TOKENS } from "../../src/_generated/format_fields.js";
 import { WHERE_ALIASES_V1, WHERE_FIELDS_V1 } from "../../src/_generated/where_fields.js";
@@ -27,35 +20,16 @@ import {
 } from "../../src/_internal/codec/format_registry.js";
 
 import { makeTestDirectory } from "../../src/_internal/test/testkit.js";
-import { builtModuleUrl, runModule } from "../support/runtime_build.js";
 
-interface PythonFormatFixture {
-  baseline: {
-    commit: string;
-    neoSourceSha256: string;
-    objFieldTokensSha256: string;
-    pythonVersion: string;
-    tag: string;
-    tree: string;
-  };
+interface FormatFixture {
   fields: Array<{ scope: FormatScope; since: string; token: FormatFieldName }>;
 }
 
-const fixtureUrl = new URL("../fixtures/python-0.62.0-format-fields.json", import.meta.url);
-const tmuxFieldUrl = new URL("../fixtures/tmux-format-fields.json", import.meta.url);
-const parityManifestUrl = new URL("../../parity/python-0.62.0.json", import.meta.url);
+const fieldUrl = new URL("../fixtures/tmux-format-fields.json", import.meta.url);
 const tsRootPath = fileURLToPath(new URL("../..", import.meta.url));
 
-async function readFixture(): Promise<PythonFormatFixture> {
-  return JSON.parse(await readFile(fixtureUrl, "utf8")) as PythonFormatFixture;
-}
-
-/** The fields tmux has that Python does not, kept out of the oracle. */
-async function readTmuxOnlyFields(): Promise<PythonFormatFixture["fields"]> {
-  const parsed = JSON.parse(await readFile(tmuxFieldUrl, "utf8")) as {
-    fields: PythonFormatFixture["fields"];
-  };
-  return parsed.fields;
+async function readFields(): Promise<FormatFixture["fields"]> {
+  return (JSON.parse(await readFile(fieldUrl, "utf8")) as FormatFixture).fields;
 }
 
 async function runBoundedCommand(
@@ -93,197 +67,25 @@ function runGeneratorCli(arguments_: readonly string[], cwd = tsRootPath) {
   });
 }
 
-describe("public format constants", () => {
-  test("exports only the accepted runtime surface", async () => {
-    expect(Object.keys(await import("../../src/formats.js")).sort()).toEqual([
-      "CLIENT_FORMATS",
-      "FORMAT_SEPARATOR",
-      "PANE_FORMATS",
-      "SESSION_FORMATS",
-      "WINDOW_FORMATS",
-    ]);
-  });
-
-  test("matches the Python 0.62.0 reference lists", () => {
-    expect(FORMAT_SEPARATOR).toBe("␞");
-    expect(SESSION_FORMATS).toEqual([
-      "session_name",
-      "session_windows",
-      "session_width",
-      "session_height",
-      "session_id",
-      "session_created",
-      "session_created_string",
-      "session_attached",
-      "session_group",
-    ]);
-    expect(CLIENT_FORMATS).toEqual([
-      "client_cwd",
-      "client_height",
-      "client_width",
-      "client_tty",
-      "client_termname",
-      "client_created",
-      "client_created_string",
-      "client_activity",
-      "client_activity_string",
-      "client_prefix",
-      "client_utf8",
-      "client_readonly",
-      "client_session",
-      "client_last_session",
-    ]);
-    expect(WINDOW_FORMATS).toEqual([
-      "window_id",
-      "window_name",
-      "window_width",
-      "window_height",
-      "window_layout",
-      "window_panes",
-      "window_index",
-      "window_flags",
-      "window_active",
-      "window_bell_flag",
-      "window_activity_flag",
-      "window_silence_flag",
-    ]);
-    expect(PANE_FORMATS).toEqual([
-      "history_size",
-      "history_limit",
-      "history_bytes",
-      "pane_index",
-      "pane_width",
-      "pane_height",
-      "pane_title",
-      "pane_id",
-      "pane_active",
-      "pane_dead",
-      "pane_in_mode",
-      "pane_synchronized",
-      "pane_tty",
-      "pane_pid",
-      "pane_start_command",
-      "pane_start_path",
-      "pane_current_path",
-      "pane_current_command",
-      "cursor_x",
-      "cursor_y",
-      "scroll_region_upper",
-      "scroll_region_lower",
-      "saved_cursor_x",
-      "saved_cursor_y",
-      "alternate_on",
-      "alternate_saved_x",
-      "alternate_saved_y",
-      "cursor_flag",
-      "insert_flag",
-      "keypad_cursor_flag",
-      "keypad_flag",
-      "wrap_flag",
-      "mouse_standard_flag",
-      "mouse_button_flag",
-      "mouse_any_flag",
-      "mouse_utf8_flag",
-      "pane_flags",
-      "pane_floating_flag",
-      "pane_x",
-      "pane_y",
-      "pane_z",
-      "pane_zoomed_flag",
-      "pane_pb_progress",
-      "pane_pb_state",
-      "pane_pipe_pid",
-      "bracket_paste_flag",
-      "synchronized_output_flag",
-    ]);
-    for (const value of [CLIENT_FORMATS, PANE_FORMATS, SESSION_FORMATS, WINDOW_FORMATS]) {
-      expect(Object.isFrozen(value)).toBe(true);
-    }
-  });
-
-  test("reads the separator override at import time without coupling guarded framing", async () => {
-    const formatsUrl = builtModuleUrl("formats");
-    const capabilitiesUrl = builtModuleUrl("_internal/runtime/capabilities");
-    const codecUrl = builtModuleUrl("_internal/codec/guard_codec");
-    const source = `
-      const [{ FORMAT_SEPARATOR }, { deriveTmuxCapabilities }, { GuardCodec }] = await Promise.all([
-        import(${JSON.stringify(formatsUrl)}),
-        import(${JSON.stringify(capabilitiesUrl)}),
-        import(${JSON.stringify(codecUrl)}),
-      ]);
-      const capabilities = deriveTmuxCapabilities({
-        connectionAlias: "fresh-process",
-        daemon: { pid: "101", startTime: "202" },
-        daemonEpoch: 1,
-        rawVersion: "3.7b",
-      });
-      const request = new GuardCodec({ capabilities, listCommand: "list-sessions" }).prepare();
-      process.stdout.write(JSON.stringify({
-        formatContainsOverride: request.format.includes(FORMAT_SEPARATOR),
-        separator: FORMAT_SEPARATOR,
-      }));
-    `;
-    const { exitCode, stderr, stdout } = runModule(source, {
-      ...process.env,
-      LIBTMUX_TMUX_FORMAT_SEPARATOR: "CUSTOM_SEPARATOR",
-    });
-
-    expect(exitCode).toBe(0);
-    expect(stderr).toBe("");
-    expect(JSON.parse(stdout)).toEqual({
-      formatContainsOverride: false,
-      separator: "CUSTOM_SEPARATOR",
-    });
-  }, 7_000);
-});
-
 describe("format registry", () => {
-  test("matches every pinned Python Obj token, scope, and version floor", async () => {
-    const fixture = await readFixture();
-
-    expect(Object.keys(fixture)).toEqual(["baseline", "fields"]);
-    expect(Object.keys(fixture.baseline)).toEqual([
-      "commit",
-      "neoSourceSha256",
-      "objFieldTokensSha256",
-      "pythonVersion",
-      "tag",
-      "tree",
-    ]);
-    for (const field of fixture.fields) {
-      expect(Object.keys(field)).toEqual(["scope", "since", "token"]);
-    }
-    expect(fixture.baseline).toEqual({
-      commit: "38e368c11117fb4aeb2f082d552cd4f210eae06a",
-      neoSourceSha256: "764264bf42bc305d1d97e9596806f004326c460e771f2a750429c75690afe82f",
-      objFieldTokensSha256: "de09e5e1cf4d6749c3a9f77c211c0a1a94c7586559d8d08ed516f7c456f1c693",
-      pythonVersion: "0.62.0",
-      tag: "v0.62.0",
-      tree: "eee900223a11c00a4b9b0cc6944e7d5a4d503bc8",
-    });
-    // Parity is a floor, not the whole registry. Every field Python has must be
-    // here with the same scope and version floor; the registry may carry more,
-    // and what more is exactly the tmux source beside the oracle.
-    const registry = FORMAT_REGISTRY.map(({ scope, since, token }) => ({
-      scope,
-      since: since.raw,
-      token,
-    }));
+  test("matches every fixture token, scope, and version floor", async () => {
+    const fields = await readFields();
     // A floor below the supported minimum is the minimum: no daemon this
     // package drives lacks the field.
     const atFloor = <Field extends { since: string }>(field: Field): Field => ({
       ...field,
       since: releaseAtLeast(field.since, MINIMUM_TMUX) ? field.since : MINIMUM_TMUX,
     });
-    const tmuxOnly = await readTmuxOnlyFields();
-    for (const field of fixture.fields) {
-      expect(registry, field.token).toContainEqual(atFloor(field));
-    }
+    const registry = FORMAT_REGISTRY.map(({ scope, since, token }) => ({
+      scope,
+      since: since.raw,
+      token,
+    }));
+
     expect(registry.toSorted((left, right) => (left.token < right.token ? -1 : 1))).toEqual(
-      [...fixture.fields, ...tmuxOnly]
-        .map(atFloor)
-        .toSorted((left, right) => (left.token < right.token ? -1 : 1)),
+      fields.map(atFloor).toSorted((left, right) => (left.token < right.token ? -1 : 1)),
     );
+    expect(new Set(FORMAT_REGISTRY.map(({ token }) => token)).size).toBe(fields.length);
     expect(Object.isFrozen(FORMAT_REGISTRY)).toBe(true);
     expect(Object.isFrozen(FORMAT_FIELD_TOKENS)).toBe(true);
     for (const field of FORMAT_REGISTRY) {
@@ -300,36 +102,21 @@ describe("format registry", () => {
       expect(Object.isFrozen(field.criteriaWireNames), field.token).toBe(true);
       expect(Object.isFrozen(field.since), field.token).toBe(true);
     }
-    expect(new Set(FORMAT_REGISTRY.map(({ token }) => token)).size).toBe(
-      fixture.fields.length + tmuxOnly.length,
-    );
-    for (const { token } of fixture.fields) {
+    for (const { token } of fields) {
       expect(FORMAT_FIELD_TOKENS, token).toContain(token);
     }
-    expect(
-      createHash("sha256")
-        .update(JSON.stringify(fixture.fields.map(({ token }) => token)))
-        .digest("hex"),
-    ).toBe("de09e5e1cf4d6749c3a9f77c211c0a1a94c7586559d8d08ed516f7c456f1c693");
   });
 
-  test("resolves every oracle token while unknown tokens fail closed", async () => {
-    const fixture = await readFixture();
-    const resolved = fixture.fields.map(({ token }) => lookupFormatField(token));
-
-    expect(fixture.fields).toHaveLength(178);
-    expect(FORMAT_REGISTRY).toHaveLength(
-      fixture.fields.length + (await readTmuxOnlyFields()).length,
-    );
-    expect(resolved).not.toContain(undefined);
-    // By token rather than by position: the registry carries the tmux fields
-    // sorted in among these, so an oracle field's index in the fixture is no
-    // longer its index in the registry.
+  test("resolves every fixture token while unknown tokens fail closed", async () => {
+    const fields = await readFields();
     const byToken = new Map(FORMAT_REGISTRY.map((field) => [field.token, field]));
-    for (const [index, { token }] of fixture.fields.entries()) {
-      expect(resolved[index], token).toBeDefined();
-      expect(resolved[index]?.token, token).toBe(token);
-      expect(resolved[index], token).toBe(byToken.get(token));
+
+    expect(FORMAT_REGISTRY).toHaveLength(fields.length);
+    for (const { token } of fields) {
+      const resolved = lookupFormatField(token);
+      expect(resolved, token).toBeDefined();
+      expect(resolved?.token, token).toBe(token);
+      expect(resolved, token).toBe(byToken.get(token));
     }
     expect(lookupFormatField("libtmux_nonexistent_format_token")).toBeUndefined();
   });
@@ -442,10 +229,9 @@ describe("format registry", () => {
     });
   });
 
-  test("selects Python list scopes while carrying version floors", () => {
-    // Every release the package supports, because the vocabulary tracks tmux
-    // now: 3.4, 3.5 and 3.6 each gain fields Python never had, so a run that
-    // skipped them would prove the gating only where Python happened to grow.
+  test("selects list scopes while carrying version floors", () => {
+    // Every release the package supports: 3.4, 3.5 and 3.6 each gain fields,
+    // so a run that skipped them would not prove the gating.
     const expectedCounts = {
       "3.3a": { clients: 152, panes: 127, sessions: 127, windows: 127 },
       "3.4": { clients: 153, panes: 128, sessions: 128, windows: 128 },
@@ -601,59 +387,20 @@ describe("format registry", () => {
     expect(table).not.toContain("export type FormatFieldName =");
   });
 
-  test("renders the activated parity rows without normalizing unrelated bytes", async () => {
-    const canonical = await readFile(parityManifestUrl, "utf8");
-    // The oracle's fields, not the vocabulary's: the manifest states parity
-    // with Python, and the vocabulary now carries fields Python never had.
-    const parityFields = (await readFixture()).fields.map((field) => ({
-      ...field,
-      since: parseTmuxVersion(field.since),
-    })) as unknown as Parameters<typeof renderTask5ParityManifest>[1];
-    const drifted = canonical.replace(
-      '"./formats#value:FORMAT_SEPARATOR"',
-      '"./formats#value:FORMAT_SEPARATOR_DRIFT"',
-    );
-    expect(drifted).not.toBe(canonical);
-    expect(renderTask5ParityManifest(drifted, parityFields)).toBe(canonical);
-    expect(renderTask5ParityManifest(canonical, parityFields)).toBe(canonical);
-
-    const unrelatedWhitespace = canonical.replace(
-      '"pythonVersion": "0.62.0",',
-      '"pythonVersion": "0.62.0",   ',
-    );
-    expect(renderTask5ParityManifest(unrelatedWhitespace, parityFields)).toBe(unrelatedWhitespace);
-  });
-
   test("check mode detects exact-byte drift without rewriting it", async () => {
     const outputDirectory = await makeTestDirectory("ltx5-generated-");
-    const parityManifestPath = join(outputDirectory, "python-0.62.0.json");
-    const driftAnchor = '"./formats#value:FORMAT_SEPARATOR"';
-    const driftReplacement = '"./formats#value:FORMAT_SEPARATOR_DRIFT"';
     try {
-      const canonicalParity = await readFile(parityManifestUrl, "utf8");
-      await writeFile(parityManifestPath, canonicalParity.replace(driftAnchor, driftReplacement));
-      await generateFormats({ mode: "write", outputDirectory, parityManifestPath });
-      await expect(
-        generateFormats({ mode: "check", outputDirectory, parityManifestPath }),
-      ).resolves.toBeUndefined();
-      expect(await readFile(parityManifestPath, "utf8")).toBe(canonicalParity);
+      await generateFormats({ mode: "write", outputDirectory });
+      await expect(generateFormats({ mode: "check", outputDirectory })).resolves.toBeUndefined();
 
       const generatedPath = join(outputDirectory, "format_fields.ts");
       const drifted = `${await readFile(generatedPath, "utf8")}drift\n`;
       await writeFile(generatedPath, drifted);
 
-      await expect(
-        generateFormats({ mode: "check", outputDirectory, parityManifestPath }),
-      ).rejects.toThrow("generated format outputs are out of date");
+      await expect(generateFormats({ mode: "check", outputDirectory })).rejects.toThrow(
+        "generated format outputs are out of date",
+      );
       expect(await readFile(generatedPath, "utf8")).toBe(drifted);
-
-      await generateFormats({ mode: "write", outputDirectory, parityManifestPath });
-      const parityDrift = canonicalParity.replace(driftAnchor, driftReplacement);
-      await writeFile(parityManifestPath, parityDrift);
-      await expect(
-        generateFormats({ mode: "check", outputDirectory, parityManifestPath }),
-      ).rejects.toThrow("generated format outputs are out of date");
-      expect(await readFile(parityManifestPath, "utf8")).toBe(parityDrift);
     } finally {
       await rm(outputDirectory, { force: true, recursive: true });
     }
@@ -665,7 +412,6 @@ describe("format registry", () => {
       join(cliRoot, "src/_generated/format_fields.ts"),
       join(cliRoot, "src/_generated/where_fields.ts"),
       join(cliRoot, "src/neo.ts"),
-      join(cliRoot, "parity/python-0.62.0.json"),
     ];
     const readGeneratedOutputs = () =>
       Promise.all(
@@ -686,7 +432,6 @@ describe("format registry", () => {
           join(cliRoot, "scripts/generate-formats.ts"),
         ),
         cp(join(tsRootPath, "src"), join(cliRoot, "src"), { recursive: true }),
-        cp(join(tsRootPath, "parity"), join(cliRoot, "parity"), { recursive: true }),
         cp(join(tsRootPath, "tests/fixtures"), join(cliRoot, "tests/fixtures"), {
           recursive: true,
         }),

@@ -25,7 +25,6 @@ const REPOSITORY_GATES: Readonly<Record<string, string>> = {
   "unit/npm_pack": "packs the published tarball",
   "unit/package_analysis": "analyses the package with bun",
   "unit/package_contract": "checks the manifest and spawns bun",
-  "unit/parity_manifest": "checks the parity ledger against tsc",
   "unit/publish_release": "the release workflow",
   "unit/sandbox_control":
     "starts bun test from each directory whose bunfig.toml enters the sandbox",
@@ -38,7 +37,6 @@ const REPOSITORY_GATES: Readonly<Record<string, string>> = {
 
 const REPOSITORY_TESTS: Readonly<Record<string, string>> = {
   "CLI accepts exactly one explicit mode and rejected forms never write": "the format generator",
-  "every claimed TypeScript symbol exists in the package": "the parity ledger",
   "root reference types are type-only exports and helpers are values": "compiles with tsc",
   "writes exact relation metadata and only the delimited cyclic interfaces": "compiles with tsc",
 };

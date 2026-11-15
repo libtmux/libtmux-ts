@@ -392,7 +392,6 @@ describe("generated Where contract", () => {
   test("writes exact relation metadata and only the delimited cyclic interfaces", async () => {
     const temporary = await makeTestDirectory("ltx-where-generation-");
     const outputDirectory = join(temporary, "_generated");
-    const parityManifestPath = join(temporary, "python-0.62.0.json");
     const selectionSourcePath = join(temporary, "selection.ts");
     const prefix = Buffer.from('\ufeffexport type SentinelBefore = "before";\r\n\r\n');
     const suffix = Buffer.from('\r\n\r\nexport type SentinelAfter = "after";\r\n');
@@ -404,14 +403,9 @@ describe("generated Where contract", () => {
     const options = {
       mode: "write" as const,
       outputDirectory,
-      parityManifestPath,
       selectionSourcePath,
     };
     try {
-      await writeFile(
-        parityManifestPath,
-        await readFile(new URL("../../parity/python-0.62.0.json", import.meta.url)),
-      );
       await writeFile(selectionSourcePath, selectionSkeleton);
 
       await generateFormats(options);
@@ -566,19 +560,13 @@ describe("generated Where contract", () => {
   ])("rejects $name markers without changing any controlled file", async ({ selectionSource }) => {
     const temporary = await makeTestDirectory("ltx-where-markers-");
     const outputDirectory = join(temporary, "_generated");
-    const parityManifestPath = join(temporary, "python-0.62.0.json");
     const selectionSourcePath = join(temporary, "selection.ts");
     const options = {
       outputDirectory,
-      parityManifestPath,
       selectionSourcePath,
     };
 
     try {
-      await writeFile(
-        parityManifestPath,
-        await readFile(new URL("../../parity/python-0.62.0.json", import.meta.url)),
-      );
       await writeFile(selectionSourcePath, [markerStart, "stale", markerEnd, ""].join("\n"));
       await generateFormats({ ...options, mode: "write" });
       await writeFile(selectionSourcePath, selectionSource);

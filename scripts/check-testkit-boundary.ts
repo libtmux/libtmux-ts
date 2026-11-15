@@ -33,7 +33,6 @@ const needsNoSandbox: Readonly<Record<string, string>> = {
     "starts only the gates, each of which enters its own",
   "packages/libtmux/scripts/doc-examples/readme_world.ts": "imported by the gates, which enter it",
   "packages/libtmux/scripts/doc-examples/tmux_sweep.ts": "imported by the gates, which enter it",
-  "packages/libtmux/scripts/parity/manifest.ts": "names tmux in a table and starts nothing",
   "scripts/check-ci-config.ts": "reads the workflows, which name the tmux job, and starts nothing",
   "scripts/ci_plan.ts": "plans the tmux lanes as data and starts nothing",
 };

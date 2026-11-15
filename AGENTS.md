@@ -22,9 +22,7 @@ happens to install is not one a package may use.
 | `examples`               | —                        | Runnable examples, used as tests. The only `private` package.                                                                   |
 
 The release packages share one version and one tag.
-`attic/` is where reference material goes to rest; `packages/libtmux/parity` is
-not that — it is a gate input, read by `check-parity.ts`,
-`generate-formats.ts` and five unit tests, and it lives beside its readers.
+`attic/` is where reference material goes to rest.
 
 ## Which policy applies
 

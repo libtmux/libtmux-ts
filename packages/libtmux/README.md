@@ -62,7 +62,6 @@ and CI coverage for it is highly limited.
 [Errors](#errors) · [Test your own code](#test-your-own-code) ·
 [Run inside tmux](#run-inside-tmux) · [tmux versions](#tmux-versions) ·
 [Consumers](#consumers) · [Packages](#packages) · [Entrypoints](#entrypoints) ·
-[Parity with the Python library](#parity-with-the-python-library) ·
 [What it leaves out](#what-it-leaves-out) ·
 [Support and status](#support-and-status) · [Documentation](#documentation) ·
 [License](#license)
@@ -221,7 +220,6 @@ invocations a snapshot and a hundred queries make.
   - [`@libtmux/workspace`: tmuxp-style workspaces as data](#libtmuxworkspace-tmuxp-style-workspaces-as-data)
   - [`@libtmux/workspace-cli`: `tmux-workspace` for the shell](#libtmuxworkspace-cli-tmux-workspace-for-the-shell)
 - [Entrypoints](#entrypoints)
-- [Parity with the Python library](#parity-with-the-python-library)
 - [What it leaves out](#what-it-leaves-out)
 - [Support and status](#support-and-status)
 - [Documentation](#documentation)
@@ -2157,25 +2155,13 @@ constant surface. Each model is also its own subpath:
 
 - `libtmux/server`, `libtmux/session`, `libtmux/window`, `libtmux/pane`,
   `libtmux/program`, `libtmux/client` and `libtmux/selection`.
-- `libtmux/formats`, `libtmux/constants`, `libtmux/common` and
-  `libtmux/errors`, as supporting subpaths.
+- `libtmux/constants`, `libtmux/common` and `libtmux/errors`, as supporting
+  subpaths.
 - `libtmux/testing`, to [record and replay](#test-your-own-code) a server's
   answers.
 - `libtmux/engine` for custom execution engines, `libtmux/types` for the full
   operation and event type inventory, and `libtmux/field-types` for generated
   format-field, decoded-value, and handle-alias types.
-
-## Parity with the Python library
-
-The [parity ledger](parity/python-0.62.0.json) records a decision for every
-public symbol of the Python release it names:
-
-- **Ported, adapted, or not ported**, with a reason for the last.
-- **Not ported** means neo.py, the pytest helpers, and tmux's interactive
-  commands. The last stay reachable through [`cmd`][ref-server-cmd]: no typed
-  wrapper, not out of reach.
-
-More: [parity](docs/contracts.md#parity-with-the-python-library).
 
 ## What it leaves out
 

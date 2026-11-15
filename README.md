@@ -523,8 +523,7 @@ try {
 - **Real tmux.** [CI](.github/workflows/typescript.yml) runs the suite against
   real servers, with no mocks standing in for tmux.
 - **Tracks Python [libtmux](https://github.com/tmux-python/libtmux).** Names and
-  shapes follow it where TypeScript agrees. Each departure is a recorded
-  decision.
+  shapes follow it where TypeScript agrees.
 
 ## Repository
 

@@ -196,8 +196,7 @@ $ bun run ci:config
 
 Then, from `packages/libtmux`, the library's own gates — `lint:unused`,
 `typecheck`, `typecheck:tests`, `typecheck:readme`, `typecheck:symbols`,
-`docs:api:check`, `docs:criteria:check`, `generate:check`, `parity`, and
-`build`. Everything after the build needs the emitted declarations it produced:
+`docs:api:check`, `docs:criteria:check`, `generate:check`, and `build`. Everything after the build needs the emitted declarations it produced:
 `typecheck:ambient-free`, `typecheck:tooling`, `test:package`, and
 `test:install`. Then `test:types`, `test:node`, and `test:coverage`.
 
@@ -381,40 +380,10 @@ are immutable: repairing an invalid exact hit fixes the current job, but cannot
 overwrite that entry. A build-script change invalidates its key for later jobs.
 Never add a broad restore-key fallback for native binaries.
 
-## The parity ledger
+## The differential suite
 
-`parity/python-0.62.0.json` records a decision for every public symbol of the
-Python release it names. `oxfmt` formats TypeScript but not JSON, and
-`check-parity.ts --write` re-renders the file in a style the committed one does
-not use — so edit entries surgically as text and leave the rest byte for byte.
-
-A ported row names the TypeScript that covers it:
-`./module#instance:Class.member` for the prototype, and
-`./module#value:Class.member` for the static side.
-`./module#value:Class` compiles to `typeof Class` and says only that the class
-is exported — the whole claim for a class row, and none of it for a method: a
-rename leaves such a row citing a method that no longer exists, and the gate
-stays green. A row claims a member when its kind is `method` or `property`, or
-when its `typescript` field names `Class.member`; the gate reads that rather
-than a list, so it needs no maintaining. A generic type needs instantiated
-arguments in the locator — `./selection#type:Selection<never>.one` — because
-`never` satisfies any parameter without asserting anything about it.
-
-`parity/python-0.62.0.baseline.json` records what the Python release
-contributes: the symbols it exposes, and the git object kind of every path
-cited. It is generated, not written, and the gate reads it instead of a
-checkout — so checking parity needs no Python sources and no network.
-Regenerate it only to admit a new evidence path or to move releases, and commit
-the result:
-
-```console
-$ bun packages/libtmux/scripts/check-parity.ts \
-    --regenerate-baseline \
-    --python-repo ../libtmux
-```
-
-The differential suite is separate from the ledger and does need the code: it
-runs the real Python library as an oracle and compares. Point
+The differential suite needs the code: it runs the real Python library as an
+oracle and compares. Point
 `LIBTMUX_PYTHON_REPO` at a checkout of the pinned commit:
 
 ```console

@@ -18,8 +18,9 @@ import {
   makeTestDirectory,
 } from "../../src/_internal/test/testkit.js";
 
-import { FORMAT_SEPARATOR } from "../../src/formats.js";
 import { Server } from "../../src/server.js";
+
+const FORMAT_SEPARATOR = "␞";
 
 /**
  * Hold the declared shape of every format field to what tmux actually sends.
@@ -256,19 +257,13 @@ describe("declared format value types", () => {
   }, 120_000);
 
   test("declares no field that this port does not carry", async () => {
-    // Both sources, because the vocabulary is both. The Python fixture is the
-    // parity oracle and the tmux fixture is what this port adds beyond it; a
-    // value type for a field in neither is a claim about nothing.
-    const read = async (name: string): Promise<readonly string[]> =>
+    const known = new Set(
       (
-        JSON.parse(await readFile(new URL(`../fixtures/${name}`, import.meta.url), "utf8")) as {
-          fields: { token: string }[];
-        }
-      ).fields.map(({ token }) => token);
-    const known = new Set([
-      ...(await read("python-0.62.0-format-fields.json")),
-      ...(await read("tmux-format-fields.json")),
-    ]);
+        JSON.parse(
+          await readFile(new URL("../fixtures/tmux-format-fields.json", import.meta.url), "utf8"),
+        ) as { fields: { token: string }[] }
+      ).fields.map(({ token }) => token),
+    );
     const strays = Object.keys(declared).filter((token) => !known.has(token));
     expect(strays).toEqual([]);
   });

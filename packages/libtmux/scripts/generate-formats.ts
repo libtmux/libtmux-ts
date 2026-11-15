@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -18,38 +17,13 @@ import { MINIMUM_TMUX } from "../src/_internal/support/versions.js";
 export interface GenerateFormatsOptions {
   readonly mode: "check" | "write";
   readonly outputDirectory: string;
-  readonly parityManifestPath: string;
   readonly selectionSourcePath?: string;
-}
-
-interface FixtureBaseline {
-  readonly commit: string;
-  readonly neoSourceSha256: string;
-  readonly objFieldTokensSha256: string;
-  readonly pythonVersion: string;
-  readonly tag: string;
-  readonly tree: string;
-}
-
-interface PythonFormatFixture {
-  readonly baseline: FixtureBaseline;
-  readonly fields: readonly GeneratedFormatField[];
-}
-
-interface TextReplacement {
-  readonly end: number;
-  readonly replacement: string;
-  readonly start: number;
 }
 
 const usage = "usage: generate-formats.ts (--check|--write)";
 const taskRoot = fileURLToPath(new URL("..", import.meta.url));
-const fixturePath = join(taskRoot, "tests/fixtures/python-0.62.0-format-fields.json");
 const valueTypePath = join(taskRoot, "tests/fixtures/tmux-format-value-types.json");
-const tmuxFieldPath = join(taskRoot, "tests/fixtures/tmux-format-fields.json");
-const neoSourceUrl = "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/neo.py";
-const formatsSourceUrl =
-  "https://github.com/tmux-python/libtmux/blob/v0.62.0/src/libtmux/formats.py";
+const fieldPath = join(taskRoot, "tests/fixtures/tmux-format-fields.json");
 const generatedWhereRegionStart = "// <libtmux-generated-where-types>";
 const generatedWhereRegionEnd = "// </libtmux-generated-where-types>";
 const criteriaModels = ["session", "window", "pane", "client"] as const;
@@ -59,14 +33,6 @@ const criteriaInterfaceNames = {
   session: "SessionWhere",
   window: "WindowWhere",
 } as const;
-const expectedBaseline: FixtureBaseline = {
-  commit: "38e368c11117fb4aeb2f082d552cd4f210eae06a",
-  neoSourceSha256: "764264bf42bc305d1d97e9596806f004326c460e771f2a750429c75690afe82f",
-  objFieldTokensSha256: "de09e5e1cf4d6749c3a9f77c211c0a1a94c7586559d8d08ed516f7c456f1c693",
-  pythonVersion: "0.62.0",
-  tag: "v0.62.0",
-  tree: "eee900223a11c00a4b9b0cc6944e7d5a4d503bc8",
-};
 const allowedScopes = new Set([
   "buffer",
   "client",
@@ -84,54 +50,6 @@ function exactKeys(value: Record<string, unknown>, expected: readonly string[]):
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function validateFixture(value: unknown): PythonFormatFixture {
-  if (!isRecord(value) || !exactKeys(value, ["baseline", "fields"])) {
-    throw new Error("format fixture must contain exactly baseline and fields");
-  }
-  if (!isRecord(value.baseline) || !exactKeys(value.baseline, Object.keys(expectedBaseline))) {
-    throw new Error("format fixture baseline does not match the pinned schema");
-  }
-  if (JSON.stringify(value.baseline) !== JSON.stringify(expectedBaseline)) {
-    throw new Error("format fixture baseline does not match Python 0.62.0");
-  }
-  if (!Array.isArray(value.fields) || value.fields.length !== 178) {
-    throw new Error("format fixture must contain exactly 178 fields");
-  }
-
-  const fields = value.fields.map((candidate, index): GeneratedFormatField => {
-    if (!isRecord(candidate) || !exactKeys(candidate, ["scope", "since", "token"])) {
-      throw new Error(`format fixture field ${index} has an invalid shape`);
-    }
-    if (
-      typeof candidate.scope !== "string" ||
-      !allowedScopes.has(candidate.scope) ||
-      typeof candidate.since !== "string" ||
-      typeof candidate.token !== "string" ||
-      candidate.token.length === 0
-    ) {
-      throw new Error(`format fixture field ${index} has invalid values`);
-    }
-    return Object.freeze(candidate) as unknown as GeneratedFormatField;
-  });
-  if (new Set(fields.map(({ token }) => token)).size !== fields.length) {
-    throw new Error("format fixture field tokens must be unique");
-  }
-  const tokenDigest = createHash("sha256")
-    .update(JSON.stringify(fields.map(({ token }) => token)))
-    .digest("hex");
-  if (tokenDigest !== expectedBaseline.objFieldTokensSha256) {
-    throw new Error("format fixture field token digest does not match Python 0.62.0");
-  }
-  return Object.freeze({
-    baseline: Object.freeze(value.baseline) as unknown as FixtureBaseline,
-    fields: Object.freeze(fields),
-  });
-}
-
-async function readFixture(): Promise<PythonFormatFixture> {
-  return validateFixture(JSON.parse(await readFile(fixturePath, "utf8")) as unknown);
 }
 
 function occurrenceCount(source: string, needle: string): number {
@@ -258,284 +176,6 @@ export function renderSelectionWithGeneratedWhereTypes(
   }
   const end = endMarkerStart + generatedWhereRegionEnd.length;
   return `${source.slice(0, start)}${renderGeneratedWhereTypeRegion(fields)}${source.slice(end)}`;
-}
-
-const NOT_PORTED = "not-applicable: the symbol is not ported, so it has no evidence to record";
-
-function evidenceApplicability(ported = true): Record<string, string> {
-  if (!ported) {
-    return { declarationTest: NOT_PORTED, realTmuxScenario: NOT_PORTED, unitTest: NOT_PORTED };
-  }
-  return {
-    declarationTest: "required",
-    realTmuxScenario: "not-applicable: symbol has no direct tmux I/O behavior",
-    unitTest: "required",
-  };
-}
-
-function canonicalPublicSymbol(input: {
-  readonly adaptation: string | null;
-  readonly declarationTest: string | null;
-  readonly kind: "class" | "constant" | "format-field" | "function";
-  readonly owner: string;
-  readonly python: string;
-  readonly reason?: string;
-  readonly source: string;
-  readonly status: "adapted" | "implemented" | "unsupported";
-  readonly typescript: string | null;
-  readonly typescriptSymbol?: string;
-  readonly unitTest: string | null;
-}): Record<string, unknown> {
-  return {
-    adaptation: input.adaptation,
-    declarationTest: input.declarationTest,
-    kind: input.kind,
-    owner: input.owner,
-    python: input.python,
-    realTmuxScenario: null,
-    reason: input.reason ?? null,
-    source: input.source,
-    status: input.status,
-    typescript: input.typescript,
-    unitTest: input.unitTest,
-    evidenceApplicability: evidenceApplicability(input.typescriptSymbol !== undefined),
-    typescriptSymbols: input.typescriptSymbol === undefined ? [] : [input.typescriptSymbol],
-  };
-}
-
-function publicSymbolKey(value: Record<string, unknown>): string | undefined {
-  return typeof value.kind === "string" && typeof value.python === "string"
-    ? `${value.kind}:${value.python}`
-    : undefined;
-}
-
-function task5PublicSymbols(
-  fields: readonly GeneratedFormatField[],
-): ReadonlyMap<string, Record<string, unknown>> {
-  const rows: Record<string, unknown>[] = [];
-  rows.push(
-    canonicalPublicSymbol({
-      adaptation: null,
-      reason:
-        "neo.py responsibilities are split across generated field metadata, the guard codec, graph normalization, and the handle classes; no neo module is published",
-      declarationTest: null,
-      kind: "class",
-      owner: "libtmux.neo",
-      python: "libtmux.neo.Obj",
-      source: neoSourceUrl,
-      status: "unsupported",
-      typescript: null,
-      unitTest: null,
-    }),
-  );
-  for (const symbol of [
-    "CLIENT_FORMATS",
-    "FORMAT_SEPARATOR",
-    "PANE_FORMATS",
-    "SESSION_FORMATS",
-    "WINDOW_FORMATS",
-  ]) {
-    rows.push(
-      canonicalPublicSymbol({
-        adaptation: null,
-        declarationTest: "tests/types/formats.test.ts",
-        kind: "constant",
-        owner: "libtmux.formats",
-        python: `libtmux.formats.${symbol}`,
-        source: formatsSourceUrl,
-        status: "implemented",
-        typescript: symbol,
-        typescriptSymbol: `./formats#value:${symbol}`,
-        unitTest: "tests/unit/formats.test.ts",
-      }),
-    );
-  }
-  for (const symbol of ["FIELD_VERSION", "SCOPES_BY_LIST_CMD"]) {
-    rows.push(
-      canonicalPublicSymbol({
-        adaptation: null,
-        reason:
-          "neo.py responsibilities are split across generated field metadata, the guard codec, graph normalization, and the handle classes; no neo module is published",
-        declarationTest: null,
-        kind: "constant",
-        owner: "libtmux.neo",
-        python: `libtmux.neo.${symbol}`,
-        source: neoSourceUrl,
-        status: "unsupported",
-        typescript: null,
-        unitTest: null,
-      }),
-    );
-  }
-  for (const { token } of fields) {
-    rows.push(
-      canonicalPublicSymbol({
-        adaptation: null,
-        reason:
-          "neo.py responsibilities are split across generated field metadata, the guard codec, graph normalization, and the handle classes; no neo module is published",
-        declarationTest: null,
-        kind: "format-field",
-        owner: "libtmux.neo.Obj",
-        python: `libtmux.neo.Obj.${token}`,
-        source: neoSourceUrl,
-        status: "unsupported",
-        typescript: null,
-        unitTest: null,
-      }),
-    );
-  }
-  rows.push(
-    canonicalPublicSymbol({
-      adaptation: null,
-      reason:
-        "neo.py responsibilities are split across generated field metadata, the guard codec, graph normalization, and the handle classes; no neo module is published",
-      declarationTest: null,
-      kind: "function",
-      owner: "libtmux.neo",
-      python: "libtmux.neo.get_output_format",
-      source: neoSourceUrl,
-      status: "unsupported",
-      typescript: null,
-      unitTest: null,
-    }),
-    canonicalPublicSymbol({
-      adaptation: null,
-      reason:
-        "neo.py responsibilities are split across generated field metadata, the guard codec, graph normalization, and the handle classes; no neo module is published",
-      declarationTest: null,
-      kind: "function",
-      owner: "libtmux.neo",
-      python: "libtmux.neo.parse_output",
-      source: neoSourceUrl,
-      status: "unsupported",
-      typescript: null,
-      unitTest: null,
-    }),
-  );
-  const keyed = rows.map((row): readonly [string, Record<string, unknown>] => {
-    const key = publicSymbolKey(row);
-    if (key === undefined) throw new Error("generated Task 5 parity row has no key");
-    return [key, row];
-  });
-  if (keyed.length !== 188 || new Set(keyed.map(([key]) => key)).size !== keyed.length) {
-    throw new Error("generated Task 5 parity inventory must contain exactly 188 unique rows");
-  }
-  return new Map(keyed);
-}
-
-function arrayBounds(
-  source: string,
-  property: string,
-): { readonly end: number; readonly start: number } {
-  const markerIndex = source.indexOf(`"${property}":`);
-  const start = source.indexOf("[", markerIndex);
-  if (markerIndex < 0 || start < 0) throw new Error(`parity manifest ${property} array is missing`);
-  let depth = 0;
-  let escaped = false;
-  let quoted = false;
-  for (let index = start; index < source.length; index += 1) {
-    const character = source[index]!;
-    if (quoted) {
-      if (escaped) escaped = false;
-      else if (character === "\\") escaped = true;
-      else if (character === '"') quoted = false;
-      continue;
-    }
-    if (character === '"') quoted = true;
-    else if (character === "[") depth += 1;
-    else if (character === "]") {
-      depth -= 1;
-      if (depth === 0) return { end: index + 1, start };
-    }
-  }
-  throw new Error(`parity manifest ${property} array is unterminated`);
-}
-
-function objectBounds(
-  source: string,
-  bounds: { readonly end: number; readonly start: number },
-): Array<{
-  readonly end: number;
-  readonly start: number;
-}> {
-  const objects: Array<{ readonly end: number; readonly start: number }> = [];
-  let depth = 0;
-  let escaped = false;
-  let objectStart = -1;
-  let quoted = false;
-  for (let index = bounds.start + 1; index < bounds.end - 1; index += 1) {
-    const character = source[index]!;
-    if (quoted) {
-      if (escaped) escaped = false;
-      else if (character === "\\") escaped = true;
-      else if (character === '"') quoted = false;
-      continue;
-    }
-    if (character === '"') quoted = true;
-    else if (character === "{") {
-      if (depth === 0) objectStart = index;
-      depth += 1;
-    } else if (character === "}") {
-      depth -= 1;
-      if (depth === 0 && objectStart >= 0) {
-        objects.push({ end: index + 1, start: objectStart });
-        objectStart = -1;
-      }
-    }
-  }
-  if (depth !== 0) throw new Error("parity manifest publicSymbols object is unterminated");
-  return objects;
-}
-
-function renderPublicSymbol(row: Record<string, unknown>, indentation: string): string {
-  const rendered = JSON.stringify(row, null, 2).replace(
-    /"typescriptSymbols": \[\n    ("(?:[^"\\]|\\.)*")\n  \]/u,
-    '"typescriptSymbols": [$1]',
-  );
-  return rendered.replaceAll("\n", `\n${indentation}`);
-}
-
-/**
- * The parity manifest, rendered from the oracle and never from the vocabulary.
- *
- * `fields` is required rather than defaulted. It used to default to the
- * generated fields, which was the same set — and stopped being once the
- * vocabulary began tracking tmux. A parity manifest built from tmux-only
- * fields would claim parity for symbols Python does not have, and it would do
- * it by omission at a call site rather than by anyone deciding to.
- */
-export function renderTask5ParityManifest(
-  source: string,
-  fields: readonly GeneratedFormatField[],
-): string {
-  const expected = task5PublicSymbols(fields);
-  const bounds = arrayBounds(source, "publicSymbols");
-  const replacements: TextReplacement[] = [];
-  const seen = new Set<string>();
-  for (const object of objectBounds(source, bounds)) {
-    const parsed = JSON.parse(source.slice(object.start, object.end)) as unknown;
-    if (!isRecord(parsed)) continue;
-    const key = publicSymbolKey(parsed);
-    if (key === undefined || !expected.has(key)) continue;
-    if (seen.has(key)) throw new Error(`parity manifest contains duplicate Task 5 row: ${key}`);
-    seen.add(key);
-    const lineStart = source.lastIndexOf("\n", object.start - 1) + 1;
-    const indentation = source.slice(lineStart, object.start);
-    replacements.push({
-      end: object.end,
-      replacement: renderPublicSymbol(expected.get(key)!, indentation),
-      start: object.start,
-    });
-  }
-  if (seen.size !== expected.size) {
-    const missing = [...expected.keys()].filter((key) => !seen.has(key));
-    throw new Error(`parity manifest is missing Task 5 rows: ${missing.join(", ")}`);
-  }
-  let rendered = source;
-  for (const replacement of replacements.reverse()) {
-    rendered = `${rendered.slice(0, replacement.start)}${replacement.replacement}${rendered.slice(replacement.end)}`;
-  }
-  return rendered;
 }
 
 async function readIfPresent(path: string): Promise<string | undefined> {
@@ -714,17 +354,9 @@ function renderAliasMapTypes(fields: readonly GeneratedFormatField[]): string[] 
   return lines;
 }
 
-/**
- * The fields tmux has that the Python library does not.
- *
- * Read separately and unioned in by the caller, never merged into the oracle:
- * `readFixture` proves that file is Python 0.62.0 by hashing its tokens, and a
- * field added there would recompute the hash and retire the proof.
- */
-async function readTmuxFields(
-  parity: readonly GeneratedFormatField[],
-): Promise<readonly GeneratedFormatField[]> {
-  const parsed = JSON.parse(await readFile(tmuxFieldPath, "utf8")) as unknown;
+/** Every format field the vocabulary knows, read from the fixture. */
+async function readFields(): Promise<readonly GeneratedFormatField[]> {
+  const parsed = JSON.parse(await readFile(fieldPath, "utf8")) as unknown;
   if (
     !isRecord(parsed) ||
     !exactKeys(parsed, ["fields", "note"]) ||
@@ -732,9 +364,9 @@ async function readTmuxFields(
   ) {
     throw new Error("tmux format fixture must contain exactly fields and note");
   }
-  const known = new Set<string>(parity.map(({ token }) => token));
+  const tokens = new Set<string>();
   return Object.freeze(
-    parsed.fields.map((value) => {
+    parsed.fields.map((value, index) => {
       if (!isRecord(value) || !exactKeys(value, ["scope", "since", "token"])) {
         throw new Error("tmux format field must contain exactly scope, since and token");
       }
@@ -742,12 +374,11 @@ async function readTmuxFields(
       if (typeof scope !== "string" || typeof since !== "string" || typeof token !== "string") {
         throw new Error("tmux format field scope, since and token must be strings");
       }
-      // A token in both sources would be a field the oracle already carries,
-      // which means this file has drifted into duplicating parity rather than
-      // extending it.
-      if (known.has(token)) {
-        throw new Error(`tmux format field ${token} is already in the Python fixture`);
+      if (!allowedScopes.has(scope) || token.length === 0) {
+        throw new Error(`tmux format field ${index} has invalid values`);
       }
+      if (tokens.has(token)) throw new Error(`tmux format field ${token} is listed twice`);
+      tokens.add(token);
       parseTmuxVersion(since);
       return Object.freeze({ scope, since, token }) as unknown as GeneratedFormatField;
     }),
@@ -940,16 +571,11 @@ function renderPrivateFieldNamesSource(): string {
 }
 
 export async function generateFormats(options: GenerateFormatsOptions): Promise<void> {
-  const fixture = await readFixture();
-  // Two sources, one oracle. `readFixture` digests the Python fixture's tokens
-  // to prove it is 0.62.0; the tmux-only fields are unioned in afterwards, and
-  // the parity manifest below is rendered from the oracle alone.
-  const tmuxOnly = await readTmuxFields(fixture.fields);
   // A field that predates the supported minimum is available on every daemon
   // this library talks to, so its gate is the minimum itself: a `since` below
   // it could never refuse a query.
   const vocabulary = Object.freeze(
-    [...fixture.fields, ...tmuxOnly]
+    (await readFields())
       .map((field) =>
         releaseAtLeast(field.since, MINIMUM_TMUX) ? field : { ...field, since: MINIMUM_TMUX },
       )
@@ -959,7 +585,6 @@ export async function generateFormats(options: GenerateFormatsOptions): Promise<
   );
   const generated = renderGeneratedFormatSources(vocabulary);
   const valueTypes = await readValueTypes(new Set(vocabulary.map(({ token }) => token)));
-  const currentParity = await readFile(options.parityManifestPath, "utf8");
   const expected = new Map<string, string>([
     [join(options.outputDirectory, "format_field_names.ts"), renderPrivateFieldNamesSource()],
     [
@@ -980,7 +605,6 @@ export async function generateFormats(options: GenerateFormatsOptions): Promise<
       join(options.outputDirectory, "where_fields.ts"),
       `${GENERATED_BANNER}\n\n${renderGeneratedWhereFieldsSource(generated["where_fields.ts"])}`,
     ],
-    [options.parityManifestPath, renderTask5ParityManifest(currentParity, fixture.fields)],
   ]);
   if (options.selectionSourcePath !== undefined) {
     const currentSelection = await readFile(options.selectionSourcePath, "utf8");
@@ -1010,7 +634,6 @@ if (import.meta.main) {
       await generateFormats({
         mode: arguments_[0] === "--check" ? "check" : "write",
         outputDirectory: join(taskRoot, "src/_generated"),
-        parityManifestPath: join(taskRoot, "parity/python-0.62.0.json"),
         selectionSourcePath: join(taskRoot, "src/selection.ts"),
       });
     } catch (error) {

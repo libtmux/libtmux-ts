@@ -761,7 +761,7 @@ legacy `vertical` option is deprecated; passing it with `direction` throws
 The root export carries the everyday handle, query, operation, error, and
 constant surface. Each model is also its own subpath: `libtmux/server`,
 `libtmux/session`, `libtmux/window`, `libtmux/pane`, `libtmux/client`, and
-`libtmux/selection`. Supporting subpaths are `libtmux/formats`,
+`libtmux/selection`. Supporting subpaths are
 `libtmux/constants`, `libtmux/common`, and `libtmux/errors`.
 
 A recording is JSON and replays a run rather than answering a query: the same
@@ -838,26 +838,6 @@ reaches tmux without that check, so give each of those a name, or upgrade to
 is itself a nameless `break-pane`, which no library check can reach.
 
 Behaviour on a release that no CI lane builds is unverified.
-
-## Parity with the Python library
-
-`parity/python-0.62.0.json` is a ledger against libtmux 0.62.0. Every public
-symbol in that release carries a decision: ported directly, adapted to a shape
-that suits TypeScript better, or not ported for a recorded reason. A ported or
-adapted symbol also names the TypeScript that covers it and the test that proves
-it.
-
-What is not ported mostly falls into three groups: neo.py, whose
-responsibilities are split across the generated metadata, the codec, the graph,
-and the handles; the pytest helpers, which have an equivalent here that is
-internal and unpublished; and tmux's interactive commands, which resolve before
-the user acts and so cannot be reported by a promise.
-
-That last group is reachable through `cmd`, so "not ported" means "no typed
-wrapper", not "out of reach".
-
-A gate checks that every symbol the ledger names exists in the package, which
-is what stops a recorded mapping from drifting away from the code.
 
 ## Dependencies
 

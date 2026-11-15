@@ -207,7 +207,6 @@ jobs:
           bun run docs:criteria:check
           bun run generate:check
           bun run capabilities:check
-          bun run parity
           bun run build
 
       # Everything below needs the emitted declarations the build just made:

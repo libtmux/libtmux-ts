@@ -107,7 +107,6 @@ import { NodeSpawnTransport } from ${moduleUrl("dist/_internal/transport/node_sp
 // timed-out mutation is safe to retry has to be able to name this type, so the
 // emitted lane proves it is reachable the way a consumer reaches it.
 import { Server, TmuxTransportError } from ${moduleUrl("dist/index.js")};
-import { FORMAT_SEPARATOR } from ${moduleUrl("dist/formats.js")};
 import { ParsedFormatRow } from ${moduleUrl("dist/_internal/codec/format_types.js")};
 
 const executable = ${executableLiteral};
@@ -118,7 +117,6 @@ const transport = new NodeSpawnTransport({ terminationGraceMs: 30 });
 function request(args, options = {}) {
   return { commands: [args], executable, globalArgs: [], ...options };
 }
-assert.equal(FORMAT_SEPARATOR, "NODE_FORMAT_SEPARATOR");
 const codecDaemon = { pid: "101", startTime: "202" };
 const nodeFormatCodec = new GuardCodec({
   capabilities: deriveTmuxCapabilities({
@@ -130,7 +128,6 @@ const nodeFormatCodec = new GuardCodec({
   listCommand: "list-sessions",
 });
 const nodeFormatRequest = nodeFormatCodec.prepare();
-assert.equal(nodeFormatRequest.format.includes(FORMAT_SEPARATOR), false);
 const baselineCodec = new GuardCodec({
   capabilities: deriveTmuxCapabilities({
     connectionAlias: "node-baseline-scenario",
@@ -852,7 +849,6 @@ console.log(JSON.stringify({
     "immutable-prepared-input",
     "raw-results",
     "decoding",
-    "format-separator-override",
     "baseline-codec",
     "format-protocol-error",
     "batch",
@@ -913,7 +909,6 @@ try {
     env: {
       ...process.env,
       [RUN_ROOT_ENV]: scenarioRunRoot,
-      LIBTMUX_TMUX_FORMAT_SEPARATOR: "NODE_FORMAT_SEPARATOR",
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -965,7 +960,7 @@ try {
   if (
     report.protocol !== "libtmux-node-scenarios-v1" ||
     report.status !== "passed" ||
-    report.scenarios.length !== 26
+    report.scenarios.length !== 25
   ) {
     throw new Error(`invalid Node scenario report: ${stdoutText.trim()}`);
   }

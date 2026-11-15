@@ -11,7 +11,6 @@
     "common.test.ts",
     "brands.test.ts",
     "codec.test.ts",
-    "formats.test.ts",
     "snapshots.test.ts",
     "handles.test.ts",
     "fixture_launch_internal.test.ts",
