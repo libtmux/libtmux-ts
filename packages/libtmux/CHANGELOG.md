@@ -47,6 +47,34 @@ Entries of that kind from before it existed are listed below.
 
 ## Unreleased
 
+### `libtmux`
+
+`Server.saveBuffer` now creates the file with mode 0600, whatever the umask.
+
+Before: tmux created a missing file under the umask of the process that opened
+it, so a buffer holding a pane's text or a secret was mode 0644 under the usual
+umask 022, readable by every local user.
+
+After: the file is made first, readable by its owner alone. A file that exists
+keeps its mode, and one this call created is removed when tmux refuses the
+save. `#` in the path is now literal, where tmux read it as a format. A tmux
+server on another host, or run by another user, cannot save to a path made
+here. (#222)
+
+Remove the `libtmux/formats` entry point, with `SESSION_FORMATS`,
+`CLIENT_FORMATS`, `WINDOW_FORMATS`, `PANE_FORMATS`, `FORMAT_SEPARATOR` and the
+`LIBTMUX_TMUX_FORMAT_SEPARATOR` variable that moved the separator.
+
+Before:
+
+    import { PANE_FORMATS } from "libtmux/formats";
+
+After: name the fields you want. `FormatFieldName` in `libtmux/field-types`
+lists every one the library knows.
+
+The lists mirrored the default fields of Python libtmux, and nothing in the
+library read them. (#214)
+
 ## 0.1.2 (2026-10-31)
 
 ### `libtmux`
