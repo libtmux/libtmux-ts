@@ -370,34 +370,20 @@ connects only the account that started the run.
 
 ### Native tmux in CI
 
-The `build-tmux` action builds the tmux each job runs. A release in
-`.github/ci-matrix.txt` uses its official archive, checked against the SHA256
-pin in `.github/tmux-releases.toml`; add a pin there when the table gains a
-release, and check it against the release asset's digest. Any other ref, such
-as `master`, `release_3.8a` or a commit, resolves once to a commit and fetches
-exactly that commit. The build follows tmux's
-[release and source-checkout instructions](https://github.com/tmux/tmux/blob/3.8/README#L23-L37).
-Only the installed prefix is cached. Each build uses a fresh source tree and up
-to four available processors.
-
-Cache keys include the runner image and its version, the architecture, the
-compiler and dependency versions, the source identity and the build script.
-Dependencies are installed before validation on hits and misses. Every
-restored executable must match its recorded hash and version, start a private
-daemon, and report the same connected version. A failed check discards that
-job's prefix and rebuilds it.
+Every job that needs a tmux uses the shared
+[build-tmux action](https://github.com/libtmux/.github/tree/main/actions/build-tmux)
+of `libtmux/.github`, pinned to a full commit SHA, and every `apt-get` call uses
+its [apt-get action](https://github.com/libtmux/.github/tree/main/actions/apt-get).
+Neither lives in this repository. The build-tmux README covers what the action
+does: the checksum pin of each release, how a tag, branch or commit resolves to
+one commit, the cache identity, and how a restored build is validated. A new
+release's checksum, or a change to either action, goes to that repository; then
+move the pins in `.github/workflows/typescript.yml` to the new commit.
 
 The action saves a validated installation before any test runs. GitHub caches
 are immutable: repairing an invalid exact hit fixes the current job, but cannot
 overwrite that entry. A build-script change invalidates its key for later jobs.
 Never add a broad restore-key fallback for native binaries.
-
-The scripts need Python 3.11 for the standard-library TOML reader, which the
-action provides. Run the cache regressions against an installed tmux:
-
-```console
-$ python3 -m pytest .github/scripts/test_tmux_build.py
-```
 
 ## The parity ledger
 

@@ -137,8 +137,9 @@ jobs:
       # floor and each release between are the version job's.
       - name: Build tmux 3.8
         id: tmux
-        uses: ./.github/actions/build-tmux
+        uses: libtmux/.github/actions/build-tmux@30f81842b1e639ea4e25f93f1f2543504178e228
         with:
+          add-to-path: "true"
           ref: "3.8"
 
       - run: echo "$TMUX_PREFIX/bin" >> "$GITHUB_PATH"
@@ -352,8 +353,9 @@ jobs:
       # for good, which is the one thing a master lane exists to avoid.
       - name: Build tmux ${{ matrix.tmux-version }}
         id: tmux
-        uses: ./.github/actions/build-tmux
+        uses: libtmux/.github/actions/build-tmux@30f81842b1e639ea4e25f93f1f2543504178e228
         with:
+          add-to-path: "true"
           ref: ${{ matrix.tmux-version }}
 
       - name: Open a tmate session before the tests
