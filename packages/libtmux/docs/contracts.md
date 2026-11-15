@@ -540,6 +540,23 @@ the scope exits, including on a thrown error. A consumer that falls behind gets
 its oldest events dropped and the buffer stays bounded; `events.dropped`
 counts them and `bufferSize` sets the bound.
 
+With `outputBytes: true`, output events also carry `bytes`: an owned
+`Uint8Array` of the unescaped payload tmux delivered in that notification.
+Invalid UTF-8 and NUL survive. `data` still carries decoded text; its UTF-8
+carry can move a character across notification boundaries. Each subscriber
+owns its buffer, so changing it does not change another subscriber's value.
+
+`maxBufferedOutputBytes` requires `outputBytes` and defaults to 1 MiB per
+subscriber. It bounds retained raw payload buffers alongside `bufferSize`,
+not protocol metadata or total heap usage. Overflow drops whole notifications;
+`dropped` counts events and `droppedOutputBytes` counts their raw payload bytes.
+A notification larger than the byte bound is discarded whole.
+
+Await `ready()` before triggering output. A dropped count change, `pause`, or
+reconnect invalidates continuity. These bytes cover only what this observer
+received; a capture cannot fill a byte gap. Closing the stream leaves the
+borrowed server alive, and client exit loses its in-memory history.
+
 That bound is this side's. tmux keeps its own, and its remedy for a client that
 lets a pane's output back up is to kill it — five minutes behind and the whole
 connection goes with `too far behind`. `pauseAfterSeconds` asks tmux to pause

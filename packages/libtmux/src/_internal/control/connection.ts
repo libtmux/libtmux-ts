@@ -21,7 +21,12 @@ import { BlockTracker } from "./blocks.js";
 import { ControlChildLifecycle, type ControlChild } from "./child.js";
 import { completeUtf8Length, parseControlLine } from "./events.js";
 import { LineFramer, MAX_CARRY_BYTES } from "./framing.js";
-import { createEventStream, DEFAULT_BUFFER_SIZE, type EventSink } from "./stream.js";
+import {
+  createEventStream,
+  DEFAULT_BUFFER_SIZE,
+  DEFAULT_OUTPUT_BYTES,
+  type EventSink,
+} from "./stream.js";
 import { MAX_TIMER_DELAY_MS, timerDelay } from "../timing.js";
 
 /**
@@ -144,6 +149,8 @@ export class ControlConnection {
   readonly #streamEndsConnection: boolean;
   readonly #sinks = new Set<EventSink>();
   readonly #bufferSize: number;
+  readonly #outputBytes: boolean;
+  readonly #maxOutputBytes: number;
   readonly #framer: LineFramer;
   /**
    * The tail of a character split across two `%output` notifications, per pane.
@@ -221,6 +228,17 @@ export class ControlConnection {
     if (!Number.isInteger(bufferSize) || bufferSize < 1) {
       throw new TypeError("bufferSize must be a positive integer");
     }
+    const outputBytes = options.outputBytes ?? false;
+    if (typeof outputBytes !== "boolean") throw new TypeError("outputBytes must be a boolean");
+    const maxOutputBytes = options.maxBufferedOutputBytes ?? DEFAULT_OUTPUT_BYTES;
+    if (!Number.isSafeInteger(maxOutputBytes) || maxOutputBytes < 1) {
+      throw new TypeError("maxBufferedOutputBytes must be a positive safe integer");
+    }
+    if (!outputBytes && options.maxBufferedOutputBytes !== undefined) {
+      throw new TypeError("maxBufferedOutputBytes requires outputBytes");
+    }
+    this.#outputBytes = outputBytes;
+    this.#maxOutputBytes = outputBytes ? maxOutputBytes : Infinity;
     const pauseAfterSeconds = options.pauseAfterSeconds;
     const reconnect = options.reconnect;
     if (
@@ -370,6 +388,7 @@ export class ControlConnection {
       },
       this.#bufferSize,
       () => this.ready(),
+      this.#maxOutputBytes,
     );
     this.#sinks.add(sink);
     if (this.#closed) sink.finish(undefined);
@@ -472,7 +491,7 @@ export class ControlConnection {
     // A body can forge `%output`; do not let it mutate a pane's UTF-8 carry.
     const parsed = this.#blocks.inBlock
       ? parseControlLine(line)
-      : parseControlLine(line, this.#decodeOutput);
+      : parseControlLine(line, this.#decodeOutput, this.#outputBytes);
     const position = this.#blocks.position(parsed);
     switch (position.kind) {
       case "begin":

@@ -18,6 +18,44 @@ const event: TmuxEvent = { kind: "sessions-changed" };
 const pane0 = parsePaneId("%0");
 
 describe("event stream lifetime", () => {
+  test("bounds raw bytes and counts both byte and event overflow", async () => {
+    const sink = createEventStream(() => Promise.resolve(), 2, undefined, 4);
+    for (const bytes of [[1, 2, 3], [4, 5], [6], [7, 8, 9, 10, 11], [12]]) {
+      sink.push({ bytes: new Uint8Array(bytes), data: "", kind: "output", paneId: pane0 });
+    }
+    sink.finish(undefined);
+    const seen: number[][] = [];
+    for await (const item of sink.stream) {
+      if (item.kind === "output") seen.push(Array.from(item.bytes ?? []));
+    }
+    expect(seen).toEqual([[6], [12]]);
+    expect(sink.stream.dropped).toBe(3);
+    expect(sink.stream.droppedOutputBytes).toBe(10);
+  });
+
+  test("gives each subscriber an owned byte buffer", async () => {
+    const left = createEventStream(() => Promise.resolve());
+    const right = createEventStream(() => Promise.resolve());
+    const bytes = new Uint8Array([0xff, 0, 0xfe]);
+    const item = { bytes, data: "\ufffd\0\ufffd", kind: "output" as const, paneId: pane0 };
+    left.push(item);
+    right.push(item);
+    bytes.fill(1);
+    left.finish(undefined);
+    right.finish(undefined);
+    for await (const observed of left.stream) {
+      if (observed.kind === "output") {
+        expect(observed.bytes).toEqual(new Uint8Array([0xff, 0, 0xfe]));
+        observed.bytes?.fill(2);
+      }
+    }
+    for await (const observed of right.stream) {
+      if (observed.kind === "output") {
+        expect(observed.bytes).toEqual(new Uint8Array([0xff, 0, 0xfe]));
+      }
+    }
+  });
+
   test("rejects invalid deadlines without consuming the stream", async () => {
     const sink = createEventStream(() => Promise.resolve(), 4);
 
