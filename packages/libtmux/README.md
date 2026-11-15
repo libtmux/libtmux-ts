@@ -1996,9 +1996,11 @@ version after a restart. The immutable report names the minimum release,
 availability and reason for each feature:
 
 ```ts
+import { randomUUID } from "node:crypto";
+
 import { Server } from "libtmux";
 
-const server = new Server({ socketName: "libtmux-version" });
+const server = new Server({ socketName: `ltx-version-${randomUUID()}` });
 try {
   await server.newSession({ name: "work" });
   const report = await server.capabilities();
