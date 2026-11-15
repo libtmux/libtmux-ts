@@ -54,6 +54,23 @@ $ bun install
 The suite creates its own tmux servers on its own sockets and never touches the
 one you are attached to.
 
+The `justfile` clears build output. `clean-dry` lists what `clean` would remove,
+and `clean` removes ignored build output and caches while keeping `.env` files:
+
+```console
+$ just clean-dry
+```
+
+```console
+$ just clean
+```
+
+`nuke` also removes untracked files, after a confirmation:
+
+```console
+$ just nuke
+```
+
 ## The gates
 
 Bun, `oxlint`, `oxfmt`, `tsgolint`. `package.json` is the list of gates; run
