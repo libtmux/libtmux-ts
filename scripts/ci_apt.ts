@@ -1,16 +1,16 @@
 /**
  * Raw `apt-get` calls in the CI configuration.
  *
- * `scripts/apt-get.sh` bounds apt-get with a timeout and moves to another
- * mirror when one hangs (actions/runner-images#15040). That protects a job only
- * while every call goes through it, so a workflow or composite action whose
- * `run` script calls `apt-get` or `apt` itself is refused.
+ * The libtmux/.github apt-get action bounds apt-get with a timeout and moves to
+ * another mirror when one hangs (actions/runner-images#15040). That protects a
+ * job only while every call goes through it, so a workflow or composite action
+ * whose `run` script calls `apt-get` or `apt` itself is refused.
  */
 
 /**
  * `apt-get` or `apt` in command position: at the start of a line, after a
  * separator or a shell keyword, with `sudo`, its flags and `NAME=value`
- * assignments allowed before it. A path such as `scripts/apt-get.sh` and a
+ * assignments allowed before it. A path such as `./tools/apt-get.sh` and a
  * quoted string such as `echo "apt-get"` are not in command position.
  */
 const RAW_APT =
@@ -47,7 +47,7 @@ function rawAptCommand(script: string): string | undefined {
 
 /**
  * One failure for every step of a workflow or composite action that runs
- * `apt-get` or `apt` without `scripts/apt-get.sh`.
+ * `apt-get` or `apt` itself instead of the shared action.
  *
  * Takes the parsed document, not the text: the unit tests run where `Bun` is not
  * a global, so the caller parses the YAML and this stays plain TypeScript.
@@ -65,7 +65,7 @@ export function rawAptFailures(file: string, document: unknown): readonly string
       if (command === undefined) continue;
       const label = typeof step.name === "string" ? JSON.stringify(step.name) : String(index + 1);
       failures.push(
-        `${file}: ${where}, step ${label} runs ${command} directly; run it through scripts/apt-get.sh`,
+        `${file}: ${where}, step ${label} runs ${command} directly; use the libtmux/.github apt-get action`,
       );
     }
   }
