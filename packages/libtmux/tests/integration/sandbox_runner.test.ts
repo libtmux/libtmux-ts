@@ -15,6 +15,7 @@ import {
   resolveControllerIdentity,
 } from "../../src/_internal/test/testkit.js";
 import { writeTmuxProxy } from "../support/fake_tmux.js";
+import { closeChildWithin } from "../support/owned_child.js";
 
 const packageRoot = fileURLToPath(new URL("../..", import.meta.url));
 /** A call that stops the server, which the proxies below stall or swallow. */
@@ -209,14 +210,16 @@ test("starts a server on a socket of its own and never kills it", () => {
   });
 
   test("fails when a test left a server in the sandbox its preload made, and the server is gone", async () => {
-    const finished = spawnSync(process.execPath, ["test", join(directory, "leak.test.ts")], {
+    const child = spawn(process.execPath, ["test", join(directory, "leak.test.ts")], {
       cwd: packageRoot,
-      encoding: "utf8",
       env: outside(),
+      stdio: ["ignore", "pipe", "pipe"],
     });
+    const finished = await closeChildWithin(child, deadlineMs(10_000));
     const output = `${finished.stdout}${finished.stderr}`;
 
-    expect(finished.status).not.toBe(0);
+    expect(finished.signal).toBeNull();
+    expect(finished.code).toBe(1);
     expect(output).toContain("1 pass");
     expect(output).toContain(`"custom.sock" socket and had to be stopped`);
     expect(await isGone(leakedPid(output))).toBe(true);

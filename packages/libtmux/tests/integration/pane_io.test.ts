@@ -116,7 +116,8 @@ describe("pane input and capture", () => {
       // The Enter after the keys has to reach the pane, which it only does
       // when tmux resolves it as its own command rather than as a binding for
       // the mode the key before it just cancelled.
-      await pane.sendKeys("echo after-copy-mode");
+      // Start the marker on its own line even if the shell has just printed a prompt.
+      await pane.sendKeys("printf '\\nafter-copy-mode\\n'");
       await captureUntil(
         await pane.refreshed(),
         (lines) => lines.some((line) => line.trim() === "after-copy-mode"),
