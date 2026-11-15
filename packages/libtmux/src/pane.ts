@@ -100,6 +100,92 @@ export interface PanePlans {
  * because a restarted server issues `%0` again to a different pane.
  * {@link Pane.equals} asks that question; {@link Pane.sameTmuxIdAs} asks the
  * weaker one.
+ *
+ * **What is on here.** A pane handle reads and changes the one pane it
+ * addresses. Its members fall into a few groups:
+ *
+ * **Which pane this is.** Each tmux field of the pane reads directly on the
+ * handle, such as `id` and `title`, as it was when the handle was made, and
+ * `format` addresses the same row by tmux's own token names. Reading the pane
+ * again returns a new handle and leaves the receiver at the instant it was read.
+ *
+ * - Identity: {@link Pane.server}, {@link Pane.format}, {@link Pane.toString}
+ * - Compare: {@link Pane.equals}, {@link Pane.sameTmuxIdAs}
+ * - Reread: {@link Pane.refreshed}
+ *
+ * **Window and session.** The containing window placement and session come from
+ * the graph the handle was materialized against, so reading them issues no tmux
+ * command.
+ *
+ * - Held by the handle: {@link Pane.window}, {@link Pane.session}
+ *
+ * **Sending input.** `sendKeys` follows the keys with Enter unless `enter` is
+ * false, and `literal` sends the string as text instead of letting tmux resolve
+ * key names. A pasted buffer arrives as ordinary input, so a shell runs it.
+ * Prefix and the choosers need a client attached to the session: with none, tmux
+ * does nothing and reports success.
+ *
+ * - Keys: {@link Pane.sendKeys}, {@link Pane.sendPrefix}
+ * - Paste: {@link Pane.pasteBuffer}
+ * - Clear: {@link Pane.clearHistory}
+ *
+ * **Reading output.** `capture` reads the pane's lines at one instant, and
+ * `start` and `end` reach into scrollback. The waits resolve on what the pane
+ * does next and need tmux 3.8 or newer: `waitForText` returns the first matching
+ * line, `waitForCommand` the exit status of the next command a shell marks with
+ * OSC 133, and `waitForExit` how the pane's program ended. A timeout throws
+ * {@link WaitTimeoutError} and leaves the pane as it was. `pipeTo` sends
+ * everything the pane writes to a shell command as well.
+ *
+ * - Capture: {@link Pane.capture}
+ * - Wait: {@link Pane.waitForText}, {@link Pane.waitForCommand},
+ *   {@link Pane.waitForExit}
+ * - Pipe: {@link Pane.pipeTo}
+ * - Format: {@link Pane.displayMessage}
+ *
+ * **Splitting and arranging.** A split resolves the pane it created, and
+ * `plan` describes the same mutations for {@link Server.batch} to run together.
+ * Zooming is idempotent and one tmux command, and a resize unzooms the window
+ * first. `breakOut` moves the pane to a window of its own in the session it is
+ * in, and on tmux 3.7 exactly it refuses a call with no `windowName` because
+ * tmux crashes on it.
+ *
+ * - Add a pane: {@link Pane.split}
+ * - Size: {@link Pane.resize}, {@link Pane.zoom}, {@link Pane.unzoom}
+ * - Move: {@link Pane.swapWith}, {@link Pane.breakOut}, {@link Pane.joinTo}
+ * - Focus: {@link Pane.select}
+ * - Title: {@link Pane.setTitle}
+ * - Planned: {@link Pane.plan}
+ *
+ * **Modes and overlays.** The choosers resolve once the mode is on screen, not
+ * once someone has chosen, and need a client attached to draw them.
+ *
+ * - Copy mode: {@link Pane.enterCopyMode}, {@link Pane.exitCopyMode}
+ * - Choosers: {@link Pane.chooseTree}, {@link Pane.chooseBuffer},
+ *   {@link Pane.findWindow}, {@link Pane.customizeMode}
+ * - Overlays: {@link Pane.displayPopup}, {@link Pane.displayMenu}
+ *
+ * **Restarting and ending.** `respawn` restarts the pane's command in place.
+ * Killing destroys the pane, and `killIfWindowUnshared` does so only when its
+ * window has one placement.
+ *
+ * - Restart: {@link Pane.respawn}
+ * - End: {@link Pane.kill}, {@link Pane.killIfWindowUnshared}
+ *
+ * **Options and hooks.** `showOptions` reports only what is set on this pane,
+ * which for a fresh one is often nothing, where `showResolvedOptions` adds what
+ * it inherits. A hook reads back under the name `setHook` takes, and
+ * `unsetHook` removes every command bound to it.
+ *
+ * - Options: {@link Pane.showOptions}, {@link Pane.showResolvedOptions},
+ *   {@link Pane.setOption}, {@link Pane.unsetOption}
+ * - Hooks: {@link Pane.showHooks}, {@link Pane.setHook}, {@link Pane.unsetHook}
+ *
+ * **Raw commands.** A command this package does not model goes through `cmd`:
+ * its first argument is the command name and nothing else, and the pane's id is
+ * sent as the target unless `target` says otherwise.
+ *
+ * {@link Pane.cmd}
  */
 // eslint-disable-next-line typescript/no-unsafe-declaration-merging -- CompleteFormatRow declaration merging exposes the frozen scalar snapshot on the nominal handle.
 export class Pane {

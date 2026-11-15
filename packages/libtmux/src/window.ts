@@ -117,6 +117,80 @@ function placementTarget(window: Window): string {
  * A window can be linked into more than one session, so {@link Window.session}
  * is the session this handle was reached through rather than the only one
  * showing it.
+ *
+ * **What is on here.** A window handle reads and changes the one window
+ * placement it addresses. Its members fall into a few groups:
+ *
+ * **Which window this is.** Each tmux field of the window reads directly on the
+ * handle, such as `id` and `name`, as it was when the handle was made, and
+ * `format` addresses the same row by tmux's own token names. Reading the window
+ * again returns a new handle that keeps the placement and leaves the receiver at
+ * the instant it was read. One comparison needs the same socket, daemon, and
+ * `@n`, and is true for two placements of one linked window; the other asks only
+ * for the same `@n`.
+ *
+ * - Identity: {@link Window.server}, {@link Window.format},
+ *   {@link Window.toString}
+ * - Compare: {@link Window.equals}, {@link Window.sameTmuxIdAs}
+ * - Reread: {@link Window.refreshed}
+ *
+ * **Panes and sessions.** A window's panes and sessions come from the graph the
+ * handle was materialized against, so reading them issues no tmux command and
+ * reports the instant the handle came from. The active pane is read through the
+ * window because `pane_active` is per window, so every window has one.
+ *
+ * - Held by the handle: {@link Window.panes}, {@link Window.session},
+ *   {@link Window.linkedSessions}
+ * - Active: {@link Window.activePane}
+ *
+ * **Splitting and arranging.** A split resolves the pane it created. A layout is
+ * a preset name or a layout string checked before it is sent, because two ranges
+ * of tmux exit on a layout they cannot read; any layout unzooms the window first.
+ * Resizing under tmux's default `window-size` is overwritten the next time an
+ * attached client changes, and `plan` describes the same mutations for
+ * {@link Server.batch} to run together.
+ *
+ * - Add a pane: {@link Window.split}
+ * - Layout: {@link Window.selectLayout}, {@link Window.nextLayout},
+ *   {@link Window.previousLayout}
+ * - Arrange: {@link Window.rotate}, {@link Window.resize},
+ *   {@link Window.unzoom}
+ * - Planned: {@link Window.plan}
+ *
+ * **Moving and linking.** Linking gives the window a second placement in another
+ * session. Moving and swapping act on this placement, and `unlink` removes only
+ * this one, where tmux refuses a window that is shared because its sessions are
+ * grouped rather than linked. `removePlacement` destroys an unshared window but
+ * refuses a group.
+ *
+ * - Place: {@link Window.link}, {@link Window.move}, {@link Window.swapWith}
+ * - Remove a placement: {@link Window.unlink}, {@link Window.removePlacement}
+ *
+ * **Changing the window.** Selecting makes the window active in its session.
+ * A rename refuses a name the supported servers would not store identically.
+ * Respawning restarts the command in the active pane and tmux refuses a window
+ * still running something unless `kill` says to replace it. Killing destroys the
+ * window and unlinks it from every session it is in.
+ *
+ * - Change: {@link Window.rename}, {@link Window.select},
+ *   {@link Window.respawn}
+ * - End: {@link Window.kill}
+ *
+ * **Options and hooks.** `showOptions` reports only what is set on this window,
+ * which for a fresh one is often nothing, where `showResolvedOptions` adds what
+ * it inherits. A hook reads back under the name `setHook` takes, and
+ * `unsetHook` removes every command bound to it.
+ *
+ * - Options: {@link Window.showOptions}, {@link Window.showResolvedOptions},
+ *   {@link Window.setOption}, {@link Window.unsetOption}
+ * - Hooks: {@link Window.showHooks}, {@link Window.setHook},
+ *   {@link Window.unsetHook}
+ *
+ * **Raw commands.** A command this package does not model goes through `cmd`:
+ * its first argument is the command name and nothing else, and the window's id is
+ * sent as the target unless `target` says otherwise.
+ *
+ * {@link Window.cmd}
  */
 // eslint-disable-next-line typescript/no-unsafe-declaration-merging -- CompleteFormatRow declaration merging exposes the frozen scalar snapshot on the nominal handle.
 export class Window {
