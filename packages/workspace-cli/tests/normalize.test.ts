@@ -30,6 +30,32 @@ test.each([
   },
 );
 
+test("a start_directory starting with a dot resolves against the workspace file at every level", () => {
+  const spec = normalize(
+    {
+      session_name: "dev",
+      start_directory: "/var",
+      windows: [
+        {
+          start_directory: "./log",
+          panes: [{ start_directory: "../up" }, { start_directory: "sub" }, {}],
+        },
+        { start_directory: "log", panes: [{}] },
+      ],
+    },
+    "/project/dev.yaml",
+    context,
+  );
+
+  expect(spec.windows[0]!.panes.map((pane) => pane.directory)).toEqual([
+    "/up",
+    "/project/log/sub",
+    "/project/log",
+  ]);
+  // Without the dot it continues the directory above it, as tmuxp does.
+  expect(spec.windows[1]!.panes[0]!.directory).toBe("/var/log");
+});
+
 test("a genuine unsupported field's refusal suggests the x- prefix", () => {
   expect(() =>
     normalize({ session_name: "dev", windows: [{}], bogus: 1 }, "/project/dev.yaml", context),

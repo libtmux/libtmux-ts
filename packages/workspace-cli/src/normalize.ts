@@ -179,6 +179,9 @@ function directory(
   const path = optionalString(value, "start_directory");
   if (path === undefined) return parent;
   const expanded = expand(path, context);
+  // A path written `./x` or `../x` is relative to the workspace file, as in
+  // tmuxp; any other relative path continues the directory above it.
+  if (expanded.startsWith(".")) return resolve(base, expanded);
   return isAbsolute(expanded) ? expanded : resolve(parent ?? base, expanded);
 }
 function environment(
