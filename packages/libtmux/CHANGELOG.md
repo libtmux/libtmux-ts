@@ -47,6 +47,10 @@ Entries of that kind from before it existed are listed below.
 
 ## Unreleased
 
+Capture text or submit keys across an ordered pane list with `PaneSet`, with an
+outcome for every slot including duplicates. Bounded concurrency preserves
+partial failures and uncertain submissions. (#172)
+
 ## 0.1.2 (2026-10-31)
 
 ### `libtmux`
