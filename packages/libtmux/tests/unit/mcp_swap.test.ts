@@ -229,23 +229,11 @@ async function runSwap(
   return { status, stderr, stdout };
 }
 
-async function tryPythonRecordLock(path: string): Promise<string> {
-  const python = Bun.which("python3");
-  if (python === null) throw new Error("python3 is required for the record-lock interop test");
-  const source = `
-import fcntl
-import sys
+const recordLockProbe = fileURLToPath(new URL("../fixtures/record_lock_probe.ts", import.meta.url));
 
-with open(sys.argv[1], "r+b", buffering=0) as lock:
-    try:
-        fcntl.lockf(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except BlockingIOError:
-        print("blocked")
-    else:
-        print("acquired")
-        fcntl.lockf(lock, fcntl.LOCK_UN)
-`;
-  const child = Bun.spawn([python, "-c", source, path], {
+/** Tries the lock from a second process: `acquired` or `blocked`. */
+async function tryRecordLock(path: string): Promise<string> {
+  const child = Bun.spawn([process.execPath, recordLockProbe, path], {
     stderr: "pipe",
     stdout: "pipe",
   });
@@ -254,14 +242,14 @@ with open(sys.argv[1], "r+b", buffering=0) as lock:
     new Response(child.stderr).text(),
     new Response(child.stdout).text(),
   ]);
-  if (status !== 0) throw new Error(`python lock probe failed: ${stderr.trim()}`);
+  if (status !== 0) throw new Error(`record lock probe failed: ${stderr.trim()}`);
   return stdout.trim();
 }
 
-async function waitForPythonRecordLock(path: string): Promise<void> {
+async function waitForRecordLock(path: string): Promise<void> {
   for (let attempt = 0; attempt < 500; attempt += 1) {
     // eslint-disable-next-line no-await-in-loop -- wait for the kernel to drop a dead owner's lock.
-    if ((await tryPythonRecordLock(path)) === "acquired") return;
+    if ((await tryRecordLock(path)) === "acquired") return;
     // eslint-disable-next-line no-await-in-loop -- polling must yield between lock probes.
     await Bun.sleep(2);
   }
@@ -1486,7 +1474,7 @@ describe("swapping a config", () => {
     });
   });
 
-  test("holds a POSIX record lock that blocks Python fcntl.lockf", async () => {
+  test("holds a POSIX record lock that blocks a second process's lockf", async () => {
     const info = cliFor("cursor");
     await seed(info, originalConfig(info));
     let observation = "not-run";
@@ -1503,7 +1491,7 @@ describe("swapping a config", () => {
         dryRun: false,
         hooks: {
           afterStaging: async () => {
-            observation = await tryPythonRecordLock(swapLockPath());
+            observation = await tryRecordLock(swapLockPath());
           },
         },
         skipPreflight: true,
@@ -1511,7 +1499,7 @@ describe("swapping a config", () => {
     );
 
     expect(observation).toBe("blocked");
-    expect(await tryPythonRecordLock(swapLockPath())).toBe("acquired");
+    expect(await tryRecordLock(swapLockPath())).toBe("acquired");
   });
 
   test("keeps the worker lock through native config hardlink-alias rejection", async () => {
@@ -1534,7 +1522,7 @@ describe("swapping a config", () => {
         dryRun: false,
         hooks: {
           afterFailureBeforeUnlock: async () => {
-            contender = await tryPythonRecordLock(swapLockPath());
+            contender = await tryRecordLock(swapLockPath());
             await unlink(info.configPath);
             await rename(displaced, info.configPath);
           },
@@ -1549,7 +1537,7 @@ describe("swapping a config", () => {
 
     await expect(mutation).rejects.toThrow(/config.*changed|does not match|aliases swap lock/u);
     expect(contender).toBe("blocked");
-    expect(await tryPythonRecordLock(swapLockPath())).toBe("acquired");
+    expect(await tryRecordLock(swapLockPath())).toBe("acquired");
     expect(await readFile(info.configPath, "utf8")).toBe(original);
   });
 
@@ -1573,7 +1561,7 @@ describe("swapping a config", () => {
         dryRun: false,
         hooks: {
           afterFailureBeforeUnlock: async () => {
-            contender = await tryPythonRecordLock(swapLockPath());
+            contender = await tryRecordLock(swapLockPath());
             await unlink(backup);
           },
           afterStaging: () => link(swapLockPath(), backup),
@@ -1586,7 +1574,7 @@ describe("swapping a config", () => {
       /backup.*(?:appeared|already exists|aliases swap lock)/u,
     );
     expect(contender).toBe("blocked");
-    expect(await tryPythonRecordLock(swapLockPath())).toBe("acquired");
+    expect(await tryRecordLock(swapLockPath())).toBe("acquired");
     expect(await readFile(info.configPath, "utf8")).toBe(original);
     expect(await Bun.file(nativeStatePath()).exists()).toBe(false);
   });
@@ -1743,11 +1731,11 @@ describe("swapping a config", () => {
     const first = await reader.read();
     expect(first.done).toBe(false);
     expect(new TextDecoder().decode(first.value)).toContain('"kind":"acquired"');
-    expect(await tryPythonRecordLock(lock)).toBe("blocked");
+    expect(await tryRecordLock(lock)).toBe("blocked");
 
     worker.kill("SIGKILL");
     await worker.exited;
-    await waitForPythonRecordLock(lock);
+    await waitForRecordLock(lock);
   });
 
   test("does not orphan the lock owner when the parent dies", async () => {
@@ -1794,11 +1782,11 @@ describe("swapping a config", () => {
       stdout: "pipe",
     });
     await waitForPath(marker);
-    expect(await tryPythonRecordLock(swapLockPath())).toBe("blocked");
+    expect(await tryRecordLock(swapLockPath())).toBe("blocked");
 
     parent.kill("SIGKILL");
     await parent.exited;
-    await waitForPythonRecordLock(swapLockPath());
+    await waitForRecordLock(swapLockPath());
     expect(await readFile(info.configPath, "utf8")).toBe(originalConfig(info));
   });
 
