@@ -48,6 +48,11 @@ changelog has the documentation, CI and release tooling entries up to 0.1.2.
 
 ### Development
 
+- CI builds tmux and runs `apt-get` through the shared build-tmux and apt-get
+  actions of `libtmux/.github`, pinned by commit. The repository no longer
+  carries its own `tmux_build.py`, `tmux-releases.toml`, `scripts/apt-get.sh`
+  or `scripts/build-tmux.sh`, which no workflow called; a new tmux release's
+  checksum goes to `libtmux/.github`.
 - CI rebuilds incompatible cached tmux installations before running tests.
   A build is keyed by the runner image and its version, and a restored one
   is validated before use, so an Ubuntu 24.04 build is no longer restored
