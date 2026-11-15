@@ -490,7 +490,7 @@ export class MultipleMatchesError extends MultipleObjectsError {
   static override readonly code: LibTmuxErrorCode = "MultipleMatchesError";
 }
 
-/** @deprecated Use {@link QueryValidationReason}. Removed at `0.1.0`. */
+/** @deprecated Use {@link QueryValidationReason}. Exported in 0.1.x; no removal is scheduled. */
 export type QueryValidationErrorCode = QueryValidationReason;
 
 /**
@@ -614,17 +614,17 @@ export class TmuxCommandError extends LibTmuxError {
   }
 }
 
-/** @deprecated Use {@link LibTmuxError}. Removed at `0.1.0`. */
+/** @deprecated Use {@link LibTmuxError}. Exported in 0.1.x; no removal is scheduled. */
 export { LibTmuxError as LibTmuxException };
-/** @deprecated Use {@link ObjectNotFoundError}. Removed at `0.1.0`. */
+/** @deprecated Use {@link ObjectNotFoundError}. Exported in 0.1.x; no removal is scheduled. */
 export { ObjectNotFoundError as ObjectDoesNotExist };
-/** @deprecated Use {@link MultipleObjectsError}. Removed at `0.1.0`. */
+/** @deprecated Use {@link MultipleObjectsError}. Exported in 0.1.x; no removal is scheduled. */
 export { MultipleObjectsError as MultipleObjectsReturned };
-/** @deprecated Use {@link TmuxObjectNotFoundError}. Removed at `0.1.0`. */
+/** @deprecated Use {@link TmuxObjectNotFoundError}. Exported in 0.1.x; no removal is scheduled. */
 export { TmuxObjectNotFoundError as TmuxObjectDoesNotExist };
-/** @deprecated Use {@link VersionTooLowError}. Removed at `0.1.0`. */
+/** @deprecated Use {@link VersionTooLowError}. Exported in 0.1.x; no removal is scheduled. */
 export { VersionTooLowError as VersionTooLow };
-/** @deprecated Use {@link WaitTimeoutError}. Removed at `0.1.0`. */
+/** @deprecated Use {@link WaitTimeoutError}. Exported in 0.1.x; no removal is scheduled. */
 export { WaitTimeoutError as WaitTimeout };
-/** @deprecated Use {@link TmuxServerRestartedError}. Removed at `0.1.0`. */
+/** @deprecated Use {@link TmuxServerRestartedError}. Exported in 0.1.x; no removal is scheduled. */
 export { TmuxServerRestartedError as TmuxServerRestarted };

@@ -132,15 +132,15 @@ export {
   WindowDirection,
 } from "./constants.js";
 
-/** @deprecated Use {@link LibTmuxError}. Removed at `0.1.0`. */
+/** @deprecated Use {@link LibTmuxError}. Exported in 0.1.x; no removal is scheduled. */
 export { LibTmuxException } from "./errors.js";
-/** @deprecated Use {@link ObjectNotFoundError}. Removed at `0.1.0`. */
+/** @deprecated Use {@link ObjectNotFoundError}. Exported in 0.1.x; no removal is scheduled. */
 export { ObjectDoesNotExist } from "./errors.js";
-/** @deprecated Use {@link MultipleObjectsError}. Removed at `0.1.0`. */
+/** @deprecated Use {@link MultipleObjectsError}. Exported in 0.1.x; no removal is scheduled. */
 export { MultipleObjectsReturned } from "./errors.js";
-/** @deprecated Use {@link VersionTooLowError}. Removed at `0.1.0`. */
+/** @deprecated Use {@link VersionTooLowError}. Exported in 0.1.x; no removal is scheduled. */
 export { VersionTooLow } from "./errors.js";
-/** @deprecated Use {@link WaitTimeoutError}. Removed at `0.1.0`. */
+/** @deprecated Use {@link WaitTimeoutError}. Exported in 0.1.x; no removal is scheduled. */
 export { WaitTimeout } from "./errors.js";
-/** @deprecated Use {@link TmuxServerRestartedError}. Removed at `0.1.0`. */
+/** @deprecated Use {@link TmuxServerRestartedError}. Exported in 0.1.x; no removal is scheduled. */
 export { TmuxServerRestarted } from "./errors.js";

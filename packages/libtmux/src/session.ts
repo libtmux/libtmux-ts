@@ -6,7 +6,12 @@ import {
   showEnvironment,
   unsetEnvironment,
 } from "./_internal/operations/environment.js";
-import type { EnvironmentValue, PlannedOperation, SetEnvironmentOptions } from "./types.js";
+import type {
+  EnvironmentValue,
+  PlanOptions,
+  PlannedOperation,
+  SetEnvironmentOptions,
+} from "./types.js";
 import type { CmdOptions } from "./types.js";
 import { runRawCommand } from "./_internal/operations/raw.js";
 import type { SetHookOptions } from "./types.js";
@@ -20,7 +25,8 @@ import { panesOfSession, windowsOfSession } from "./_internal/operations/relatio
 import { LibTmuxError } from "./errors.js";
 import { setHook, showHooks, unsetHook } from "./_internal/operations/hooks.js";
 import { killTarget, newWindow } from "./_internal/operations/mutations.js";
-import { planKill, planNewWindow } from "./_internal/operations/plans.js";
+import { planKill, planNewWindow, refuseStdin } from "./_internal/operations/plans.js";
+import { bindPlan } from "./_internal/operations/plan_origin.js";
 import {
   setOption,
   showOptions,
@@ -29,7 +35,7 @@ import {
 } from "./_internal/operations/options.js";
 import { renameSession, selectWindowIn } from "./_internal/operations/session_nav.js";
 import { refreshedHandle } from "./_internal/operations/refreshed.js";
-import { originGraphForHandle } from "./_internal/runtime/live_handle.js";
+import { originForHandle, originGraphForHandle } from "./_internal/runtime/live_handle.js";
 import type { Pane } from "./pane.js";
 import type { Selection } from "./selection.js";
 import type { Window } from "./window.js";
@@ -45,7 +51,8 @@ import type { Server } from "./server.js";
 /** What {@link Session.plan} offers, one entry per mutation it can describe. */
 export interface SessionPlans {
   readonly kill: () => PlannedOperation<void>;
-  readonly newWindow: (options?: NewWindowOptions) => PlannedOperation<Window>;
+  /** @throws TypeError when `options` carries `stdin`, which a plan cannot feed. */
+  readonly newWindow: (options?: PlanOptions<NewWindowOptions>) => PlannedOperation<Window>;
 }
 
 /**
@@ -383,8 +390,11 @@ export class Session {
    */
   get plan(): SessionPlans {
     return {
-      kill: () => planKill("kill-session", this.id),
-      newWindow: (options?: NewWindowOptions) => planNewWindow(this.id, options),
+      kill: () => bindPlan(this, planKill("kill-session", this.id)),
+      newWindow: (options?: PlanOptions<NewWindowOptions>) => {
+        refuseStdin(options, "session.plan.newWindow");
+        return bindPlan(this, planNewWindow(this.id, options));
+      },
     };
   }
 
@@ -430,12 +440,25 @@ export class Session {
   /**
    * Select the last, next, or previous window, or one named by target.
    *
+   * Given a window handle, the selection is guarded: it is refused with a
+   * `LibTmuxError` when that window no longer holds the placement the handle
+   * names. Given an index string such as `"3"` there is no window to compare,
+   * so it selects whatever holds that index and is not guarded.
+   *
    * ```ts
    * await session.selectWindow("next");
    * ```
    */
   selectWindow(target: Window | WindowTarget): Promise<void> {
-    return selectWindowIn(runtimeForHandle(this), this.id, windowTargetOf(this, target));
+    return selectWindowIn(
+      runtimeForHandle(this),
+      this.id,
+      windowTargetOf(this, target),
+      // An index names whatever holds it, so only a window handle can be checked.
+      typeof target === "string"
+        ? undefined
+        : { daemon: originForHandle(target).daemon, windowId: target.id },
+    );
   }
 
   /**

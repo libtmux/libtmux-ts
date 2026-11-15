@@ -242,6 +242,7 @@ export type LogicalRef = SessionRef | WindowRef | PaneRef;
  * The oldest tmux release whose daemon this package drives.
  *
  * ```ts
+ * import { MINIMUM_TMUX } from "libtmux";
  * MINIMUM_TMUX; // "3.3a"
  * ```
  */
@@ -256,6 +257,7 @@ export const MINIMUM_TMUX: "3.3a" = MINIMUM;
  * refused.
  *
  * ```ts
+ * import { assertSupportedTmux } from "libtmux";
  * assertSupportedTmux("3.3a");
  * assertSupportedTmux("next-3.9");
  * ```

@@ -8,8 +8,27 @@ import { capabilitySince } from "../support/capabilities.js";
 import { quoteCommand } from "../transport/lexer.js";
 import { runCommand, runCommands } from "./command.js";
 import { parseClassicLayout, type ClassicLayoutParse, type LayoutRejection } from "./layout.js";
-import { planRemoveWindowPlacement } from "./plans.js";
+import {
+  guardPlacements,
+  placementRefusal,
+  planRemoveWindowPlacement,
+  type Placement,
+} from "./plans.js";
 import { assertName } from "./names.js";
+
+/** Run a placement-guarded command, naming a refusal for what it is. */
+async function runPlaced(
+  runtime: RuntimeContext,
+  placement: Placement,
+  command: readonly string[],
+  options: CommandOptions = {},
+): Promise<void> {
+  try {
+    await runCommand(runtime, command, { ...options, daemon: placement.daemon });
+  } catch (error) {
+    throw placementRefusal(error);
+  }
+}
 
 function destination(options: MoveWindowOptions): readonly string[] {
   if (options.session === undefined && options.index === undefined) return [];
@@ -38,15 +57,17 @@ export async function renameWindow(
  *
  * `-d` keeps the destination session from being selected as a side effect, so
  * moving a window never silently changes which session a client is looking at.
+ * Tmux refuses it unless the placement still holds the window it was read as.
  */
 export async function moveWindow(
   runtime: RuntimeContext,
-  windowId: string | null,
+  source: Placement,
   options: MoveWindowOptions = {},
 ): Promise<void> {
-  await runCommand(
+  await runPlaced(
     runtime,
-    ["move-window", "-d", ...(windowId == null ? [] : ["-s", windowId]), ...destination(options)],
+    source,
+    guardPlacements([source], ["move-window", "-d", "-s", source.target, ...destination(options)]),
     options,
   );
 }
@@ -65,39 +86,55 @@ export async function linkWindow(
 }
 
 /** Remove one placement of a window, leaving its other placements intact. */
-export async function unlinkWindow(
-  runtime: RuntimeContext,
-  windowId: string | null,
-): Promise<void> {
-  await runCommand(runtime, ["unlink-window", ...target(windowId)]);
+export async function unlinkWindow(runtime: RuntimeContext, placement: Placement): Promise<void> {
+  await runPlaced(
+    runtime,
+    placement,
+    guardPlacements([placement], ["unlink-window", "-t", placement.target]),
+  );
 }
 
 /** Unlink one placement or destroy its last ungrouped window. */
 export async function removeWindowPlacement(
   runtime: RuntimeContext,
-  windowId: string,
+  placement: Placement,
 ): Promise<void> {
-  await runCommand(runtime, planRemoveWindowPlacement(windowId).argv);
+  await runPlaced(runtime, placement, planRemoveWindowPlacement(placement).argv);
 }
 
 /**
  * Exchange the positions of two windows.
  *
- * The destination is required: tmux resolves an absent `-t` to the current
- * window, which is never what a caller naming a source means.
+ * Both placements are checked in tmux's queue before either moves: a swap
+ * aimed at an index that now holds another window would exchange the wrong
+ * pair. The destination is required: tmux resolves an absent `-t` to the
+ * current window, which is never what a caller naming a source means.
  */
 export async function swapWindows(
   runtime: RuntimeContext,
-  source: string | null,
-  destinationWindow: string,
+  source: Placement,
+  destinationWindow: Placement,
 ): Promise<void> {
-  await runCommand(runtime, [
-    "swap-window",
-    "-d",
-    ...(source == null ? [] : ["-s", source]),
-    "-t",
-    destinationWindow,
-  ]);
+  await runPlaced(
+    runtime,
+    source,
+    guardPlacements(
+      [source, destinationWindow],
+      ["swap-window", "-d", "-s", source.target, "-t", destinationWindow.target],
+    ),
+  );
+}
+
+/** Make a window the active one in its session, if it still holds this placement. */
+export async function selectPlacement(
+  runtime: RuntimeContext,
+  placement: Placement,
+): Promise<void> {
+  await runPlaced(
+    runtime,
+    placement,
+    guardPlacements([placement], ["select-window", "-t", placement.target]),
+  );
 }
 
 const LAYOUT_PRESETS = new Set([

@@ -7,16 +7,31 @@ typecheck:symbols` is what keeps that true.
 Start with the [README](../README.md) for a reading order and recipes; this
 page is for looking one thing up.
 
-It covers what `libtmux` itself exports. The package publishes further
-subpaths that this page does not list — `libtmux/testing` for the
-record-and-replay doubles, `libtmux/engine` for supplying a transport, and
-`libtmux/selection` for query documents — each introduced in the README
-where it is used. Not finding a name here means it lives on one of those,
-not that it is unpublished.
+It covers every name the `libtmux` root exports: the classes, functions and
+constants below have entries of their own, and the rest are in the last
+table. The list is read from the root module, so a new export cannot be
+left out. The package publishes further subpaths that this page does not
+list — `libtmux/testing` for the record-and-replay doubles, `libtmux/engine`
+for supplying a transport, and `libtmux/selection` for query documents —
+each introduced in the README where it is used. A name missing from this
+page is on one of those.
 
 ## Functions
 
-[`encodeWhereDocument`](#encodewheredocument) · [`decodeWhereDocument`](#decodewheredocument) · [`isSafeInteger`](#issafeinteger) · [`safeInteger`](#safeinteger) · [`isTmuxName`](#istmuxname) · [`isSplitSize`](#issplitsize) · [`splitSize`](#splitsize)
+[`compileBoundedRegex`](#compileboundedregex) · [`encodeWhereDocument`](#encodewheredocument) · [`decodeWhereDocument`](#decodewheredocument) · [`isTmuxName`](#istmuxname) · [`isSplitSize`](#issplitsize) · [`splitSize`](#splitsize) · [`isSafeInteger`](#issafeinteger) · [`safeInteger`](#safeinteger) · [`assertSupportedTmux`](#assertsupportedtmux)
+
+### `compileBoundedRegex`
+
+```ts
+function compileBoundedRegex(pattern: string): RegExp;
+```
+
+Compile a regex under the deterministic selection-query work budget.
+
+```ts
+import { compileBoundedRegex } from "libtmux";
+compileBoundedRegex("^work-[0-9]+$").test("work-12"); // true
+```
 
 ### `encodeWhereDocument`
 
@@ -58,36 +73,6 @@ const document = decodeWhereDocument(
   JSON.parse('{"model":"pane","version":1,"where":{"pane_title":"logs"}}'),
 );
 if (document.model === "pane") snapshot.panes.where(document.where);
-```
-
-### `isSafeInteger`
-
-```ts
-function isSafeInteger(value: unknown): value is SafeInteger;
-```
-
-Test whether a value is an exact JavaScript integer.
-
-```ts
-import { isSafeInteger } from "libtmux";
-const value: unknown = 3;
-if (isSafeInteger(value)) snapshot.sessions.where({ attached: value });
-```
-
-### `safeInteger`
-
-```ts
-function safeInteger(value: number): SafeInteger;
-```
-
-Authenticate an exact JavaScript integer or throw.
-
-@throws TypeError when `value` is fractional, infinite, `NaN`, or outside
-JavaScript's safe integer range.
-
-```ts
-import { safeInteger } from "libtmux";
-const pid = safeInteger(42);
 ```
 
 ### `isTmuxName`
@@ -146,23 +131,77 @@ import { splitSize } from "libtmux";
 const size = splitSize(20);
 ```
 
-## Scalar types
-
-[`SafeInteger`](#safeinteger-type) · [`SplitCellSize`](#splitcellsize-type) · [`SplitPercentage`](#splitpercentage-type) · [`SplitSize`](#splitsize-type)
-
-### `SafeInteger` type
+### `isSafeInteger`
 
 ```ts
-type SafeInteger = number & { readonly [safeIntegerBrand]: "safe-integer" };
+function isSafeInteger(value: unknown): value is SafeInteger;
 ```
 
-A finite whole number within JavaScript's safe integer range.
+Test whether a value is an exact JavaScript integer.
+
+```ts
+import { isSafeInteger } from "libtmux";
+const value: unknown = 3;
+if (isSafeInteger(value)) snapshot.sessions.where({ attached: value });
+```
+
+### `safeInteger`
+
+```ts
+function safeInteger(value: number): SafeInteger;
+```
+
+Authenticate an exact JavaScript integer or throw.
+
+@throws TypeError when `value` is fractional, infinite, `NaN`, or outside
+JavaScript's safe integer range.
 
 ```ts
 import { safeInteger } from "libtmux";
-import type { SafeInteger } from "libtmux";
-const count: SafeInteger = safeInteger(3);
+const pid = safeInteger(42);
 ```
+
+### `assertSupportedTmux`
+
+```ts
+function assertSupportedTmux(version: string): void;
+```
+
+Refuse a version report below [`MINIMUM_TMUX`](#minimum_tmux).
+
+Reports rank as tmux ranks them: `3.3` is below `3.3a`, and a development
+build ranks below the release it names, so `next-3.4` passes and a 3.3
+candidate does not. A report libtmux cannot place, such as `master`, is
+refused.
+
+@throws VersionTooLowError when the report is below the minimum or unrecognized.
+
+```ts
+import { assertSupportedTmux } from "libtmux";
+assertSupportedTmux("3.3a");
+assertSupportedTmux("next-3.9");
+```
+
+## Constants
+
+[`MINIMUM_TMUX`](#minimum_tmux)
+
+### `MINIMUM_TMUX`
+
+```ts
+const MINIMUM_TMUX: "3.3a";
+```
+
+The oldest tmux release whose daemon this package drives.
+
+```ts
+import { MINIMUM_TMUX } from "libtmux";
+MINIMUM_TMUX; // "3.3a"
+```
+
+## Scalar types
+
+[`SplitCellSize`](#splitcellsize-type) · [`SplitPercentage`](#splitpercentage-type) · [`SplitSize`](#splitsize-type) · [`SafeInteger`](#safeinteger-type)
 
 ### `SplitCellSize` type
 
@@ -206,6 +245,20 @@ An authenticated cell count or canonical percentage for a pane split.
 import type { SplitSize } from "libtmux";
 const size: SplitSize = "30%";
 void size;
+```
+
+### `SafeInteger` type
+
+```ts
+type SafeInteger = number & { readonly [safeIntegerBrand]: "safe-integer" };
+```
+
+A finite whole number within JavaScript's safe integer range.
+
+```ts
+import { safeInteger } from "libtmux";
+import type { SafeInteger } from "libtmux";
+const count: SafeInteger = safeInteger(3);
 ```
 
 ## Server
@@ -1490,7 +1543,7 @@ raiseIfDead(): Promise<void>
 
 Assert the server is reachable, raising with tmux's reason if not.
 
-@deprecated Use [`checkAlive`](#servercheckalive). Removed at `0.1.0`.
+@deprecated Use [`checkAlive`](#servercheckalive). Exported in 0.1.x; no removal is scheduled.
 
 ```ts
 await server.raiseIfDead(); // throws when no tmux server is listening
@@ -1557,6 +1610,31 @@ the mutations in order and resolves all of them from one final snapshot.
 Not atomic, for the same reason [`Server.pipeline`](#serverpipeline) is not: tmux runs
 them in order and stops at the first failure, leaving everything before it
 applied.
+
+A plan belongs to the tmux server its handle came from and to the daemon
+that handle was read from. A `Server` for another tmux server refuses it
+with `TypeError`, and a daemon that has since been replaced refuses it with
+`TmuxServerRestartedError`, before any command is sent; another
+`Server` over the same socket and daemon runs it. Each command is also
+guarded inside tmux so a restart mid-batch cannot apply it to a stranger.
+A copy of a plan, by spread or `.map`, is checked like the original. A plan
+written by hand has no origin and runs here.
+
+A plan's own `signal` and `timeoutMs` bound its own command and combine
+with `options`: either signal abandons the command, and the shorter
+deadline applies. A plan's `timeoutMs: null` means no deadline of its own,
+not "lift the batch's": it does not relax a deadline `options` names, and
+relaxes only the server's default when `options` names none. Every
+deadline is validated before the first command runs. A signal that has
+already fired stops the batch before its command is sent.
+
+When the batch fails after some commands ran, the error keeps its class
+and carries `applied`, the number of commands that had completed. The
+failing command is not counted, and one that timed out or was abandoned may
+still have taken effect. When only the final snapshot fails, `applied` is
+every command. A refusal before any command is sent has no `applied`. The final snapshot is taken
+only when some plan resolves a handle, so a batch of kills resolves even
+when it removed the last session.
 
 ```ts
 const [editor, logs] = await server.batch([
@@ -1901,6 +1979,11 @@ selectWindow(target: Window | WindowTarget): Promise<void>
 ```
 
 Select the last, next, or previous window, or one named by target.
+
+Given a window handle, the selection is guarded: it is refused with a
+`LibTmuxError` when that window no longer holds the placement the handle
+names. Given an index string such as `"3"` there is no window to compare,
+so it selects whatever holds that index and is not guarded.
 
 ```ts
 await session.selectWindow("next");
@@ -3633,3 +3716,128 @@ How many members match `criteria`, or how many there are without it.
 snapshot.panes.count(); // every pane
 snapshot.panes.count({ currentCommand: "vim" });
 ```
+
+## Other exports
+
+Everything else the package root exports: options and event types, the
+error classes, the direction and scope constants, and the deprecated
+aliases, which stay exported in 0.1.x with no removal scheduled. Each is
+described by its doc comment in the file named here.
+
+| Name                            | Kind      | Summary                                                                                                                                                                                                | Declared in        |
+| ------------------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------ |
+| `PanePlans`                     | interface | What [`Pane.plan`](#paneplan) offers, one entry per mutation it can describe.                                                                                                                          | `src/pane.ts`      |
+| `DaemonIdentity`                | type      | Which tmux daemon answered, as tmux itself reports it.                                                                                                                                                 | `src/server.ts`    |
+| `ServerOptions`                 | interface | How to reach a tmux server, and what to assume when it is quiet.                                                                                                                                       | `src/server.ts`    |
+| `SessionPlans`                  | interface | What [`Session.plan`](#sessionplan) offers, one entry per mutation it can describe.                                                                                                                    | `src/session.ts`   |
+| `WindowPlans`                   | interface | What [`Window.plan`](#windowplan) offers, one entry per mutation it can describe.                                                                                                                      | `src/window.ts`    |
+| `ClientWhere`                   | interface | Criteria matching a client, evaluated against one snapshot.                                                                                                                                            | `src/selection.ts` |
+| `PaneWhere`                     | interface | Criteria matching a pane, evaluated against one snapshot.                                                                                                                                              | `src/selection.ts` |
+| `RegexCriteriaData`             | interface | A pattern and its flags, kept apart from any regular-expression object.                                                                                                                                | `src/selection.ts` |
+| `SessionWhere`                  | interface | Criteria matching a session, evaluated against one snapshot.                                                                                                                                           | `src/selection.ts` |
+| `WhereDocumentV1`               | type      | Criteria as a portable document: which model, which version, and the criteria themselves.                                                                                                              | `src/selection.ts` |
+| `WhereOf`                       | type      | The criteria a selection of this handle type accepts.                                                                                                                                                  | `src/selection.ts` |
+| `WindowWhere`                   | interface | Criteria matching a window, evaluated against one snapshot.                                                                                                                                            | `src/selection.ts` |
+| `AbortLike`                     | interface | The part of `AbortSignal` this package uses.                                                                                                                                                           | `src/types.ts`     |
+| `CaptureOptions`                | interface | Which part of a pane is read, and in what form.                                                                                                                                                        | `src/types.ts`     |
+| `ConnectOptions`                | type      | Options for [`Server.connect`](#serverconnect).                                                                                                                                                        | `src/types.ts`     |
+| `ConnectionOptions`             | interface | Options shared by connected servers and event observers.                                                                                                                                               | `src/types.ts`     |
+| `CmdOptions`                    | interface | Options for [`Server.cmd`](#servercmd) and the handle-level `cmd`.                                                                                                                                     | `src/types.ts`     |
+| `ConnectedServer`               | interface | A server with a persistent observation connection and daemon-lifetime tracking.                                                                                                                        | `src/types.ts`     |
+| `ChooseTreeOptions`             | interface | What the interactive chooser shows and what selecting a row runs.                                                                                                                                      | `src/types.ts`     |
+| `CommandWaitOptions`            | interface | Options for [`Pane.waitForCommand`](#panewaitforcommand).                                                                                                                                              | `src/types.ts`     |
+| `EnvironmentScope`              | type      | Environments live at server (global) or session scope, as hooks do.                                                                                                                                    | `src/types.ts`     |
+| `EnvironmentValue`              | type      | A variable's state in a tmux environment.                                                                                                                                                              | `src/types.ts`     |
+| `HookScope`                     | type      | The server, session, window, or pane table that holds a hook.                                                                                                                                          | `src/types.ts`     |
+| `IfShellOptions`                | interface | How the condition is decided: by running it, or by expanding it.                                                                                                                                       | `src/types.ts`     |
+| `JoinOptions`                   | interface | Options for joining a pane into another window.                                                                                                                                                        | `src/types.ts`     |
+| `MenuEntry`                     | interface | One selectable line of a menu: its label, its shortcut, and what it runs.                                                                                                                              | `src/types.ts`     |
+| `MenuItem`                      | type      | A menu entry, or a horizontal rule.                                                                                                                                                                    | `src/types.ts`     |
+| `MoveWindowOptions`             | interface | Where a window is moved to, and what happens if something is already there.                                                                                                                            | `src/types.ts`     |
+| `PlannedOperation`              | type      | A tmux command that has been described but not run.                                                                                                                                                    | `src/types.ts`     |
+| `NewSessionOptions`             | interface | What a new session starts as, and what it is grouped with.                                                                                                                                             | `src/types.ts`     |
+| `NewWindowOptions`              | interface | Where a new window lands, and what runs in it.                                                                                                                                                         | `src/types.ts`     |
+| `PopupOptions`                  | interface | Size, placement and lifetime of a popup, which floats over the window rather than taking space from it.                                                                                                | `src/types.ts`     |
+| `ProgramExit`                   | interface | How a program ended: an exit status or the signal that ended it.                                                                                                                                       | `src/types.ts`     |
+| `ProgramPlacement`              | type      | Where a program runs: a detached session of its own, a background window of the `from` pane's session, or a split beside the `from` pane, where a person sees it run.                                  | `src/types.ts`     |
+| `ProgramResult`                 | interface | What [`Server.run`](#serverrun) reports once the program has ended or been stopped.                                                                                                                    | `src/types.ts`     |
+| `ProgramStreamOptions`          | interface | Options for [`Program.stream`](#programstream).                                                                                                                                                        | `src/types.ts`     |
+| `ProgramWaitOptions`            | interface | Options for [`Program.wait`](#programwait).                                                                                                                                                            | `src/types.ts`     |
+| `RespawnOptions`                | interface | Whether a pane whose process is still alive may be restarted.                                                                                                                                          | `src/types.ts`     |
+| `ResizeOptions`                 | interface | How far a pane boundary moves, and in which direction.                                                                                                                                                 | `src/types.ts`     |
+| `ResizeWindowOptions`           | interface | How far a window's own size moves, or what it is set to outright.                                                                                                                                      | `src/types.ts`     |
+| `RunOptions`                    | interface | How long [`Server.run`](#serverrun) lets a program run, and how to stop it early.                                                                                                                      | `src/types.ts`     |
+| `RunShellOptions`               | interface | Where the shell command runs, and whether the call waits for it.                                                                                                                                       | `src/types.ts`     |
+| `SaveBufferOptions`             | interface | How a paste buffer is written to a file.                                                                                                                                                               | `src/types.ts`     |
+| `SendKeysOptions`               | interface | How the keys are interpreted before tmux delivers them.                                                                                                                                                | `src/types.ts`     |
+| `ServerSnapshot`                | interface | An immutable view of the server at one instant.                                                                                                                                                        | `src/types.ts`     |
+| `SnapshotOptions`               | interface | Options for [`Server.snapshot`](#serversnapshot).                                                                                                                                                      | `src/types.ts`     |
+| `SetEnvironmentOptions`         | interface | Options for writing a tmux environment variable.                                                                                                                                                       | `src/types.ts`     |
+| `SetHookOptions`                | interface | Which hook table the binding is written to, and whether it replaces or adds.                                                                                                                           | `src/types.ts`     |
+| `SetOptionOptions`              | interface | Options for writing a tmux option.                                                                                                                                                                     | `src/types.ts`     |
+| `SplitOptions`                  | interface | Which side the new pane takes, how big it is, and what runs in it.                                                                                                                                     | `src/types.ts`     |
+| `SpawnOptions`                  | interface | Where a program started by [`Server.spawn`](#serverspawn) runs, and what it gets.                                                                                                                      | `src/types.ts`     |
+| `TmuxClientDetachedEvent`       | interface | Another client detached.                                                                                                                                                                               | `src/types.ts`     |
+| `TmuxClientSessionChangedEvent` | interface | Another client switched sessions.                                                                                                                                                                      | `src/types.ts`     |
+| `TmuxEvent`                     | type      | Anything a control-mode connection can deliver, as one discriminated union.                                                                                                                            | `src/types.ts`     |
+| `TmuxEventStream`               | interface | A live stream of tmux control-mode events.                                                                                                                                                             | `src/types.ts`     |
+| `TmuxExitEvent`                 | interface | The control-mode connection is ending.                                                                                                                                                                 | `src/types.ts`     |
+| `TmuxLayoutChangeEvent`         | interface | A window's layout changed.                                                                                                                                                                             | `src/types.ts`     |
+| `TmuxMessageEvent`              | interface | tmux reported a message, or an error in its configuration.                                                                                                                                             | `src/types.ts`     |
+| `TmuxOutputEvent`               | interface | A pane produced output.                                                                                                                                                                                | `src/types.ts`     |
+| `TmuxPaneFlowEvent`             | interface | tmux paused or resumed output for a pane that fell behind.                                                                                                                                             | `src/types.ts`     |
+| `TmuxPaneModeChangedEvent`      | interface | A pane entered or left a mode such as copy mode.                                                                                                                                                       | `src/types.ts`     |
+| `TmuxPasteBufferEvent`          | interface | A paste buffer was written or deleted.                                                                                                                                                                 | `src/types.ts`     |
+| `TmuxReconnectedEvent`          | interface | The connection dropped and was reopened.                                                                                                                                                               | `src/types.ts`     |
+| `TmuxReconnectingEvent`         | interface | The connection dropped and a replacement is being opened.                                                                                                                                              | `src/types.ts`     |
+| `TmuxSessionEvent`              | interface | The attached session changed, or a session was renamed.                                                                                                                                                | `src/types.ts`     |
+| `TmuxSessionWindowChangedEvent` | interface | A session's active window changed.                                                                                                                                                                     | `src/types.ts`     |
+| `TmuxSessionsChangedEvent`      | interface | The set of sessions changed.                                                                                                                                                                           | `src/types.ts`     |
+| `TmuxUnknownEvent`              | interface | A notification this version of the package does not model.                                                                                                                                             | `src/types.ts`     |
+| `TmuxVersion`                   | interface | The tmux version a server is running.                                                                                                                                                                  | `src/types.ts`     |
+| `TmuxWindowLifecycleEvent`      | interface | A window was added, closed, or linked into or out of a session.                                                                                                                                        | `src/types.ts`     |
+| `TmuxWindowPaneChangedEvent`    | interface | The active pane of a window changed.                                                                                                                                                                   | `src/types.ts`     |
+| `TmuxWindowRenamedEvent`        | interface | A window was renamed.                                                                                                                                                                                  | `src/types.ts`     |
+| `WatchOptions`                  | interface | Options for [`Server.watch`](#serverwatch), a notification-only observer.                                                                                                                              | `src/types.ts`     |
+| `WindowTarget`                  | type      | A relative direction, or any window target tmux accepts.                                                                                                                                               | `src/types.ts`     |
+| `LibTmuxError`                  | class     | The base of every error this library raises.                                                                                                                                                           | `src/errors.ts`    |
+| `LibTmuxErrorCode`              | type      | Every value `LibTmuxError.code` can hold.                                                                                                                                                              | `src/errors.ts`    |
+| `MultipleMatchesError`          | class     | A selection that required exactly one match found several.                                                                                                                                             | `src/errors.ts`    |
+| `MultipleObjectsError`          | class     | A lookup that required one object found several.                                                                                                                                                       | `src/errors.ts`    |
+| `NoMatchError`                  | class     | A selection that required exactly one match found none.                                                                                                                                                | `src/errors.ts`    |
+| `ObjectNotFoundError`           | class     | A lookup that required one object found none.                                                                                                                                                          | `src/errors.ts`    |
+| `QueryValidationError`          | class     | Criteria that could not be evaluated, rejected before any command ran.                                                                                                                                 | `src/errors.ts`    |
+| `TmuxCommandError`              | class     | A tmux command that exited non-zero.                                                                                                                                                                   | `src/errors.ts`    |
+| `TmuxServerRestartedError`      | class     | A handle outlived the daemon that issued its id.                                                                                                                                                       | `src/errors.ts`    |
+| `TmuxTransportError`            | class     | A command did not complete, and this is how far it got.                                                                                                                                                | `src/errors.ts`    |
+| `TmuxTransportErrorKind`        | type      | What went wrong between this process and tmux, as opposed to inside tmux.                                                                                                                              | `src/errors.ts`    |
+| `OutputLostError`               | class     | A program's output ended without the run's end mark: tmux removed the pane before reading its last output, or something killed its process group.                                                      | `src/errors.ts`    |
+| `ProgramStartError`             | class     | A program never ran: `argv[0]` was not found on its `PATH` or is not an executable file, or its `startDirectory` could not be entered.                                                                 | `src/errors.ts`    |
+| `ProgramStartFailure`           | type      | Why a program never ran.                                                                                                                                                                               | `src/errors.ts`    |
+| `ServerNotLocalError`           | class     | An option needs a tmux server that shares this process's temporary directory, and a file its shell wrote there never arrived: the server is on another machine, in a container, or under another user. | `src/errors.ts`    |
+| `StreamLimitError`              | class     | A program's stream copy reached `maxStreamBytes` and stopped.                                                                                                                                          | `src/errors.ts`    |
+| `VersionTooLowError`            | class     | A tmux too old for the operation, or a version libtmux does not recognize.                                                                                                                             | `src/errors.ts`    |
+| `WaitTimeoutError`              | class     | A wait reached its deadline with the condition still unmet.                                                                                                                                            | `src/errors.ts`    |
+| `CommandOptions`                | interface | What every command accepts, whichever handle it is called on.                                                                                                                                          | `src/common.ts`    |
+| `DeliveryStatus`                | type      | How far a command got before something interrupted it.                                                                                                                                                 | `src/common.ts`    |
+| `PaneId`                        | type      | A pane ID in tmux's `%n` form.                                                                                                                                                                         | `src/common.ts`    |
+| `PaneIdInput`                   | type      | Raw pane-ID text or an authenticated pane ID.                                                                                                                                                          | `src/common.ts`    |
+| `SessionId`                     | type      | A session ID in tmux's `$n` form.                                                                                                                                                                      | `src/common.ts`    |
+| `SessionIdInput`                | type      | Raw session-ID text or an authenticated session ID.                                                                                                                                                    | `src/common.ts`    |
+| `TmuxInvocationObserver`        | type      | Called once per tmux invocation, after it answers or fails.                                                                                                                                            | `src/common.ts`    |
+| `TmuxInvocationReport`          | interface | What one tmux invocation cost and how it ended.                                                                                                                                                        | `src/common.ts`    |
+| `TmuxId`                        | type      | A tmux object ID authenticated for one object kind.                                                                                                                                                    | `src/common.ts`    |
+| `TmuxIdInput`                   | type      | Raw text or an already-authenticated ID of the expected kind.                                                                                                                                          | `src/common.ts`    |
+| `TmuxIdKind`                    | type      | Which of tmux's three id spaces an id belongs to.                                                                                                                                                      | `src/common.ts`    |
+| `WindowId`                      | type      | A window ID in tmux's `@n` form.                                                                                                                                                                       | `src/common.ts`    |
+| `WindowIdInput`                 | type      | Raw window-ID text or an authenticated window ID.                                                                                                                                                      | `src/common.ts`    |
+| `OptionScope`                   | type      | Which table an option is read from or written to.                                                                                                                                                      | `src/constants.ts` |
+| `PaneDirection`                 | type      | Which side of the current pane a split puts the new one on.                                                                                                                                            | `src/constants.ts` |
+| `ResizeAdjustmentDirection`     | type      | Which edge a resize moves, in tmux's own terms.                                                                                                                                                        | `src/constants.ts` |
+| `WindowDirection`               | type      | Where a new window lands relative to the one it was created from.                                                                                                                                      | `src/constants.ts` |
+| `LibTmuxException`              | alias     | Deprecated: Use `LibTmuxError`.                                                                                                                                                                        | `src/errors.ts`    |
+| `ObjectDoesNotExist`            | alias     | Deprecated: Use `ObjectNotFoundError`.                                                                                                                                                                 | `src/errors.ts`    |
+| `MultipleObjectsReturned`       | alias     | Deprecated: Use `MultipleObjectsError`.                                                                                                                                                                | `src/errors.ts`    |
+| `VersionTooLow`                 | alias     | Deprecated: Use `VersionTooLowError`.                                                                                                                                                                  | `src/errors.ts`    |
+| `WaitTimeout`                   | alias     | Deprecated: Use `WaitTimeoutError`.                                                                                                                                                                    | `src/errors.ts`    |
+| `TmuxServerRestarted`           | alias     | Deprecated: Use `TmuxServerRestartedError`.                                                                                                                                                            | `src/errors.ts`    |

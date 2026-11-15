@@ -1,3 +1,6 @@
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { describe, expect, test } from "bun:test";
@@ -8,6 +11,8 @@ import {
   requireSymbolExamples,
   readApiSurface,
   readRootApiSurface,
+  readRootExports,
+  rootExportNames,
   type ApiDeclaration,
   type PublicMember,
 } from "../../scripts/api_surface.js";
@@ -101,6 +106,45 @@ async function rootExports(): Promise<RootExports> {
   return JSON.parse(stdout) as RootExports;
 }
 
+describe("root export derivation", () => {
+  test("follows named re-exports, with aliases, type markers and comments", () => {
+    const source = [
+      '// export * from "./comment.js";',
+      "/* export const hidden = 1; */",
+      'export { A, type B as C } from "./a.js";',
+      "export type {",
+      "  D,",
+      '} from "./d.js";',
+    ].join("\n");
+    expect(rootExportNames(source)).toEqual([
+      { from: "./a.js", name: "A" },
+      { from: "./a.js", name: "C" },
+      { from: "./d.js", name: "D" },
+    ]);
+  });
+
+  test.each([
+    'export * from "./all.js";',
+    'export * as ns from "./all.js";',
+    'export type * from "./all.js";',
+    "export { local };",
+    "export const answer = 42;",
+    "export function make() {}",
+    "export default class {}",
+    "export type Local = string;",
+  ])("refuses %s instead of dropping it", (statement) => {
+    const source = `export { A } from "./a.js";\n${statement}\n`;
+    expect(() => rootExportNames(source)).toThrow(/cannot trace/u);
+  });
+
+  test("reads the real root without refusing it", async () => {
+    const names = rootExportNames(
+      await readFile(fileURLToPath(new URL("../../src/index.ts", import.meta.url)), "utf8"),
+    );
+    expect(names.length).toBeGreaterThan(50);
+  });
+});
+
 describe("api surface coverage", () => {
   test("rejects every public member missing an example", () => {
     const member = (example: string | undefined): PublicMember => ({
@@ -188,4 +232,44 @@ describe("api surface coverage", () => {
     expect(exported.types.filter((name) => typeNames.includes(name))).toEqual(typeNames);
     expect(exported.values.filter((name) => functionNames.includes(name))).toEqual(functionNames);
   }, 30_000);
+
+  test("the reference lists every name the root module exports", async () => {
+    const exported = await rootExports();
+    const read = (await readRootExports()).map((entry) => entry.name).sort();
+    // Cross-checked against the compiler's reading of the root, so the reader
+    // cannot lose a name and agree with itself.
+    expect(read).toEqual([...exported.types, ...exported.values].sort());
+    expect(read).toContain("compileBoundedRegex");
+    expect(read).toContain("assertSupportedTmux");
+    expect(read).toContain("MINIMUM_TMUX");
+
+    const reference = await readFile(
+      fileURLToPath(new URL("../../docs/api.md", import.meta.url)),
+      "utf8",
+    );
+    const missing = read.filter(
+      (name) => !reference.includes(`\`${name}\``) && !reference.includes(`## ${name}\n`),
+    );
+    expect(missing).toEqual([]);
+  }, 30_000);
+
+  test("refuses a root export with no declaration or no doc comment", async () => {
+    const root = await mkdtemp(join(tmpdir(), "ltx-api-surface-"));
+    try {
+      await mkdir(join(root, "src"));
+      await writeFile(
+        join(root, "src/index.ts"),
+        'export { documented, bare } from "./a.js";\nexport { missing } from "./a.js";\n',
+      );
+      await writeFile(
+        join(root, "src/a.ts"),
+        "/** Does a thing. */\nexport function documented(): void {}\nexport function bare(): void {}\n",
+      );
+      await expect(readRootExports(root)).rejects.toThrow(
+        /bare: no doc comment[^]*missing: no declaration/u,
+      );
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
 });

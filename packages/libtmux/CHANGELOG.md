@@ -47,6 +47,84 @@ Entries of that kind from before it existed are listed below.
 
 ## Unreleased
 
+### `libtmux`
+
+A plan now keeps the tmux server and daemon its handle came from, and
+`Server.batch` honours what the plan was written with. **Breaking** for a batch
+that relied on the old leniency. (#189, #190, #191, #192)
+
+Before: `otherServer.batch([session.plan.kill()])` ran `kill-session -t $0` on
+`otherServer`, whichever session held `$0` there. A plan saved before a daemon
+restart ran on the replacement daemon through a new `Server` on the same socket.
+A plan's `signal` and `timeoutMs` were dropped without a word, and a batch
+always read a final snapshot, so killing the last session rejected with "no
+server running" after tmux had applied the kill.
+
+After: `batch` refuses, before it sends anything, a plan made for a different
+tmux server with `TypeError`, and a plan whose daemon has been replaced with
+`TmuxServerRestartedError`. Another `Server` object over the same socket and
+daemon may still run the plan. A copy of a plan, by spread or `.map`, is
+checked like the original, and each planned command also runs guarded inside
+tmux for the daemon its handle was read from. A plan written by hand has no
+origin and runs on the `Server` that runs it, as before.
+
+A plan's `signal` and `timeoutMs` bound its own command and combine with the
+batch's: either signal abandons the command and the shorter deadline wins, and a
+signal that has already fired stops the batch before that command is sent.
+`stdin` never worked on a plan and now says so: the options type of
+`session.plan.newWindow`, `pane.plan.split` and `window.plan.split` leaves
+`stdin` out, so an object literal that names it is a compile error (TypeScript
+checks excess properties only on literals, so an options value held in a
+variable still type-checks), and a plan builder refuses it at run time with
+`TypeError` whichever way it arrived. A plan can declare `needsSnapshot: false`, and a batch
+of such plans, like the kills, takes no final snapshot, so killing the last
+session resolves.
+
+A plan's `timeoutMs` and the batch's are validated before the first command
+goes out, as the direct call validates its own: `2 ** 40`, `1.5`, `0` and `-1`
+are refused with `TypeError` and nothing runs. `null` on a plan means "no
+deadline of its own": it does not relax a deadline the batch names, where the
+shorter one still wins. A plan assembled from the `argv` of one plan and the
+`resolve` of another is refused with `TypeError`; the `argv` carries the ids, so
+a plan whose two halves come from different servers cannot run as either.
+
+A batch that fails after some commands ran says so: the error, of whatever
+class it already was, carries `applied`, the number of commands that had
+completed. A command that timed out or was abandoned is not counted and may
+still have taken effect. A failure before the first command is sent, such as a
+refused plan or a bad deadline, has no `applied` because nothing ran. When only
+the final snapshot fails, `applied` is the whole batch.
+
+`Server.equals` and the check that decides whether another `Server` may run a
+plan now treat `socketPath` values that differ only in `.`, `..`, doubled or
+trailing slashes as one socket. A symbolic link, a relative path, and a
+`socketName` against the `socketPath` it resolves to are still different
+addresses; a plan crossing between them is refused, not guessed.
+
+`batch([])` now resolves to `[]` without reading the server, because no plan
+needs a snapshot. It used to take one and could reject when the server was not
+running.
+
+What to change in a 0.1.2 caller: run each plan on the `Server` its handle came
+from, remove any `stdin` passed to a plan builder, and refresh a window handle
+before a placement write when its window may have moved.
+
+Placement writes check the window they captured. `Window.removePlacement`,
+`move`, `unlink`, `swapWith`, `select`, `Session.selectWindow` given a window,
+and `window.plan.removePlacement` address `session:index`, and a window that
+has since moved left that index holding a different window, or none. tmux now
+compares the window id inside the same command queue that runs the write, so a
+reordered placement is refused with a `LibTmuxError` and nothing changes.
+`Session.selectWindow` given an index string has no window to compare and
+behaves as before. The README's `swapWith` then `move` example now moves the
+window it names.
+
+The API reference is read from the root module, so every root export is in it:
+`compileBoundedRegex`, `assertSupportedTmux` and `MINIMUM_TMUX` have entries, the
+rest are in a table, and the generator fails on a root export it cannot find or
+that has no doc comment. The deprecated error aliases say what is true for
+0.1.x: they are still exported, and no removal is scheduled. (#193)
+
 ## 0.1.2 (2026-10-31)
 
 ### `libtmux`

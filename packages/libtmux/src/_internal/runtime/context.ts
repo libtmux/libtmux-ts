@@ -1,3 +1,5 @@
+import { posix } from "node:path";
+
 import type { ConnectionAlias, DaemonEpoch, LogicalRef } from "../../common.js";
 import { LibTmuxError } from "../../errors.js";
 import type { DaemonIdentity, Server } from "../../server.js";
@@ -33,6 +35,50 @@ function nextDaemonRevision(state: RuntimeEpochState): number {
     throw new LibTmuxError("daemon observation cannot exceed the safe integer range");
   }
   return revision;
+}
+
+/**
+ * An absolute socket path with `.`, `..`, doubled and trailing slashes removed.
+ *
+ * Lexical only: it reads no file system, because an engine's paths are on a
+ * machine this process cannot see. A symbolic link, a relative path (whose
+ * meaning is the working directory's) and a `socketName` that resolves to the
+ * same file are not recognized as one socket; comparing them reports "different",
+ * which refuses a plan rather than running it on the wrong daemon.
+ */
+function canonicalSocketPath(path: string): string {
+  return path.startsWith("/") ? posix.normalize(path).replace(/(?<=.)\/+$/u, "") : path;
+}
+
+/**
+ * How a connection addresses its daemon, as one comparable string.
+ *
+ * An absolute socket path names the daemon outright. A name does not: it is
+ * resolved against `TMUX_TMPDIR` (then the default tmpdir) and a per-user
+ * directory, so the tmpdir in force is part of the address. tmux's own default
+ * name is `default`, which is why an unnamed connection is not a third case.
+ */
+function socketAddress(connection: TmuxConnection): string {
+  if (connection.socketPath !== undefined)
+    return `path ${canonicalSocketPath(connection.socketPath)}`;
+  const tmpdir = connection.environment.TMUX_TMPDIR ?? "";
+  return `name ${tmpdir} ${connection.socketName ?? "default"}`;
+}
+
+/**
+ * Which tmux this runtime addresses, or `undefined` when that is unknowable.
+ *
+ * An engine's socket is a path on a machine this process cannot see, so the
+ * socket alone does not name the daemon. Unknowable rather than guessed: an
+ * engine that declares no endpoint is the one case where answering would mean
+ * inventing the fact the comparison turns on.
+ */
+export function serverAddress(runtime: RuntimeContext): string | undefined {
+  const socket = socketAddress(runtime.connection);
+  if (runtime.engine === undefined) return `local ${socket}`;
+  const endpoint = runtime.engine.endpoint;
+  if (endpoint === undefined || endpoint === "") return undefined;
+  return `engine ${endpoint} ${socket}`;
 }
 
 const runtimeEpochStates = new WeakMap<RuntimeContext, RuntimeEpochState>();

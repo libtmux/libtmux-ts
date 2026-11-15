@@ -5,6 +5,7 @@ import {
   EXEMPT,
   readApiSurface,
   readRootApiSurface,
+  readRootExports,
   type ApiClass,
   type ApiDeclaration,
   type Member,
@@ -140,10 +141,55 @@ function renderDeclarations(title: string, declarations: readonly ApiDeclaration
   return lines.join("\n");
 }
 
+/**
+ * Every root export that has no entry of its own, in one table.
+ *
+ * Derived from the root module: a name added there appears here, with the
+ * first sentence of its doc comment, and a name with no doc comment fails the
+ * run. Classes and `Selection` have their own sections.
+ */
+function renderOtherExports(
+  entries: readonly { kind: string; name: string; summary: string }[],
+  files: ReadonlyMap<string, string>,
+): string {
+  const cells = entries.map((entry) => [
+    `\`${entry.name}\``,
+    entry.kind,
+    resolveLinks(entry.summary).replaceAll("|", "\\|"),
+    `\`${files.get(entry.name) ?? ""}\``,
+  ]);
+  // Padded the way the repository's formatter pads a table, so formatting the
+  // generated page changes nothing and `docs:api:check` agrees with `format:check`.
+  const header = ["Name", "Kind", "Summary", "Declared in"];
+  const widths = header.map((title, column) =>
+    Math.max(title.length, ...cells.map((row) => (row[column] ?? "").length)),
+  );
+  const line = (row: readonly string[]): string =>
+    `| ${row.map((cell, column) => cell.padEnd(widths[column] ?? 0)).join(" | ")} |`;
+  const rows = [
+    line(header),
+    `| ${widths.map((width) => "-".repeat(width)).join(" | ")} |`,
+    ...cells.map(line),
+  ];
+  return [
+    "## Other exports",
+    "",
+    "Everything else the package root exports: options and event types, the",
+    "error classes, the direction and scope constants, and the deprecated",
+    "aliases, which stay exported in 0.1.x with no removal scheduled. Each is",
+    "described by its doc comment in the file named here.",
+    "",
+    ...rows,
+    "",
+  ].join("\n");
+}
+
 const surface = await readApiSurface();
 const root = await readRootApiSurface();
 const functions = root.filter((entry) => entry.kind === "function");
+const constants = root.filter((entry) => entry.kind === "const");
 const types = root.filter((entry) => entry.kind === "type");
+const rootExports = await readRootExports();
 
 const exported = new Set(
   [
@@ -164,6 +210,12 @@ for (const entry of surface) {
     anchors.set(`${entry.name}.${member.name}`, anchorFor(entry.name, member.name));
   }
 }
+const documented = new Set([
+  ...root.map((entry) => entry.name),
+  ...surface.map((entry) => entry.name),
+]);
+const otherExports = rootExports.filter((entry) => !documented.has(entry.name));
+const otherFiles = new Map(otherExports.map((entry) => [entry.name, entry.file]));
 const rendered = [
   "# API reference",
   "",
@@ -174,16 +226,20 @@ const rendered = [
   "Start with the [README](../README.md) for a reading order and recipes; this",
   "page is for looking one thing up.",
   "",
-  "It covers what `libtmux` itself exports. The package publishes further",
-  "subpaths that this page does not list — `libtmux/testing` for the",
-  "record-and-replay doubles, `libtmux/engine` for supplying a transport, and",
-  "`libtmux/selection` for query documents — each introduced in the README",
-  "where it is used. Not finding a name here means it lives on one of those,",
-  "not that it is unpublished.",
+  "It covers every name the `libtmux` root exports: the classes, functions and",
+  "constants below have entries of their own, and the rest are in the last",
+  "table. The list is read from the root module, so a new export cannot be",
+  "left out. The package publishes further subpaths that this page does not",
+  "list — `libtmux/testing` for the record-and-replay doubles, `libtmux/engine`",
+  "for supplying a transport, and `libtmux/selection` for query documents —",
+  "each introduced in the README where it is used. A name missing from this",
+  "page is on one of those.",
   "",
   renderDeclarations("Functions", functions),
+  renderDeclarations("Constants", constants),
   renderDeclarations("Scalar types", types),
   surface.map((entry) => renderClass(entry)).join("\n"),
+  renderOtherExports(otherExports, otherFiles),
 ]
   .join("\n")
   .replace(/\n{3,}/gu, "\n\n")
