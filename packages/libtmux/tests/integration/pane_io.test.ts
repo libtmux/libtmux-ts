@@ -13,6 +13,7 @@ import {
 } from "../../src/_internal/test/testkit.js";
 
 import { Server } from "../../src/server.js";
+import { TmuxCommandError } from "../../src/errors.js";
 
 function serverFor(fixture: TestServer): Server {
   return new Server({
@@ -64,6 +65,20 @@ async function captureUntil(
 }
 
 describe("pane input and capture", () => {
+  test("attributes a retained text location after its pane disappears", async () => {
+    await withServer(async (fixture) => {
+      const server = serverFor(fixture);
+      const pane = await (await server.snapshot()).panes.one().split({ shellCommand: "cat" });
+      const located = await pane.locateText("not-present");
+      expect(located.status).toBe("missing");
+      expect(located.observation.target.id).toBe(pane.id);
+      await pane.kill();
+      expect(located.observation.lines).toEqual([]);
+      expect(Object.isFrozen(located.observation)).toBe(true);
+      await expect(pane.locateText("not-present")).rejects.toBeInstanceOf(TmuxCommandError);
+      expect(await server.isAlive()).toBe(true);
+    });
+  });
   test("sends literal text and captures it back", async () => {
     await withServer(async (fixture) => {
       const pane = (await serverFor(fixture).snapshot()).panes.one();

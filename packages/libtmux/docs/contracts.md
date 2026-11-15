@@ -20,6 +20,35 @@ advanced in place would leave `where({ name: "old" })` matching an object whose
 `name` had become `"new"`. A window keeps its placement, so one linked into two
 sessions stays on the one you resolved.
 
+## Text locations
+
+`Pane.locateText` captures once and returns literal matches with the immutable
+observation that supplied them. The observation retains the native pane
+reference, capture selection and a before/after interval in this controller's
+monotonic clock. It retains no signal or live action. A redraw, reconnect or
+pane removal cannot change the retained value; a new call takes a new sample.
+Capture errors and cancellation causes propagate unchanged.
+
+`status` is `missing`, `unique` or `ambiguous`. Only `unique` exposes `match`.
+Matching is case-sensitive and performs no Unicode normalization. Overlapping
+matches count. Literal LF matches across returned capture lines; the text is
+exactly those lines joined with LF, including the ordinary capture policy that
+removes trailing blank lines. `joinWrapped` keeps its existing capture behavior.
+Line indices refer to returned lines, and offsets count UTF-16 code units with
+exclusive ends. They are not terminal rows or columns. Explicitly requested
+escape sequences count as returned text units.
+
+`maxTextCodeUnits` defaults to 1,048,576 and `maxMatches` to 1024. Both must be
+positive safe integers; an empty literal refuses before capture. A literal or
+capture over the text limit raises `RangeError`, never a false missing result.
+The text limit admits input to matching and retention; the existing capture
+transport allocates its output first, so this is not a transport memory limit.
+
+At most `maxMatches` locations are retained. One additional match establishes
+truncation and ambiguity, even when the retained limit is one.
+`matchCountAtLeast` is exact unless `truncated` is true. The helper does not
+promise persistence, serialization, automatic refresh or application readiness.
+
 ## Querying
 
 Most programs need equality and a relation: `one({ id })` to re-find something

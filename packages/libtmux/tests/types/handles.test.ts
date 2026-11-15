@@ -63,6 +63,7 @@ import {
   type SplitOptions,
   type SplitPercentage,
   type SplitSize,
+  type TextLocatorResult,
 } from "../../src/types.js";
 import { Session } from "../../src/session.js";
 import { Window } from "../../src/window.js";
@@ -452,6 +453,7 @@ declare const cancelServer: Server;
 declare const abort: AbortSignal;
 
 export const cancellable: readonly Promise<unknown>[] = [
+  cancelPane.locateText("ready", { signal: abort }),
   cancelPane.capture({ signal: abort }),
   cancelPane.sendKeys("x", { signal: abort }),
   cancelPane.split({ signal: abort }),
@@ -469,7 +471,18 @@ export const cancellable: readonly Promise<unknown>[] = [
 ];
 
 export const boundable: readonly Promise<unknown>[] = [
+  cancelPane.locateText("ready", { timeoutMs: 500 }),
   cancelPane.capture({ timeoutMs: 1_000 }),
   cancelPane.sendKeys("x", { timeoutMs: 1_000 }),
   cancelServer.newSession({ timeoutMs: 1_000 }),
 ];
+
+declare const locatedText: TextLocatorResult;
+export const locatedStart: number | undefined =
+  locatedText.status === "unique" ? locatedText.match.startUtf16 : undefined;
+// @ts-expect-error captured lines remain readonly.
+locatedText.observation.lines.push("later");
+if (locatedText.status !== "unique") {
+  // @ts-expect-error only a unique result has a strict single match.
+  void locatedText.match.startUtf16;
+}
