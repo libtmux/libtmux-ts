@@ -161,7 +161,9 @@ testControl(
 
         await call("list_windows", { session: created.session.id });
         await call("list_panes", { session: created.session.id });
-        await call("get_server_info");
+        const serverInfo = await call("get_server_info");
+        expect(JSON.stringify(serverInfo.content)).toContain("program-run:");
+        expect(JSON.stringify(serverInfo.content)).toContain("tmux://capabilities");
         await call("get_session_info", { session: created.session.id });
         await call("get_window_info", { windowId: created.windowId });
         await call("capture_pane", { paneId: created.paneId });
@@ -591,11 +593,20 @@ test.each(["prefix", "mirrored", "uppercase-saved", "pruned-saved"] as const)(
           expect(result.isError, JSON.stringify(result)).not.toBe(true);
           return result;
         };
-        const server = structured<{ minimumVersion: string; pid: string; version: string }>(
-          await call("get_server_info"),
-        );
+        const server = structured<{
+          minimumVersion: string;
+          pid: string;
+          version: string;
+          libraryFeatures: { id: string; supported: boolean; since: string }[];
+          libraryWorkarounds: { id: string; active: boolean }[];
+        }>(await call("get_server_info"));
         expect(server.pid).toMatch(/^\d+$/u);
         expect(server.minimumVersion).toBe("3.3a");
+        expect(server.libraryFeatures.find(({ id }) => id === "program-run")?.since).toBe("3.8");
+        expect(server.libraryFeatures.find(({ id }) => id === "buffer-rename")).toBeDefined();
+        expect(
+          server.libraryWorkarounds.find(({ id }) => id === "name-separators-rejected"),
+        ).toBeDefined();
         const hasMirroredLayouts = await serverFor(fixture).versionAtLeast("3.5");
         const created = structured<{ paneId: string; windowId: string }>(
           await call("create_session", {

@@ -6,9 +6,9 @@
  * is the difference between one command and one per session.
  */
 
-import { MINIMUM_TMUX } from "libtmux";
 import { z } from "zod";
 
+import { requireActive } from "../abort.js";
 import type { ToolContext } from "../context.js";
 import { effectiveResultLines } from "../policy.js";
 import { type ToolRegistrar } from "../register.js";
@@ -219,10 +219,31 @@ export function registerDiscovery(mcp: ToolRegistrar, context: ToolContext): voi
     {
       description:
         "The tmux server this process drives: its socket, version, daemon pid, and " +
-        "totals, and the oldest tmux release this server drives. Check the version " +
-        "before using a feature that needs a recent tmux.",
+        "totals, plus library features and workarounds for that daemon. These " +
+        "features describe core APIs; tools/list and tmux://capabilities report " +
+        "which MCP tools this process enables.",
       inputSchema: {},
       outputSchema: {
+        libraryFeatures: z.array(
+          z.object({
+            id: z.string(),
+            name: z.string(),
+            supported: z.boolean(),
+            since: z.string(),
+            reason: z.string(),
+            handling: z.enum(["fallback", "refuse", "repair"]),
+            apis: z.array(z.string()),
+          }),
+        ),
+        libraryWorkarounds: z.array(
+          z.object({
+            id: z.string(),
+            name: z.string(),
+            active: z.boolean(),
+            reason: z.string(),
+            handling: z.enum(["refuse", "repair"]),
+          }),
+        ),
         minimumVersion: z.string(),
         panes: z.number().int(),
         pid: z.string().nullable(),
@@ -233,33 +254,70 @@ export function registerDiscovery(mcp: ToolRegistrar, context: ToolContext): voi
       },
       title: "Server info",
     },
-    async () => {
-      const snapshot = await context.snapshot();
-      const [version, identity, resolvedSocket] = await Promise.all([
-        context.tmux.version(),
-        context.tmux.daemonIdentity(),
-        // The constructor argument is what this process was told, and on the
-        // default socket it was told nothing — so this reported null about a
-        // server that has a socket like any other, while the text rendering
-        // said "<default socket>" and the two disagreed. tmux knows.
-        context.tmux
-          .cmd("display-message", ["-p", "#{socket_path}"], { target: null })
-          .then((lines) => lines[0] ?? "")
-          .catch(() => ""),
-      ]);
+    async (_args, extra) => {
+      requireActive(extra.signal);
+      const snapshot = await context.snapshot(extra.signal);
+      requireActive(extra.signal);
+      const report = snapshot.capabilities;
+      // The constructor argument is what this process was told, and on the
+      // default socket it was told nothing — so this reported null about a
+      // server that has a socket like any other, while the text rendering
+      // said "<default socket>" and the two disagreed. tmux knows.
+      const resolvedSocket = await context.tmux
+        .cmd("display-message", ["-p", "#{socket_path}"], {
+          signal: extra.signal,
+          target: null,
+        })
+        .then((lines) => lines[0] ?? "")
+        .catch(() => {
+          requireActive(extra.signal);
+          return "";
+        });
+      requireActive(extra.signal);
       const structured = {
-        minimumVersion: MINIMUM_TMUX,
+        libraryFeatures: Object.values(report.features).map(
+          ({ id, name, supported, since, reason, handling, apis }) => ({
+            id,
+            name,
+            supported,
+            since,
+            reason,
+            handling,
+            apis,
+          }),
+        ),
+        libraryWorkarounds: Object.values(report.workarounds).map(
+          ({ id, name, active, reason, handling }) => ({
+            id,
+            name,
+            active,
+            reason,
+            handling,
+          }),
+        ),
+        minimumVersion: report.minimumVersion,
         panes: paneEntities(snapshot.panes.toArray()).length,
-        pid: identity.pid,
+        pid: report.daemonIdentity.pid,
         sessions: snapshot.sessions.count(),
         socketPath: printable(resolvedSocket === "" ? context.tmux.socketPath : resolvedSocket),
-        version: version.raw,
+        version: report.version,
         windows: windowEntities(snapshot.windows.toArray()).length,
       };
+      const activeWorkarounds = structured.libraryWorkarounds.filter(({ active }) => active);
       return ok(
         structured,
-        `tmux ${structured.version} (minimum ${MINIMUM_TMUX}) on ${structured.socketPath ?? "<default socket>"}, ` +
-          `${String(structured.sessions)} sessions / ${String(structured.windows)} windows / ${String(structured.panes)} panes`,
+        [
+          `tmux ${structured.version} (minimum ${structured.minimumVersion}) on ${structured.socketPath ?? "<default socket>"}, ` +
+            `${String(structured.sessions)} sessions / ${String(structured.windows)} windows / ${String(structured.panes)} panes`,
+          "",
+          "Library features:",
+          ...structured.libraryFeatures.map(({ id, reason }) => `${id}: ${reason}`),
+          "",
+          ...(activeWorkarounds.length === 0
+            ? ["No active library workarounds."]
+            : activeWorkarounds.map(({ id, handling, reason }) => `${id}: ${handling}. ${reason}`)),
+          "Read tools/list or tmux://capabilities for enabled MCP tools.",
+        ].join("\n"),
       );
     },
   );

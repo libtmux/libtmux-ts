@@ -7,12 +7,80 @@ import { Server } from "libtmux/server";
 import type { TmuxEngine } from "libtmux/engine";
 import { checkedEngine } from "./support/checked_engine.js";
 
+import type { ToolContext } from "../src/context.js";
 import { MAX_RESULT_BYTES, resolvePolicy } from "../src/policy.js";
+import type { ToolRegistrar } from "../src/register.js";
 import { createTmuxMcpServer, serverFromEnvironment } from "../src/server.js";
 import { inspectServerStartup } from "../src/startup.js";
 import { isFailure, resolvedPaneInputTargetIds } from "../src/target_resolution.js";
 import { SearchMatchBudget } from "../src/tools/search.js";
 import { ReadBatchAccumulator, readBatchWireBytes } from "../src/tools/target.js";
+import { registerDiscovery } from "../src/tools/discovery.js";
+
+test.each(["snapshot", "socket"] as const)(
+  "get_server_info cancels its in-flight %s read",
+  async (stage) => {
+    const controller = new AbortController();
+    const reason = new Error("caller stopped discovery");
+    const entered = Promise.withResolvers<void>();
+    const blocked = Promise.withResolvers<never>();
+    let observed: AbortSignal | undefined;
+    let joined = false;
+    const aborted = (): void => {
+      joined = true;
+      blocked.reject(reason);
+    };
+    const hold = (signal: AbortSignal | undefined): Promise<never> => {
+      observed = signal;
+      signal?.addEventListener("abort", aborted, { once: true });
+      entered.resolve();
+      return blocked.promise;
+    };
+    const context = {
+      snapshot: (signal?: AbortSignal) =>
+        stage === "snapshot"
+          ? hold(signal)
+          : Promise.resolve({
+              capabilities: {},
+            }),
+      tmux: {
+        cmd: (_command: string, _args: readonly string[], options: { signal?: AbortSignal }) =>
+          hold(options.signal),
+      },
+    } as unknown as ToolContext;
+    type Handler = (
+      args: Readonly<Record<string, never>>,
+      extra: { readonly signal: AbortSignal },
+    ) => Promise<unknown>;
+    const handlers = new Map<string, Handler>();
+    registerDiscovery(
+      {
+        registerTool(name: string, _config: unknown, handler: Handler): object {
+          handlers.set(name, handler);
+          return {};
+        },
+      } as unknown as ToolRegistrar,
+      context,
+    );
+    const handler = handlers.get("get_server_info");
+    if (handler === undefined) throw new Error("get_server_info is not registered");
+    const outcome = handler({}, { signal: controller.signal }).then(
+      (value) => ({ value, error: undefined }),
+      (error: unknown) => ({ error }),
+    );
+    try {
+      await entered.promise;
+      expect(observed).toBe(controller.signal);
+      controller.abort(reason);
+      expect((await outcome).error).toBe(reason);
+      expect(joined).toBe(true);
+    } finally {
+      observed?.removeEventListener("abort", aborted);
+      blocked.reject(reason);
+      await outcome;
+    }
+  },
+);
 
 const TOOLS_BY_TOOLSET = {
   inspect: [
