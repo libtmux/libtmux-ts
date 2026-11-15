@@ -533,7 +533,6 @@ packages/mcp             the MCP server
 packages/workspace       the workspace builder
 packages/workspace-cli   the tmux-workspace command
 examples                 runnable examples
-attic                    reference notes
 ```
 
 Working here: [AGENTS.md](AGENTS.md) routes to the policy for a change. Writing
