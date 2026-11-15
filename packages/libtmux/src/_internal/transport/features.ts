@@ -1,13 +1,8 @@
+import type { CapabilityId, WorkaroundId } from "../../types.js";
 import { TmuxTransportError, VersionTooLowError } from "../../errors.js";
 import type { TmuxCommand } from "../../engine.js";
 import { type TmuxVersion } from "../runtime/tmux_version.js";
-import {
-  capabilitySince,
-  hasCapability,
-  workaroundApplies,
-  type CapabilityId,
-  type WorkaroundId,
-} from "../support/capabilities.js";
+import { capabilitySince, hasCapability, workaroundApplies } from "../support/capabilities.js";
 
 /** Every command name and its alias, so an abbreviation resolves the way tmux resolves it. */
 const COMMANDS: readonly (readonly [canonical: string, alias?: string])[] = [

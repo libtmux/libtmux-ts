@@ -1,10 +1,16 @@
 import type { RawCompleteFormatRow } from "../codec/schemas.js";
 import { LibTmuxError } from "../../errors.js";
-import type { AbortLike } from "../../types.js";
-import { executeGuardedListGroup, type GuardedListing } from "../codec/guarded_listing.js";
+import type { AbortLike, ServerCapabilities } from "../../types.js";
+import {
+  executeGuardedListGroup,
+  type GuardedListing,
+  type GuardedListGroupResult,
+} from "../codec/guarded_listing.js";
 import { FormatProtocolError } from "../codec/guard_codec.js";
 import { createGraphSourceId, type CapturedRowSet, type NormalizedGraph } from "../graph/model.js";
 import { normalizeGraph } from "../graph/normalize.js";
+import { capabilityReport } from "../support/capabilities.js";
+import type { TmuxCapabilities } from "../runtime/capabilities.js";
 import {
   beginDaemonObservation,
   observeDaemonIdentity,
@@ -61,6 +67,52 @@ export function daemonIdentityOf(
   return daemon;
 }
 
+/** Read identity and optional listings, retrying one daemon transition. */
+async function acquireServerObservation(
+  runtime: RuntimeContext,
+  listings: readonly GuardedListing[],
+  attemptsRemaining: number,
+  signal?: AbortLike,
+): Promise<{
+  readonly capabilities: TmuxCapabilities;
+  readonly daemon: DaemonIdentity;
+  readonly listings: GuardedListGroupResult["listings"];
+}> {
+  const observation = beginDaemonObservation(runtime);
+  const capabilities = await runtime.capabilities.bind(signal);
+  const grouped = await executeGuardedListGroup({
+    capabilities: runtime.capabilities,
+    connection: runtime.connection,
+    listings,
+    ...(signal === undefined ? {} : { signal }),
+    ...(runtime.timeoutMs === undefined ? {} : { timeoutMs: runtime.timeoutMs }),
+    transport: runtime.transport,
+  });
+  const daemon = daemonIdentityOf(grouped.daemon, grouped.listings);
+  if (!observeDaemonIdentity(runtime, observation, capabilities, daemon)) {
+    if (attemptsRemaining > 1) {
+      return acquireServerObservation(runtime, listings, attemptsRemaining - 1, signal);
+    }
+    throw new LibTmuxError("daemon changed repeatedly during acquisition");
+  }
+
+  return { capabilities, daemon, listings: grouped.listings };
+}
+
+/** Read fresh daemon identity without enumerating sessions, windows or panes. */
+export async function acquireServerCapabilities(
+  runtime: RuntimeContext,
+  signal?: AbortLike,
+): Promise<ServerCapabilities> {
+  const { capabilities } = await acquireServerObservation(
+    runtime,
+    [],
+    MAX_ACQUISITION_ATTEMPTS,
+    signal,
+  );
+  return capabilityReport(capabilities);
+}
+
 /**
  * Acquire the server's complete object graph.
  *
@@ -77,30 +129,17 @@ export function daemonIdentityOf(
  * true across every session, and both placements of a window linked into two
  * sessions survive as two window records sharing one window entity.
  */
-async function acquireServerGraphAttempt(
+export async function acquireServerGraph(
   runtime: RuntimeContext,
-  attemptsRemaining: number,
   signal?: AbortLike,
 ): Promise<NormalizedGraph> {
-  const observation = beginDaemonObservation(runtime);
-  const capabilities = await runtime.capabilities.bind(signal);
-  const grouped = await executeGuardedListGroup({
-    capabilities: runtime.capabilities,
-    connection: runtime.connection,
-    listings: ACQUISITION_LISTINGS,
-    ...(signal === undefined ? {} : { signal }),
-    ...(runtime.timeoutMs === undefined ? {} : { timeoutMs: runtime.timeoutMs }),
-    transport: runtime.transport,
-  });
-  const [sessions = [], windows = [], panes = [], clients = []] = grouped.listings;
-
-  const daemon = daemonIdentityOf(grouped.daemon, [sessions, windows, panes, clients]);
-  if (!observeDaemonIdentity(runtime, observation, capabilities, daemon)) {
-    if (attemptsRemaining > 1) {
-      return acquireServerGraphAttempt(runtime, attemptsRemaining - 1, signal);
-    }
-    throw new LibTmuxError("daemon changed repeatedly during graph acquisition");
-  }
+  const { capabilities, daemon, listings } = await acquireServerObservation(
+    runtime,
+    ACQUISITION_LISTINGS,
+    MAX_ACQUISITION_ATTEMPTS,
+    signal,
+  );
+  const [sessions = [], windows = [], panes = [], clients = []] = listings;
 
   return normalizeGraph({
     capture: {
@@ -117,11 +156,4 @@ async function acquireServerGraphAttempt(
       { listCommand: "list-clients", rows: clients, source: createGraphSourceId("clients") },
     ] satisfies readonly CapturedRowSet[],
   });
-}
-
-export function acquireServerGraph(
-  runtime: RuntimeContext,
-  signal?: AbortLike,
-): Promise<NormalizedGraph> {
-  return acquireServerGraphAttempt(runtime, MAX_ACQUISITION_ATTEMPTS, signal);
 }

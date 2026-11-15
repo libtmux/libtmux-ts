@@ -8,6 +8,8 @@ import type { Client } from "./client.js";
 import {
   isSafeInteger,
   type CommandOptions,
+  type ConnectionAlias,
+  type DaemonEpoch,
   type PaneId,
   type SafeInteger,
   type SessionId,
@@ -28,6 +30,98 @@ import { isName } from "./_internal/operations/names.js";
  * The dependency points inward: internals import these, not the reverse.
  */
 
+/** Library features whose requirements come from the shared capability table. */
+export type CapabilityId =
+  | "buffer-delete-named"
+  | "buffer-rename"
+  | "clipboard-query"
+  | "control-mode"
+  | "layout-json"
+  | "layout-mirrored-main"
+  | "layout-without-checksum"
+  | "pane-wait"
+  | "program-run";
+
+/** Version-specific defects the library refuses or repairs. */
+export type WorkaroundId =
+  | "break-pane-misnames-windows"
+  | "name-separators-rejected"
+  | "run-shell-output-in-copy-mode"
+  | "split-window-percent-size";
+
+/** A tmux command, and the flags of it a record depends on. */
+export interface CapabilityCommand {
+  readonly command: string;
+  readonly flags?: readonly string[];
+}
+
+/** How the package behaves where a capability is not available. */
+export type CapabilityHandling = "fallback" | "refuse" | "repair";
+
+/** A library operation and its tmux requirements. */
+export interface CapabilityRecord {
+  readonly id: CapabilityId;
+  readonly name: string;
+  readonly summary: string;
+  /** The first tmux release on which this library operation is qualified. */
+  readonly since: string;
+  /** Releases at or above `since` where it does not work. */
+  readonly except?: readonly string[];
+  readonly handling: CapabilityHandling;
+  /** The error a refusal raises. Required when `handling` is `refuse`. */
+  readonly error?: string;
+  readonly apis: readonly string[];
+  readonly commands: readonly CapabilityCommand[];
+}
+
+/** A defect of specific releases that the package refuses or repairs. */
+export interface WorkaroundRecord {
+  readonly id: WorkaroundId;
+  readonly name: string;
+  readonly summary: string;
+  /** Exact releases the defect is on. */
+  readonly releases: readonly string[];
+  readonly handling: "refuse" | "repair";
+  readonly apis: readonly string[];
+  readonly commands: readonly CapabilityCommand[];
+  /**
+   * The first release without the defect, when every earlier one has it.
+   *
+   * Extends `releases` to development builds before the fixed release.
+   */
+  readonly fixedIn?: string;
+}
+
+/** A library feature and the decision for the observed daemon. */
+export interface CapabilityAvailability extends CapabilityRecord {
+  readonly supported: boolean;
+  readonly reason: string;
+}
+
+/** A library workaround and whether it applies to the observed daemon. */
+export interface WorkaroundAvailability extends WorkaroundRecord {
+  readonly active: boolean;
+  readonly reason: string;
+}
+
+/**
+ * Feature decisions for one observed daemon, using the library's admission rules.
+ *
+ * This immutable report is an observation, not permission for a later command.
+ * Operations check their own requirements again. Features describe library APIs;
+ * an MCP server may expose fewer tools under its startup policy.
+ */
+export interface ServerCapabilities {
+  readonly version: string;
+  readonly minimumVersion: string;
+  readonly daemonIdentity: DaemonIdentity;
+  readonly connectionAlias: ConnectionAlias;
+  readonly daemonEpoch: DaemonEpoch;
+  readonly fingerprint: string;
+  readonly features: Readonly<Record<CapabilityId, CapabilityAvailability>>;
+  readonly workarounds: Readonly<Record<WorkaroundId, WorkaroundAvailability>>;
+}
+
 /**
  * An immutable view of the server at one instant.
  *
@@ -41,6 +135,8 @@ import { isName } from "./_internal/operations/names.js";
  * ```
  */
 export interface ServerSnapshot {
+  /** Feature decisions for the daemon that answered this same acquisition. */
+  readonly capabilities: ServerCapabilities;
   readonly clients: Selection<Client>;
   /** The daemon that answered this acquisition, including when no sessions exist. */
   readonly daemonIdentity: DaemonIdentity;
@@ -49,7 +145,7 @@ export interface ServerSnapshot {
   readonly windows: Selection<Window>;
 }
 
-/** Options for {@link Server.snapshot}. */
+/** Options for server snapshots, identity reads and capability discovery. */
 export interface SnapshotOptions {
   /** Abort acquisition and join the command that was running. */
   readonly signal?: AbortLike;

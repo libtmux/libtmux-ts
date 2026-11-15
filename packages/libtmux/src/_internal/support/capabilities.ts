@@ -1,3 +1,12 @@
+import type {
+  CapabilityCommand,
+  CapabilityId,
+  CapabilityRecord,
+  ServerCapabilities,
+  WorkaroundId,
+  WorkaroundRecord,
+} from "../../types.js";
+import type { TmuxCapabilities } from "../runtime/capabilities.js";
 import {
   parseTmuxVersion,
   tmuxVersionAtLeast,
@@ -14,67 +23,6 @@ import { MINIMUM_TMUX } from "./minimum.js";
  * repository root is this table serialized. API names are spelled the way the
  * generated API model spells them: `module.Class.member`.
  */
-
-export type CapabilityId =
-  | "buffer-delete-named"
-  | "buffer-rename"
-  | "clipboard-query"
-  | "control-mode"
-  | "layout-json"
-  | "layout-mirrored-main"
-  | "layout-without-checksum"
-  | "pane-wait"
-  | "program-run";
-
-export type WorkaroundId =
-  | "break-pane-misnames-windows"
-  | "name-separators-rejected"
-  | "run-shell-output-in-copy-mode"
-  | "split-window-percent-size";
-
-/** A tmux command, and the flags of it a record depends on. */
-interface CapabilityCommand {
-  readonly command: string;
-  readonly flags?: readonly string[];
-}
-
-/** How the package behaves where a capability is not available. */
-type CapabilityHandling = "fallback" | "refuse" | "repair";
-
-/** One thing a daemon can do from a release on. */
-export interface CapabilityRecord {
-  readonly id: CapabilityId;
-  readonly name: string;
-  readonly summary: string;
-  /** The first release it works on. */
-  readonly since: string;
-  /** Releases at or above `since` where it does not work. */
-  readonly except?: readonly string[];
-  readonly handling: CapabilityHandling;
-  /** The error a refusal raises. Required when `handling` is `refuse`. */
-  readonly error?: string;
-  readonly apis: readonly string[];
-  readonly commands: readonly CapabilityCommand[];
-}
-
-/** A defect of specific releases that the package refuses or repairs. */
-export interface WorkaroundRecord {
-  readonly id: WorkaroundId;
-  readonly name: string;
-  readonly summary: string;
-  /** Exact releases the defect is on. */
-  readonly releases: readonly string[];
-  readonly handling: "refuse" | "repair";
-  readonly apis: readonly string[];
-  readonly commands: readonly CapabilityCommand[];
-  /**
-   * The first release without the defect, when every earlier one has it.
-   *
-   * Gates only. It widens `releases` to development builds that rank between
-   * the listed releases, and the manifest does not carry it.
-   */
-  readonly fixedIn?: string;
-}
 
 export const CAPABILITIES: readonly CapabilityRecord[] = [
   {
@@ -277,6 +225,71 @@ export function workaroundFixedIn(id: WorkaroundId): string {
   const { fixedIn } = workaroundRecord(id);
   if (fixedIn === undefined) throw new TypeError(`${id} names no release that fixes it`);
   return fixedIn;
+}
+
+function frozenCommands(commands: readonly CapabilityCommand[]): readonly CapabilityCommand[] {
+  return Object.freeze(
+    commands.map((command) =>
+      Object.freeze({
+        ...command,
+        ...(command.flags === undefined ? {} : { flags: Object.freeze([...command.flags]) }),
+      }),
+    ),
+  );
+}
+
+/** Describe a captured identity without giving callers references to admission rules. */
+export function capabilityReport(
+  captured: Omit<TmuxCapabilities, "tmuxVersion">,
+): ServerCapabilities {
+  const version = parseTmuxVersion(captured.rawVersion);
+  const features = Object.fromEntries(
+    CAPABILITIES.map((record) => {
+      const supported = hasCapability(record.id, version);
+      const reason = supported
+        ? `Available on tmux ${version.raw}.`
+        : record.except?.includes(version.raw) === true
+          ? `Unavailable on tmux ${version.raw}; this release is excluded.`
+          : `Requires tmux ${record.since}; the connected daemon reports ${version.raw}.`;
+      return [
+        record.id,
+        Object.freeze({
+          ...record,
+          apis: Object.freeze([...record.apis]),
+          commands: frozenCommands(record.commands),
+          ...(record.except === undefined ? {} : { except: Object.freeze([...record.except]) }),
+          supported,
+          reason,
+        }),
+      ];
+    }),
+  ) as ServerCapabilities["features"];
+  const workarounds = Object.fromEntries(
+    WORKAROUNDS.map((record) => {
+      const active = workaroundApplies(record.id, version);
+      return [
+        record.id,
+        Object.freeze({
+          ...record,
+          apis: Object.freeze([...record.apis]),
+          commands: frozenCommands(record.commands),
+          releases: Object.freeze([...record.releases]),
+          active,
+          reason: `${active ? "Applies" : "Does not apply"} to tmux ${version.raw}.`,
+        }),
+      ];
+    }),
+  ) as ServerCapabilities["workarounds"];
+  return Object.freeze({
+    version: version.raw,
+    minimumVersion: MINIMUM_TMUX,
+    daemonIdentity: Object.freeze({ ...captured.daemon }),
+    connectionAlias: captured.connectionAlias,
+    daemonEpoch: captured.daemonEpoch,
+    fingerprint: captured.fingerprint,
+    features: Object.freeze(features),
+    workarounds: Object.freeze(workarounds),
+  });
 }
 
 /** The manifest the docs read: `libtmux-capabilities/1`. */

@@ -20,6 +20,7 @@ import type {
   ProgramResult,
   RunOptions,
   RunShellOptions,
+  ServerCapabilities,
   ServerSnapshot,
   SnapshotOptions,
   SaveBufferOptions,
@@ -32,7 +33,7 @@ import type {
 import { randomUUID } from "node:crypto";
 
 import { runRawCommand } from "./_internal/operations/raw.js";
-import { acquireServerGraph } from "./_internal/operations/acquire.js";
+import { acquireServerCapabilities, acquireServerGraph } from "./_internal/operations/acquire.js";
 
 import { Client } from "./client.js";
 import type { ConnectionAlias, DaemonEpoch, TmuxInvocationObserver } from "./common.js";
@@ -1181,6 +1182,24 @@ export class Server {
     options?: CommandOptions,
   ): Promise<void> {
     return validateLayouts(runtimeForServer(this), layouts, options);
+  }
+
+  /**
+   * Library features and workarounds for the daemon currently answering.
+   *
+   * Each call verifies daemon identity. A restart invalidates the cached version
+   * before the report is returned. The immutable result is advisory: later
+   * operations still enforce their own requirements before sending commands.
+   *
+   * ```ts
+   * const report = await server.capabilities();
+   * if (report.features["program-run"].supported) {
+   *   console.log("Managed programs available on tmux", report.version);
+   * }
+   * ```
+   */
+  capabilities(options: SnapshotOptions = {}): Promise<ServerCapabilities> {
+    return acquireServerCapabilities(runtimeForServer(this), options.signal);
   }
 
   /**
