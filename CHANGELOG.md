@@ -48,6 +48,9 @@ changelog has the documentation, CI and release tooling entries up to 0.1.2.
 
 ### Development
 
+- The nested sandbox test has a bounded child lifetime and rejects forced
+  termination. The copy-mode test puts its response on a separate line from
+  shell prompts. (#225)
 - MCP contract fixtures use an explicit non-login shell. Host startup programs
   could otherwise change the foreground process during input preflight and
   prevent the command under test from starting. (#209)
