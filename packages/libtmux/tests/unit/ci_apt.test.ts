@@ -9,15 +9,33 @@ const workflow = (run: string, name = "Install shells"): unknown => ({
 describe("rawAptFailures", () => {
   test("names the file, job, step and fix for a raw sudo apt-get", () => {
     expect(rawAptFailures(".github/workflows/x.yml", workflow("sudo apt-get update"))).toEqual([
-      '.github/workflows/x.yml: job tmux, step "Install shells" runs apt-get directly; run it through scripts/apt-get.sh',
+      '.github/workflows/x.yml: job tmux, step "Install shells" runs apt-get directly; use the libtmux/.github apt-get action',
     ]);
   });
 
-  test("lets a step through the wrapper pass", () => {
-    expect(rawAptFailures("x.yml", workflow("./scripts/apt-get.sh update"))).toEqual([]);
+  test("lets a script path that ends in apt-get pass", () => {
+    expect(rawAptFailures("x.yml", workflow("./tools/apt-get.sh update"))).toEqual([]);
     expect(
-      rawAptFailures("x.yml", workflow('"$GITHUB_WORKSPACE/scripts/apt-get.sh" install -y fish')),
+      rawAptFailures("x.yml", workflow('"$GITHUB_WORKSPACE/tools/apt-get.sh" install -y fish')),
     ).toEqual([]);
+  });
+
+  test("lets a step that uses the shared action pass", () => {
+    const document = {
+      jobs: {
+        tmux: {
+          steps: [
+            {
+              name: "Install shells",
+              uses: "libtmux/.github/actions/apt-get@0000000000000000000000000000000000000000",
+              with: { args: "install -y fish" },
+            },
+          ],
+        },
+      },
+    };
+
+    expect(rawAptFailures("x.yml", document)).toEqual([]);
   });
 
   test("catches apt without sudo, behind an assignment, in a pipe and after a keyword", () => {
@@ -41,7 +59,7 @@ describe("rawAptFailures", () => {
     };
 
     expect(rawAptFailures(".github/actions/a/action.yml", action)).toEqual([
-      ".github/actions/a/action.yml: runs, step 1 runs apt-get directly; run it through scripts/apt-get.sh",
+      ".github/actions/a/action.yml: runs, step 1 runs apt-get directly; use the libtmux/.github apt-get action",
     ]);
   });
 
