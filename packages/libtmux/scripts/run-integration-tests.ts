@@ -64,11 +64,6 @@ const SUITES: readonly string[] = [
   "tests/integration/sandbox_runner.test.ts",
 ];
 
-/** Run by `test:differential`, which needs the Python oracle this runner has no part in. */
-const ELSEWHERE: ReadonlySet<string> = new Set([
-  "tests/integration/differential_substrate.test.ts",
-]);
-
 const listed: ReadonlySet<string> = new Set(SUITES);
 const packageRoot = fileURLToPath(new URL("..", import.meta.url));
 const missing = SUITES.filter((suite) => !existsSync(new URL(suite, `file://${packageRoot}`)));
@@ -81,7 +76,7 @@ const found = new Set(
   Array.from(new Bun.Glob("tests/integration/*.test.ts").scanSync({ cwd: packageRoot })),
 );
 const unlisted = [...found]
-  .filter((suite) => !listed.has(suite) && !ELSEWHERE.has(suite))
+  .filter((suite) => !listed.has(suite))
   .toSorted((left, right) => (left < right ? -1 : left > right ? 1 : 0));
 if (unlisted.length > 0) {
   process.stderr.write(`integration suites are not listed here: ${unlisted.join(", ")}\n`);

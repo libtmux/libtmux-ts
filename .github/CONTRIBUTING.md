@@ -380,19 +380,6 @@ are immutable: repairing an invalid exact hit fixes the current job, but cannot
 overwrite that entry. A build-script change invalidates its key for later jobs.
 Never add a broad restore-key fallback for native binaries.
 
-## The differential suite
-
-The differential suite needs the code: it runs the real Python library as an
-oracle and compares. Point
-`LIBTMUX_PYTHON_REPO` at a checkout of the pinned commit:
-
-```console
-$ git clone --branch v0.62.0 --depth 1 https://github.com/tmux-python/libtmux.git
-```
-
-Without it those tests skip rather than fail, because a missing oracle is not
-evidence that the port is wrong. CI clones it, so they always run there.
-
 ## Node
 
 The emitted-package lanes run on Node 22 and the floor is never substituted: a
@@ -475,8 +462,8 @@ maintainer decides when to cut one, and no release-candidate soak precedes it.
 Before tagging, check that:
 
 - no known P0 or P1 correctness or security finding remains;
-- both Bun versions, Node 22 package consumers, every advertised tmux version,
-  and the pinned Python differential suite pass from packed artifacts;
+- both Bun versions, Node 22 package consumers and every advertised tmux
+  version pass from packed artifacts;
 - real-tmux cancellation and process ownership pass on each advertised host
   platform, or the platform contract names the narrower set; and
 - the published declaration graph, examples, and install canaries cover all

@@ -54,7 +54,6 @@ const expectedScripts = {
   "generate:check": "bun scripts/generate-formats.ts --check",
   lint: "oxlint . --ignore-pattern tests/fixtures/type-aware-lint/** --deny-warnings --report-unused-disable-directives && bun scripts/check-type-aware-lint.ts",
   "lint:unused": "knip",
-  "test:differential": "bun scripts/run-differential-tests.ts",
   "test:integration": "bun scripts/run-integration-tests.ts",
   "test:node": "bun run build && bun scripts/test-node.ts --expect-major 22",
   "test:compat": "bun scripts/check-tmux-compat.ts",
@@ -470,7 +469,6 @@ describe("package contract", () => {
     expect(tooling.files).toBeUndefined();
     expect(tooling.include).toEqual([
       "scripts/**/*.ts",
-      "tests/differential/**/*.ts",
       "tests/integration/**/*.ts",
       "tests/unit/**/*.ts",
       "tests/fixtures/**/*.ts",

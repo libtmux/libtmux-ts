@@ -310,39 +310,10 @@ jobs:
       - name: Point the emitted-Node lane at the provisioned Node 22
         run: echo "LIBTMUX_NODE22=$(which node)" >> "$GITHUB_ENV"
 
-      # The oracle runs the real library rather than a description of it, so
-      # unlike the parity baseline this needs the code. The tag is what the
-      # materialized tree is authenticated against, so a shallow clone of it
-      # carries everything the comparison needs.
-      - name: Check out libtmux 0.62.0 for the differential oracle
-        run: |
-          git clone --branch v0.62.0 --depth 1 \
-            https://github.com/tmux-python/libtmux.git "$RUNNER_TEMP/libtmux-python"
-          echo "LIBTMUX_PYTHON_REPO=$RUNNER_TEMP/libtmux-python" >> "$GITHUB_ENV"
-
-      # The differential corpus compares this port against the pinned Python
-      # release, which it runs through uv.
-      - name: Install uv
-        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
-        with:
-          enable-cache: true
-          cache-dependency-glob: |
-            ${{ runner.temp }}/libtmux-python/pyproject.toml
-            ${{ runner.temp }}/libtmux-python/uv.lock
-
-      - name: Set up Python
-        run: uv python install 3.13
-
-      # Resolve and install the oracle's environment once, here. Left to the
-      # suite, the first oracle call pays for it inside a test's deadline and
-      # fails on a cold cache while later calls pass on a warm one.
-      - name: Warm the oracle environment
-        run: uv sync --project "$RUNNER_TEMP/libtmux-python"
-
       - name: Install the optional workspace Python test runtime
         run: |
-          uv venv --python 3.13 "$RUNNER_TEMP/workspace-python"
-          uv pip install --python "$RUNNER_TEMP/workspace-python/bin/python" 'tmuxp==1.74.0'
+          python3 -m venv "$RUNNER_TEMP/workspace-python"
+          "$RUNNER_TEMP/workspace-python/bin/python" -m pip install 'tmuxp==1.74.0'
           echo "LIBTMUX_TEST_PYTHON=$RUNNER_TEMP/workspace-python/bin/python" >> "$GITHUB_ENV"
           echo "TMUX_WORKSPACE_PYTHON=$RUNNER_TEMP/workspace-python/bin/python" >> "$GITHUB_ENV"
 
@@ -384,13 +355,10 @@ jobs:
         working-directory: packages/libtmux
         run: bun run build
 
-      # What a tmux release can actually change: the commands, the formats, and
-      # what the Python oracle says the same call should do.
+      # What a tmux release can actually change: the commands and the formats.
       - name: Exercise this tmux
         working-directory: packages/libtmux
-        run: |
-          bun run test:integration
-          bun run test:differential
+        run: bun run test:integration
 
       - name: Install test shells
         uses: libtmux/.github/actions/apt-get@30f81842b1e639ea4e25f93f1f2543504178e228

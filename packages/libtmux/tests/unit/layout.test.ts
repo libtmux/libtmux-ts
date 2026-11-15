@@ -70,7 +70,7 @@ const TMUX_REFUSES = [
 
 describe("layout checksum", () => {
   // tmux answers a mismatch with "invalid layout" before parsing anything, so
-  // every oracle run in the differential corpus proves these agree.
+  // each value was accepted by a live server.
   test("matches the values tmux accepted for each corpus body", () => {
     expect(layoutChecksum("80x24,0,0{")).toBe("64aa");
     expect(layoutChecksum("80x24,0,0{}")).toBe("32d2");

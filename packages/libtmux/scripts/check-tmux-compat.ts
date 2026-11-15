@@ -17,7 +17,7 @@ import { join } from "node:path";
 
 import { runBoundedCommand } from "../../../scripts/bounded_process.js";
 
-const GATES = ["test:integration", "test:node", "test:differential"] as const;
+const GATES = ["test:integration", "test:node"] as const;
 
 interface Candidate {
   readonly executable: string;

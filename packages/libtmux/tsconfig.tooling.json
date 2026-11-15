@@ -9,7 +9,6 @@
   },
   "include": [
     "scripts/**/*.ts",
-    "tests/differential/**/*.ts",
     "tests/integration/**/*.ts",
     "tests/unit/**/*.ts",
     "tests/fixtures/**/*.ts",

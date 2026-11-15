@@ -10,5 +10,5 @@
     "tests/support/bun_test_on_node.ts"
   ],
   "project": ["src/**/*.ts", "scripts/**/*.ts", "tests/**/*.ts"],
-  "ignoreBinaries": ["uv", "mkfifo"]
+  "ignoreBinaries": ["mkfifo"]
 }
