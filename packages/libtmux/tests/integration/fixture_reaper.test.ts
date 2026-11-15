@@ -1,5 +1,4 @@
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
 import {
   access,
   chmod,
@@ -80,41 +79,18 @@ function shellQuote(value: string): string {
   return `'${value.replaceAll("'", `'"'"'`)}'`;
 }
 
-async function writeLaunchingHoldWrapper(parent: string, marker: string): Promise<string> {
-  const python = (process.env.PATH ?? "")
-    .split(":")
-    .map((directory) => join(directory, "python3"))
-    .find((candidate) => existsSync(candidate));
-  const tmux = (await resolveControllerIdentity("tmux")).executablePath;
-  if (python === undefined) throw new Error("python3 is required");
-  const wrapper = join(parent, "tmux-launching-hold");
-  const program = `import ctypes
-import os
-import signal
-import subprocess
-import sys
+const launchingHold = fileURLToPath(new URL("../fixtures/launching_hold.ts", import.meta.url));
+// The helper needs bun:ffi, which Node lacks, so it runs under the bun that
+// drives the suite or the one on PATH.
+const bun = process.versions.bun === undefined ? "bun" : process.execPath;
 
-parent = os.getppid()
-libc = ctypes.CDLL(None, use_errno=True)
-if libc.prctl(1, signal.SIGKILL, 0, 0, 0) != 0:
-    raise OSError(ctypes.get_errno(), "prctl(PR_SET_PDEATHSIG) failed")
-if os.getppid() != parent:
-    os.kill(os.getpid(), signal.SIGKILL)
-completed = subprocess.run([sys.argv[2], *sys.argv[3:]], check=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-sys.stdout.buffer.write(completed.stdout)
-sys.stdout.buffer.flush()
-sys.stderr.buffer.write(completed.stderr)
-sys.stderr.buffer.flush()
-with open(sys.argv[1], "wb") as stream:
-    stream.write(f"{os.getpid()}\\n".encode() + completed.stdout)
-    stream.flush()
-    os.fsync(stream.fileno())
-signal.pause()
-`;
+async function writeLaunchingHoldWrapper(parent: string, marker: string): Promise<string> {
+  const tmux = (await resolveControllerIdentity("tmux")).executablePath;
+  const wrapper = join(parent, "tmux-launching-hold");
   await writeFile(
     wrapper,
     `#!/bin/sh
-exec ${shellQuote(python)} -c ${shellQuote(program)} ${shellQuote(marker)} ${shellQuote(tmux)} "$@"
+exec ${shellQuote(bun)} ${shellQuote(launchingHold)} ${shellQuote(marker)} ${shellQuote(tmux)} "$@"
 `,
     { mode: 0o700 },
   );
