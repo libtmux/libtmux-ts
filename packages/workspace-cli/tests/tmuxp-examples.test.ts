@@ -1,6 +1,6 @@
 /* eslint-disable no-await-in-loop -- Each example gets a server of its own, one after another. */
 import { expect, test } from "bun:test";
-import { chmod, mkdir, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { Server } from "libtmux";
 import {
@@ -18,15 +18,21 @@ import {
  * `-S` socket, because `options.yaml` sets server-wide options and two
  * examples share a session name. A file the CLI refuses fails the test unless
  * its entry below says it is refused and why.
+ *
+ * The windows and panes each build should show are the file's structure in
+ * `fixtures/tmuxp-examples/expected/`, which `tmuxp-structure.test.ts` holds the
+ * loader to: window indexes, names, pane counts and the start directories a
+ * file declares. Only what exists once the build returns is read, so pane
+ * contents and timing-dependent keys are not compared.
  */
 
 interface Loads {
   /** The session the example builds; a function when the name takes values from the environment. */
   session: string | ((root: string) => string);
-  /** `[index, name, panes]` in index order. An unnamed window takes the name tmux gives it, so its name is not compared. */
-  windows: [index: number, name: string | undefined, panes: number][];
   /** Files and variables the example reads from its surroundings, made under `root`. */
   needs?: (root: string) => Promise<Record<string, string>>;
+  /** Whether the panes' start directories are compared; false where they take values from `needs`. */
+  directories?: false;
   /** The effect the example exists to show, looked at after the load. */
   inspect?: (server: Server, session: string, root: string) => Promise<void>;
 }
@@ -56,38 +62,25 @@ async function exists(path: string): Promise<boolean> {
 const examples: Record<string, Loads | Refused> = {
   "2-pane-synchronized.yaml": {
     session: "2-pane-synchronized",
-    windows: [[0, "Two synchronized panes", 2]],
   },
   "2-pane-vertical.yaml": {
     session: "2-pane-vertical",
-    windows: [[0, "my test window", 2]],
   },
   "3-pane.yaml": {
     session: "3-panes",
-    windows: [[0, "dev window", 3]],
   },
   "4-pane.yaml": {
     session: "4-pane-split",
-    windows: [[0, "dev window", 4]],
   },
   "blank-panes.yaml": {
     session: "Blank pane test",
-    windows: [
-      [0, "Blank pane test", 3],
-      [1, "More blank panes", 3],
-      [2, "Empty string (return)", 3],
-      [3, "Blank with options", 2],
-    ],
   },
   // `${PWD}/test` must be a directory, and `before_script` must run, so the
   // variables name a work directory and a script that leaves a marker. The
   // second window sets `automatic-rename`, so tmux renames it from its pane.
   "env-variables.yaml": {
     session: (root) => `session - tmuxp (${join(root, "scripts")})`,
-    windows: [
-      [0, "editor", 1],
-      [1, undefined, 1],
-    ],
+    directories: false,
     needs: async (root) => {
       const script = join(root, "scripts", "test3.sh");
       await mkdir(join(root, "work", "test"), { recursive: true });
@@ -102,28 +95,20 @@ const examples: Record<string, Loads | Refused> = {
   },
   "focus-window-and-panes.yaml": {
     session: "focus",
-    windows: [
-      [0, "attached window", 2],
-      [1, "second window", 3],
-    ],
   },
   "main-pane-height-percentage.yaml": {
     session: "main-pane-height",
-    windows: [[0, "my window name", 3]],
   },
   "main-pane-height.yaml": {
     session: "main-pane-height",
-    windows: [[0, "my window name", 3]],
   },
   "minimal.yaml": {
     session: "My tmux session",
-    windows: [[0, undefined, 1]],
   },
   // `${MAIN_PANE_HEIGHT}` is the one variable; the session's `options` reach
   // every window, so the first one shows whether the value arrived.
   "options.yaml": {
     session: "test window options",
-    windows: [[0, undefined, 3]],
     needs: async () => ({ MAIN_PANE_HEIGHT: "30" }),
     inspect: async (server, session) => {
       expect(
@@ -133,7 +118,6 @@ const examples: Record<string, Loads | Refused> = {
   },
   "pane-shell.yaml": {
     session: "Pane shell example",
-    windows: [[0, "first", 4]],
   },
   // `plugins` runs through a tmuxp Python bridge that needs tmuxp 1.74.0, and
   // names a package the example does not ship. No environment loads this file
@@ -146,67 +130,67 @@ const examples: Record<string, Loads | Refused> = {
   },
   "session-environment.yaml": {
     session: "Environment variables test",
-    windows: [
-      [0, "Django project", 1],
-      [1, "Another Django project", 2],
-    ],
   },
   "shorthands.yaml": {
     session: "shorthands",
-    windows: [[0, "long form", 3]],
   },
   "skip-send-pane-level.yaml": {
     session: "Skip command execution (pane-level)",
-    windows: [[0, undefined, 2]],
   },
   "skip-send.yaml": {
     session: "Skip command execution (command-level)",
-    windows: [[0, undefined, 1]],
   },
   "sleep-pane-level.yaml": {
     session: "Pause / skip command execution (pane-level)",
-    windows: [[0, undefined, 1]],
   },
   "sleep-virtualenv.yaml": {
     session: "virtualenv",
-    windows: [[0, undefined, 1]],
   },
   "sleep.yaml": {
     session: "Pause / skip command execution (command-level)",
-    windows: [[0, undefined, 1]],
   },
   "start-directory.yaml": {
     session: "start directory",
-    windows: [
-      [0, "should be /var/", 2],
-      [1, "should be /var/log", 2],
-      [2, "should be ~", 2],
-      [3, "should be /bin", 2],
-      [4, "should be workspace file's dir", 2],
-    ],
   },
   "suppress-history.yaml": {
     session: "suppress",
-    windows: [
-      [0, "appended", 1],
-      [1, "suppressed", 1],
-      [2, "default", 1],
-      [3, "mixed", 3],
-    ],
   },
   // `window_index` places `five` at 5; the others take the next free index.
   "window-index.yaml": {
     session: "Window index example",
-    windows: [
-      [0, "zero", 1],
-      [1, "one", 1],
-      [5, "five", 1],
-    ],
   },
 };
 
 const fixtures = new URL("./fixtures/tmuxp-examples/", import.meta.url).pathname;
 const main = new URL("../src/main.ts", import.meta.url).pathname;
+
+/** The windows a file builds, in index order, with the directory each pane is declared to start in. */
+async function expectedTree(
+  file: string,
+  root: string,
+): Promise<{ index: number; name: string | null; panes: (string | null)[] }[]> {
+  const text = (
+    await readFile(join(fixtures, "expected", file.replace(/\.yaml$/u, ".json")), "utf8")
+  )
+    .replaceAll("${WORKSPACE_DIR}", fixtures.replace(/\/$/u, ""))
+    .replaceAll("${HOME}", join(root, "home"));
+  const { windows } = JSON.parse(text) as {
+    windows: {
+      index: number;
+      name: string | null;
+      options: Record<string, unknown>;
+      panes: { start_directory: string | null }[];
+    }[];
+  };
+  return windows
+    .map(({ index, name, options, panes }) => ({
+      index,
+      // A window that renames itself from its pane is not compared by name.
+      name: [true, "on"].includes(options["automatic-rename"] as boolean | string) ? null : name,
+      panes: panes.map((pane) => pane.start_directory),
+    }))
+    .toSorted((a, b) => a.index - b.index);
+}
 
 async function load(file: string, expected: Loads | Refused): Promise<void> {
   const root = await makeTestDirectory("ltx-wcli-tmuxp-");
@@ -277,21 +261,42 @@ async function load(file: string, expected: Loads | Refused): Promise<void> {
         typeof expected.session === "function" ? expected.session(root) : expected.session;
       const sessions = (await server.snapshot()).sessions.toArray();
       expect(sessions.map((session) => session.name)).toEqual([name]);
-      const windows = sessions[0]!.windows
+      const built = sessions[0]!.windows
         .toArray()
         .map((window) => ({
           index: Number(window.index),
           name: window.name,
-          panes: window.panes.length,
+          panes: window.panes
+            .toArray()
+            .toSorted((a, b) => Number(a.index) - Number(b.index))
+            .map((pane) => pane.startPath),
         }))
-        .sort((a, b) => a.index - b.index);
-      expect(windows).toEqual(
-        expected.windows.map(([index, windowName, panes], position) => ({
+        .toSorted((a, b) => a.index - b.index);
+      const tree = await expectedTree(file, root);
+      // An unnamed or self-renaming window takes the name tmux gives it, so its name is not compared.
+      expect(
+        built.map(({ index, name: windowName, panes }) => ({
           index,
-          name: windowName ?? windows[position]?.name ?? null,
-          panes,
+          name: windowName,
+          panes: panes.length,
+        })),
+      ).toEqual(
+        tree.map(({ index, name: windowName, panes }, position) => ({
+          index,
+          name: windowName ?? built[position]?.name ?? null,
+          panes: panes.length,
         })),
       );
+      if (expected.directories !== false) {
+        for (const [position, window] of tree.entries()) {
+          for (const [paneIndex, directory] of window.panes.entries()) {
+            // A pane the file gives no directory starts where the CLI ran.
+            expect(built[position]!.panes[paneIndex], `${file} window ${window.index}`).toBe(
+              directory ?? root,
+            );
+          }
+        }
+      }
       await expected.inspect?.(server, name, root);
     },
     async () => {

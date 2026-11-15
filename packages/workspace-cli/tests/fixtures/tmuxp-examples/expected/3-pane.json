@@ -1,0 +1,34 @@
+{
+  "source": "tmuxp examples/3-pane.yaml, as tmuxp documents it. Copied from libtmux-ruby and adjusted for this loader; see the README.",
+  "session": { "name": "3-panes", "start_directory": null, "environment": {}, "options": {} },
+  "windows": [
+    {
+      "name": "dev window",
+      "index": 0,
+      "layout": "main-vertical",
+      "focus": false,
+      "start_directory": null,
+      "options": {},
+      "panes": [
+        {
+          "focus": false,
+          "start_directory": null,
+          "environment": {},
+          "commands": ["cd ~/", "cd /var/log", "ls -al | grep \\.log"]
+        },
+        {
+          "focus": false,
+          "start_directory": null,
+          "environment": {},
+          "commands": ["cd ~/", "echo hello"]
+        },
+        {
+          "focus": false,
+          "start_directory": null,
+          "environment": {},
+          "commands": ["cd ~/", "echo hello"]
+        }
+      ]
+    }
+  ]
+}

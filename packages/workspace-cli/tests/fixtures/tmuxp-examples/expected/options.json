@@ -1,0 +1,40 @@
+{
+  "source": "tmuxp examples/options.yaml, as tmuxp documents it. Written by hand.",
+  "session": {
+    "name": "test window options",
+    "start_directory": "${HOME}",
+    "environment": {},
+    "options": { "main-pane-height": "30" },
+    "global_options": { "default-shell": "/bin/sh", "default-command": "/bin/sh" }
+  },
+  "windows": [
+    {
+      "name": null,
+      "index": 0,
+      "layout": "main-horizontal",
+      "focus": false,
+      "start_directory": "${HOME}",
+      "options": { "automatic-rename": "on" },
+      "panes": [
+        {
+          "focus": false,
+          "start_directory": "${HOME}",
+          "environment": {},
+          "commands": ["man echo"]
+        },
+        {
+          "focus": false,
+          "start_directory": "${HOME}",
+          "environment": {},
+          "commands": ["echo \"hey\""]
+        },
+        {
+          "focus": false,
+          "start_directory": "${HOME}",
+          "environment": {},
+          "commands": ["echo \"moo\""]
+        }
+      ]
+    }
+  ]
+}

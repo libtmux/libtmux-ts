@@ -1,0 +1,44 @@
+{
+  "source": "tmuxp examples/env-variables.yaml, as tmuxp documents it. Written by hand.",
+  "session": {
+    "name": "session - tmuxp (/scripts)",
+    "start_directory": "/work/test",
+    "environment": {},
+    "options": {},
+    "before_script": ["/scripts/test3.sh"]
+  },
+  "windows": [
+    {
+      "name": "editor",
+      "index": 0,
+      "layout": null,
+      "focus": false,
+      "start_directory": "/var/log",
+      "options": {},
+      "panes": [
+        {
+          "focus": false,
+          "start_directory": "/var/log",
+          "environment": {},
+          "commands": ["echo /work", "tail -F /var/log/syslog"]
+        }
+      ]
+    },
+    {
+      "name": "logging for tmuxp",
+      "index": 1,
+      "layout": null,
+      "focus": false,
+      "start_directory": "/work/test",
+      "options": { "automatic-rename": true },
+      "panes": [
+        {
+          "focus": false,
+          "start_directory": "/work/test",
+          "environment": {},
+          "commands": ["echo /work", "htop", "ls /work"]
+        }
+      ]
+    }
+  ]
+}

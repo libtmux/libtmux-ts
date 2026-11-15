@@ -1,0 +1,34 @@
+{
+  "source": "tmuxp examples/sleep-pane-level.yaml, as tmuxp documents it. Written by hand.",
+  "session": {
+    "name": "Pause / skip command execution (pane-level)",
+    "start_directory": null,
+    "environment": {},
+    "options": {}
+  },
+  "windows": [
+    {
+      "name": null,
+      "index": 0,
+      "layout": null,
+      "focus": false,
+      "start_directory": null,
+      "options": {},
+      "panes": [
+        {
+          "focus": false,
+          "start_directory": null,
+          "environment": {},
+          "commands": [
+            "echo \"___$((11 + 1))___\"",
+            "echo \"___$((1 + 3))___\"",
+            "echo \"___$((1 + 3))___\"",
+            "echo \"Stuff rendering here!\"",
+            "echo \"2 seconds later\""
+          ],
+          "sleep_before": 2
+        }
+      ]
+    }
+  ]
+}

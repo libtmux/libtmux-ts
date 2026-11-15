@@ -1,0 +1,59 @@
+{
+  "source": "tmuxp examples/pane-shell.yaml, as tmuxp documents it. Written by hand.",
+  "session": {
+    "name": "Pane shell example",
+    "start_directory": null,
+    "environment": {},
+    "options": {}
+  },
+  "windows": [
+    {
+      "name": "first",
+      "index": 0,
+      "layout": "even-vertical",
+      "focus": false,
+      "start_directory": null,
+      "options": { "remain-on-exit": true },
+      "panes": [
+        {
+          "focus": false,
+          "start_directory": null,
+          "environment": {},
+          "commands": ["print('This is python 3')"],
+          "shell": "/usr/bin/python3",
+          "suppress_history": false
+        },
+        {
+          "focus": false,
+          "start_directory": null,
+          "environment": {},
+          "commands": [
+            "iAll panes have the `remain-on-exit` setting on.",
+            "When you exit out of the shell or application, the panes will remain.",
+            "Use tmux command `:kill-pane` to remove the pane.",
+            "Use tmux command `:respawn-pane` to restart the shell in the pane.",
+            "Use <Escape> and then `:q!` to get out of this vim window. :-)"
+          ],
+          "shell": "/usr/bin/vim -u none",
+          "suppress_history": false
+        },
+        {
+          "focus": false,
+          "start_directory": null,
+          "environment": {},
+          "commands": ["print('Hello World 2')"],
+          "shell": "/usr/bin/python2",
+          "suppress_history": false
+        },
+        {
+          "focus": false,
+          "start_directory": null,
+          "environment": {},
+          "commands": [],
+          "shell": "/usr/bin/top",
+          "suppress_history": false
+        }
+      ]
+    }
+  ]
+}

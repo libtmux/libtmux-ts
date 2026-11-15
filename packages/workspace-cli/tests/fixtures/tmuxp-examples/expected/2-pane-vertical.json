@@ -1,0 +1,23 @@
+{
+  "source": "tmuxp examples/2-pane-vertical.yaml, as tmuxp documents it. Copied from libtmux-ruby and adjusted for this loader; see the README.",
+  "session": {
+    "name": "2-pane-vertical",
+    "start_directory": null,
+    "environment": {},
+    "options": {}
+  },
+  "windows": [
+    {
+      "name": "my test window",
+      "index": 0,
+      "layout": null,
+      "focus": false,
+      "start_directory": null,
+      "options": {},
+      "panes": [
+        { "focus": false, "start_directory": null, "environment": {}, "commands": ["echo hello"] },
+        { "focus": false, "start_directory": null, "environment": {}, "commands": ["echo hello"] }
+      ]
+    }
+  ]
+}

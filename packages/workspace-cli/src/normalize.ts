@@ -31,6 +31,7 @@ export type WindowSpec = {
   panes: PaneSpec[];
   name: string | undefined;
   index: number | undefined;
+  directory: string | undefined;
 };
 export type WorkspaceSpec = {
   data: Document;
@@ -307,6 +308,7 @@ export function normalize(
       data: window,
       name,
       index,
+      directory: windowDirectory,
       panes: panes.map((value, paneIndex) => {
         const panePath = `${windowPath}.panes[${paneIndex}]`;
         const pane =

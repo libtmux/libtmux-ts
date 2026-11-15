@@ -1,0 +1,34 @@
+{
+  "source": "tmuxp examples/main-pane-height-percentage.yaml, as tmuxp documents it. Written by hand.",
+  "session": {
+    "name": "main-pane-height",
+    "start_directory": "${HOME}",
+    "environment": {},
+    "options": {}
+  },
+  "windows": [
+    {
+      "name": "my window name",
+      "index": 0,
+      "layout": "main-horizontal",
+      "focus": false,
+      "start_directory": "${HOME}",
+      "options": { "main-pane-height": "67%" },
+      "panes": [
+        { "focus": false, "start_directory": "${HOME}", "environment": {}, "commands": ["top"] },
+        {
+          "focus": false,
+          "start_directory": "${HOME}",
+          "environment": {},
+          "commands": ["echo \"hey\""]
+        },
+        {
+          "focus": false,
+          "start_directory": "${HOME}",
+          "environment": {},
+          "commands": ["echo \"moo\""]
+        }
+      ]
+    }
+  ]
+}

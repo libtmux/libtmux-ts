@@ -1,0 +1,65 @@
+{
+  "source": "tmuxp examples/session-environment.yaml, as tmuxp documents it. Copied from libtmux-ruby and adjusted for this loader; see the README.",
+  "session": {
+    "name": "Environment variables test",
+    "start_directory": null,
+    "options": {},
+    "environment": {
+      "EDITOR": "/usr/bin/vim",
+      "DJANGO_SETTINGS_MODULE": "my_app.settings.local",
+      "SERVER_PORT": "8009"
+    }
+  },
+  "windows": [
+    {
+      "name": "Django project",
+      "index": 0,
+      "layout": null,
+      "focus": false,
+      "start_directory": null,
+      "options": {},
+      "panes": [
+        {
+          "focus": false,
+          "start_directory": null,
+          "environment": {
+            "EDITOR": "/usr/bin/vim",
+            "DJANGO_SETTINGS_MODULE": "my_app.settings.local",
+            "SERVER_PORT": "8009"
+          },
+          "commands": ["./manage.py runserver 0.0.0.0:${SERVER_PORT}"]
+        }
+      ]
+    },
+    {
+      "name": "Another Django project",
+      "index": 1,
+      "layout": null,
+      "focus": false,
+      "start_directory": null,
+      "options": {},
+      "panes": [
+        {
+          "focus": false,
+          "start_directory": null,
+          "environment": {
+            "EDITOR": "/usr/bin/vim",
+            "DJANGO_SETTINGS_MODULE": "my_app.settings.local",
+            "SERVER_PORT": "8010"
+          },
+          "commands": ["./manage.py runserver 0.0.0.0:${SERVER_PORT}"]
+        },
+        {
+          "focus": false,
+          "start_directory": null,
+          "environment": {
+            "EDITOR": "/usr/bin/vim",
+            "DJANGO_SETTINGS_MODULE": "my_app.settings.local-testing",
+            "SERVER_PORT": "8011"
+          },
+          "commands": ["./manage.py runserver 0.0.0.0:${SERVER_PORT}"]
+        }
+      ]
+    }
+  ]
+}

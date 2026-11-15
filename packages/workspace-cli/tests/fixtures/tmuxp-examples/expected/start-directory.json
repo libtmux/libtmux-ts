@@ -1,0 +1,129 @@
+{
+  "source": "tmuxp examples/start-directory.yaml, as tmuxp documents it. Copied from libtmux-ruby and adjusted for this loader; see the README.",
+  "session": {
+    "name": "start directory",
+    "start_directory": "/var/",
+    "environment": {},
+    "options": {}
+  },
+  "windows": [
+    {
+      "name": "should be /var/",
+      "index": 0,
+      "layout": null,
+      "focus": false,
+      "start_directory": "/var/",
+      "options": {},
+      "panes": [
+        {
+          "focus": false,
+          "start_directory": "/var/",
+          "environment": {},
+          "commands": ["echo \"\\033c", "it trickles down from session-level\""]
+        },
+        {
+          "focus": false,
+          "start_directory": "/var/",
+          "environment": {},
+          "commands": ["echo hello"]
+        }
+      ]
+    },
+    {
+      "name": "should be /var/log",
+      "index": 1,
+      "layout": null,
+      "focus": false,
+      "start_directory": "/var/log",
+      "options": {},
+      "panes": [
+        {
+          "focus": false,
+          "start_directory": "/var/log",
+          "environment": {},
+          "commands": [
+            "echo '\\033c",
+            "window start_directory concatenates to session start_directory",
+            "if it is not absolute'"
+          ]
+        },
+        {
+          "focus": false,
+          "start_directory": "/var/log",
+          "environment": {},
+          "commands": ["echo hello"]
+        }
+      ]
+    },
+    {
+      "name": "should be ~",
+      "index": 2,
+      "layout": null,
+      "focus": false,
+      "start_directory": "${HOME}",
+      "options": {},
+      "panes": [
+        {
+          "focus": false,
+          "start_directory": "${HOME}",
+          "environment": {},
+          "commands": ["echo \\\\033c ~ has precedence. note: remember to quote ~ in YAML"]
+        },
+        {
+          "focus": false,
+          "start_directory": "${HOME}",
+          "environment": {},
+          "commands": ["echo hello"]
+        }
+      ]
+    },
+    {
+      "name": "should be /bin",
+      "index": 3,
+      "layout": null,
+      "focus": false,
+      "start_directory": "/bin",
+      "options": {},
+      "panes": [
+        {
+          "focus": false,
+          "start_directory": "/bin",
+          "environment": {},
+          "commands": ["echo '\\033c absolute paths also have precedence.'"]
+        },
+        { "focus": false, "start_directory": "/bin", "environment": {}, "commands": ["echo hello"] }
+      ]
+    },
+    {
+      "name": "should be workspace file's dir",
+      "index": 4,
+      "layout": null,
+      "focus": false,
+      "start_directory": "${WORKSPACE_DIR}",
+      "options": {},
+      "panes": [
+        {
+          "focus": false,
+          "start_directory": "${WORKSPACE_DIR}",
+          "environment": {},
+          "commands": [
+            "echo '\\033c",
+            "./ is relative to workspace file location",
+            "../ will be parent of workspace file",
+            "./test will be \\\"test\\\" dir inside dir of workspace file'"
+          ]
+        },
+        {
+          "focus": false,
+          "start_directory": "${WORKSPACE_DIR}",
+          "environment": {},
+          "commands": [
+            "echo '\\033c",
+            "This way you can load up workspaces from projects and maintain",
+            "relative paths.'"
+          ]
+        }
+      ]
+    }
+  ]
+}

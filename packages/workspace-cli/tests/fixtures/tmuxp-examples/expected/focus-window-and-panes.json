@@ -1,0 +1,59 @@
+{
+  "source": "tmuxp examples/focus-window-and-panes.yaml, as tmuxp documents it. Copied from libtmux-ruby and adjusted for this loader; see the README.",
+  "session": { "name": "focus", "start_directory": null, "environment": {}, "options": {} },
+  "windows": [
+    {
+      "name": "attached window",
+      "index": 0,
+      "layout": null,
+      "focus": true,
+      "start_directory": null,
+      "options": {},
+      "panes": [
+        {
+          "focus": true,
+          "start_directory": null,
+          "environment": {},
+          "commands": ["echo hello", "echo 'this pane should be selected on load'"]
+        },
+        {
+          "focus": false,
+          "start_directory": null,
+          "environment": {},
+          "commands": ["cd /var/log", "echo hello"]
+        }
+      ]
+    },
+    {
+      "name": "second window",
+      "index": 1,
+      "layout": null,
+      "focus": false,
+      "start_directory": null,
+      "options": {},
+      "panes": [
+        {
+          "focus": false,
+          "start_directory": null,
+          "environment": {},
+          "commands": ["cd /var/log"]
+        },
+        {
+          "focus": true,
+          "start_directory": null,
+          "environment": {},
+          "commands": [
+            "cd /var/log",
+            "echo 'this pane should be focused, when window switched to first time'"
+          ]
+        },
+        {
+          "focus": false,
+          "start_directory": null,
+          "environment": {},
+          "commands": ["cd /var/log"]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,34 @@
+{
+  "source": "tmuxp examples/shorthands.yaml, as tmuxp documents it. Copied from libtmux-ruby and adjusted for this loader; see the README.",
+  "session": { "name": "shorthands", "start_directory": null, "environment": {}, "options": {} },
+  "windows": [
+    {
+      "name": "long form",
+      "index": 0,
+      "layout": null,
+      "focus": false,
+      "start_directory": null,
+      "options": {},
+      "panes": [
+        {
+          "focus": false,
+          "start_directory": null,
+          "environment": {},
+          "commands": ["echo 'did you know'", "echo 'you can inline'"]
+        },
+        {
+          "focus": false,
+          "start_directory": null,
+          "environment": {},
+          "commands": ["echo 'single commands'"]
+        },
+        {
+          "focus": false,
+          "start_directory": null,
+          "environment": {},
+          "commands": ["echo 'for panes'"]
+        }
+      ]
+    }
+  ]
+}

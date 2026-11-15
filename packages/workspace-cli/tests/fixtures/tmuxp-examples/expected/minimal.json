@@ -1,0 +1,20 @@
+{
+  "source": "tmuxp examples/minimal.yaml, as tmuxp documents it. Written by hand.",
+  "session": {
+    "name": "My tmux session",
+    "start_directory": null,
+    "environment": {},
+    "options": {}
+  },
+  "windows": [
+    {
+      "name": null,
+      "index": 0,
+      "layout": null,
+      "focus": false,
+      "start_directory": null,
+      "options": {},
+      "panes": [{ "focus": false, "start_directory": null, "environment": {}, "commands": [] }]
+    }
+  ]
+}

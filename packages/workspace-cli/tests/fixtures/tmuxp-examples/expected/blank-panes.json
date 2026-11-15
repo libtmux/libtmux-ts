@@ -1,0 +1,62 @@
+{
+  "source": "tmuxp examples/blank-panes.yaml, as tmuxp documents it. Written by hand.",
+  "session": {
+    "name": "Blank pane test",
+    "start_directory": null,
+    "environment": {},
+    "options": {}
+  },
+  "windows": [
+    {
+      "name": "Blank pane test",
+      "index": 0,
+      "layout": null,
+      "focus": false,
+      "start_directory": null,
+      "options": {},
+      "panes": [
+        { "focus": false, "start_directory": null, "environment": {}, "commands": [] },
+        { "focus": false, "start_directory": null, "environment": {}, "commands": [] },
+        { "focus": false, "start_directory": null, "environment": {}, "commands": [] }
+      ]
+    },
+    {
+      "name": "More blank panes",
+      "index": 1,
+      "layout": null,
+      "focus": false,
+      "start_directory": null,
+      "options": {},
+      "panes": [
+        { "focus": false, "start_directory": null, "environment": {}, "commands": [] },
+        { "focus": false, "start_directory": null, "environment": {}, "commands": [] },
+        { "focus": false, "start_directory": null, "environment": {}, "commands": [] }
+      ]
+    },
+    {
+      "name": "Empty string (return)",
+      "index": 2,
+      "layout": null,
+      "focus": false,
+      "start_directory": null,
+      "options": {},
+      "panes": [
+        { "focus": false, "start_directory": null, "environment": {}, "commands": [""] },
+        { "focus": false, "start_directory": null, "environment": {}, "commands": [""] },
+        { "focus": false, "start_directory": null, "environment": {}, "commands": [""] }
+      ]
+    },
+    {
+      "name": "Blank with options",
+      "index": 3,
+      "layout": null,
+      "focus": false,
+      "start_directory": null,
+      "options": {},
+      "panes": [
+        { "focus": true, "start_directory": null, "environment": {}, "commands": [] },
+        { "focus": false, "start_directory": "/tmp", "environment": {}, "commands": [] }
+      ]
+    }
+  ]
+}

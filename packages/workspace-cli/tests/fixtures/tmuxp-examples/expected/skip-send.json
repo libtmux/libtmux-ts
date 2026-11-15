@@ -1,0 +1,30 @@
+{
+  "source": "tmuxp examples/skip-send.yaml, as tmuxp documents it. Written by hand.",
+  "session": {
+    "name": "Skip command execution (command-level)",
+    "start_directory": null,
+    "environment": {},
+    "options": {}
+  },
+  "windows": [
+    {
+      "name": null,
+      "index": 0,
+      "layout": null,
+      "focus": false,
+      "start_directory": null,
+      "options": {},
+      "panes": [
+        {
+          "focus": false,
+          "start_directory": null,
+          "environment": {},
+          "commands": [
+            "echo \"___$((11 + 1))___\"",
+            { "cmd": "echo \"___$((1 + 3))___\"", "enter": false }
+          ]
+        }
+      ]
+    }
+  ]
+}

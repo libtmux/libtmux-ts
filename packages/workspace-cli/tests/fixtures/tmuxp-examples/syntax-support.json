@@ -1,0 +1,669 @@
+{
+  "source": "What the workspace loader does with the keys and forms of tmuxp's workspace syntax. Each probe is read as /workspace/w.yaml with HOME set to /home/u; tests/tmuxp-structure.test.ts checks every entry against the loader, so the record changes when the loader does. Adapted from libtmux-ruby's record of its own loader, with the statuses measured on this one.",
+  "statuses": {
+    "supported": "Accepted and means what tmuxp means.",
+    "difference": "Accepted, with the recorded difference.",
+    "refused": "Refused with the recorded message."
+  },
+  "entries": [
+    {
+      "id": "session-name",
+      "scope": "session",
+      "key": "session_name",
+      "form": "string",
+      "probe": ["session_name: a", "windows:", "  - window_name: w", "    panes: [{}]"],
+      "status": "supported"
+    },
+    {
+      "id": "windows",
+      "scope": "session",
+      "key": "windows",
+      "form": "nonempty list of windows",
+      "probe": ["session_name: a", "windows:", "  - window_name: w", "    panes: [{}]"],
+      "status": "supported"
+    },
+    {
+      "id": "session-start-directory-absolute",
+      "scope": "session",
+      "key": "start_directory",
+      "form": "absolute path",
+      "probe": [
+        "session_name: a",
+        "start_directory: /var/log",
+        "windows:",
+        "  - window_name: w",
+        "    panes: [{}]"
+      ],
+      "status": "supported",
+      "observed": { "path": ["directory"], "value": "/var/log" }
+    },
+    {
+      "id": "start-directory-relative",
+      "scope": "window",
+      "key": "start_directory",
+      "form": "relative path",
+      "probe": [
+        "session_name: a",
+        "start_directory: /var",
+        "windows:",
+        "  - window_name: w",
+        "    start_directory: log",
+        "    panes: [{}]"
+      ],
+      "status": "supported",
+      "observed": { "path": ["windows", 0, "directory"], "value": "/var/log" }
+    },
+    {
+      "id": "start-directory-tilde",
+      "scope": "session",
+      "key": "start_directory",
+      "form": "leading ~",
+      "probe": [
+        "session_name: a",
+        "start_directory: ~/x",
+        "windows:",
+        "  - window_name: w",
+        "    panes: [{}]"
+      ],
+      "status": "supported",
+      "observed": { "path": ["directory"], "value": "/home/u/x" }
+    },
+    {
+      "id": "variable-expansion-default",
+      "scope": "session",
+      "key": "${VAR}",
+      "form": "environment variable in a value",
+      "probe": [
+        "session_name: a",
+        "start_directory: ${HOME}/x",
+        "windows:",
+        "  - window_name: w",
+        "    panes: [{}]"
+      ],
+      "status": "supported",
+      "observed": { "path": ["directory"], "value": "/home/u/x" }
+    },
+    {
+      "id": "environment-strings",
+      "scope": "session",
+      "key": "environment",
+      "form": "mapping of strings",
+      "probe": [
+        "session_name: a",
+        "environment:",
+        "  A: b",
+        "windows:",
+        "  - window_name: w",
+        "    panes: [{}]"
+      ],
+      "status": "supported"
+    },
+    {
+      "id": "environment-other-values",
+      "scope": "session",
+      "key": "environment",
+      "form": "number or other non-string value",
+      "probe": [
+        "session_name: a",
+        "environment:",
+        "  A: 1",
+        "windows:",
+        "  - window_name: w",
+        "    panes: [{}]"
+      ],
+      "status": "refused",
+      "message": "environment.A must be a string"
+    },
+    {
+      "id": "session-shell-command-before",
+      "scope": "session",
+      "key": "shell_command_before",
+      "form": "string or list of strings",
+      "probe": [
+        "session_name: a",
+        "shell_command_before:",
+        "  - cd /tmp",
+        "  - ls",
+        "windows:",
+        "  - window_name: w",
+        "    panes: [{}]"
+      ],
+      "status": "supported"
+    },
+    {
+      "id": "session-shell-command-before-cmd",
+      "scope": "session",
+      "key": "shell_command_before",
+      "form": "list of cmd mappings",
+      "probe": [
+        "session_name: a",
+        "shell_command_before:",
+        "  - cmd: ls",
+        "windows:",
+        "  - window_name: w",
+        "    panes: [{}]"
+      ],
+      "status": "supported"
+    },
+    {
+      "id": "before-script",
+      "scope": "session",
+      "key": "before_script",
+      "form": "path",
+      "probe": [
+        "session_name: a",
+        "before_script: ./x.sh",
+        "windows:",
+        "  - window_name: w",
+        "    panes: [{}]"
+      ],
+      "status": "supported"
+    },
+    {
+      "id": "global-options",
+      "scope": "session",
+      "key": "global_options",
+      "form": "mapping",
+      "probe": [
+        "session_name: a",
+        "global_options:",
+        "  default-shell: /bin/sh",
+        "windows:",
+        "  - window_name: w",
+        "    panes: [{}]"
+      ],
+      "status": "supported"
+    },
+    {
+      "id": "session-options",
+      "scope": "session",
+      "key": "options",
+      "form": "boolean or integer values",
+      "probe": [
+        "session_name: a",
+        "options:",
+        "  history-limit: 5000",
+        "windows:",
+        "  - window_name: w",
+        "    panes: [{}]"
+      ],
+      "status": "supported"
+    },
+    {
+      "id": "session-options-on-off",
+      "scope": "session",
+      "key": "options",
+      "form": "on or off",
+      "probe": [
+        "session_name: a",
+        "options:",
+        "  mouse: on",
+        "windows:",
+        "  - window_name: w",
+        "    panes: [{}]"
+      ],
+      "status": "supported"
+    },
+    {
+      "id": "session-options-string",
+      "scope": "session",
+      "key": "options",
+      "form": "string value",
+      "probe": [
+        "session_name: a",
+        "options:",
+        "  status-left: hi",
+        "windows:",
+        "  - window_name: w",
+        "    panes: [{}]"
+      ],
+      "status": "supported"
+    },
+    {
+      "id": "plugins",
+      "scope": "session",
+      "key": "plugins",
+      "form": "list of plugin names",
+      "probe": [
+        "session_name: a",
+        "plugins:",
+        "  - x.Y",
+        "windows:",
+        "  - window_name: w",
+        "    panes: [{}]"
+      ],
+      "status": "difference",
+      "difference": "Accepted. Loading runs the plugins through tmuxp 1.74.0 in a Python the TMUX_WORKSPACE_PYTHON variable names, and refuses with script_failed without one."
+    },
+    {
+      "id": "config",
+      "scope": "session",
+      "key": "config",
+      "form": "tmux configuration file",
+      "probe": [
+        "session_name: a",
+        "config: ~/.tmux.conf",
+        "windows:",
+        "  - window_name: w",
+        "    panes: [{}]"
+      ],
+      "status": "refused",
+      "message": "Unsupported field: workspace.config (prefix a custom key with \"x-\" to have it ignored)"
+    },
+    {
+      "id": "window-name",
+      "scope": "window",
+      "key": "window_name",
+      "form": "string",
+      "probe": ["session_name: a", "windows:", "  - window_name: w", "    panes: [{}]"],
+      "status": "supported"
+    },
+    {
+      "id": "window-name-omitted",
+      "scope": "window",
+      "key": "window_name",
+      "form": "omitted",
+      "probe": ["session_name: a", "windows:", "  - panes: [{}]"],
+      "status": "supported"
+    },
+    {
+      "id": "layout-preset",
+      "scope": "window",
+      "key": "layout",
+      "form": "preset name",
+      "probe": [
+        "session_name: a",
+        "windows:",
+        "  - window_name: w",
+        "    layout: tiled",
+        "    panes: [{}, {}]"
+      ],
+      "status": "supported"
+    },
+    {
+      "id": "layout-custom",
+      "scope": "window",
+      "key": "layout",
+      "form": "custom layout string",
+      "probe": [
+        "session_name: a",
+        "windows:",
+        "  - window_name: w",
+        "    layout: \"b25d,80x24,0,0,0\"",
+        "    panes: [{}]"
+      ],
+      "status": "supported"
+    },
+    {
+      "id": "window-index",
+      "scope": "window",
+      "key": "window_index",
+      "form": "integer",
+      "probe": [
+        "session_name: a",
+        "windows:",
+        "  - window_name: w",
+        "    window_index: 5",
+        "    panes: [{}]"
+      ],
+      "status": "supported"
+    },
+    {
+      "id": "window-focus",
+      "scope": "window",
+      "key": "focus",
+      "form": "true",
+      "probe": [
+        "session_name: a",
+        "windows:",
+        "  - window_name: w",
+        "    focus: true",
+        "    panes: [{}]"
+      ],
+      "status": "supported"
+    },
+    {
+      "id": "window-options",
+      "scope": "window",
+      "key": "options",
+      "form": "integer value",
+      "probe": [
+        "session_name: a",
+        "windows:",
+        "  - window_name: w",
+        "    options:",
+        "      main-pane-height: 30",
+        "    panes: [{}]"
+      ],
+      "status": "supported"
+    },
+    {
+      "id": "window-options-percent",
+      "scope": "window",
+      "key": "options",
+      "form": "percentage value",
+      "probe": [
+        "session_name: a",
+        "windows:",
+        "  - window_name: w",
+        "    options:",
+        "      main-pane-height: 67%",
+        "    panes: [{}]"
+      ],
+      "status": "supported"
+    },
+    {
+      "id": "options-after",
+      "scope": "window",
+      "key": "options_after",
+      "form": "mapping",
+      "probe": [
+        "session_name: a",
+        "windows:",
+        "  - window_name: w",
+        "    options_after:",
+        "      synchronize-panes: on",
+        "    panes: [{}]"
+      ],
+      "status": "supported"
+    },
+    {
+      "id": "window-shell",
+      "scope": "window",
+      "key": "window_shell",
+      "form": "command",
+      "probe": [
+        "session_name: a",
+        "windows:",
+        "  - window_name: w",
+        "    window_shell: /bin/sh",
+        "    panes: [{}]"
+      ],
+      "status": "supported"
+    },
+    {
+      "id": "window-suppress-history",
+      "scope": "window",
+      "key": "suppress_history",
+      "form": "boolean",
+      "probe": [
+        "session_name: a",
+        "windows:",
+        "  - window_name: w",
+        "    suppress_history: true",
+        "    panes: [{}]"
+      ],
+      "status": "supported"
+    },
+    {
+      "id": "window-shell-command-before",
+      "scope": "window",
+      "key": "shell_command_before",
+      "form": "string or list of strings",
+      "probe": [
+        "session_name: a",
+        "windows:",
+        "  - window_name: w",
+        "    shell_command_before: cd /tmp",
+        "    panes: [{}]"
+      ],
+      "status": "supported"
+    },
+    {
+      "id": "window-start-directory",
+      "scope": "window",
+      "key": "start_directory",
+      "form": "absolute path",
+      "probe": [
+        "session_name: a",
+        "windows:",
+        "  - window_name: w",
+        "    start_directory: /tmp",
+        "    panes: [{}]"
+      ],
+      "status": "supported",
+      "observed": { "path": ["windows", 0, "directory"], "value": "/tmp" }
+    },
+    {
+      "id": "window-environment",
+      "scope": "window",
+      "key": "environment",
+      "form": "mapping of strings",
+      "probe": [
+        "session_name: a",
+        "windows:",
+        "  - window_name: w",
+        "    environment:",
+        "      A: b",
+        "    panes: [{}]"
+      ],
+      "status": "supported"
+    },
+    {
+      "id": "window-no-panes",
+      "scope": "window",
+      "key": "panes",
+      "form": "omitted",
+      "probe": ["session_name: a", "windows:", "  - window_name: w"],
+      "status": "supported"
+    },
+    {
+      "id": "pane-string",
+      "scope": "pane",
+      "key": "panes",
+      "form": "a command string as a pane",
+      "probe": [
+        "session_name: a",
+        "windows:",
+        "  - window_name: w",
+        "    panes:",
+        "      - echo hi"
+      ],
+      "status": "supported"
+    },
+    {
+      "id": "pane-shell-command-string",
+      "scope": "pane",
+      "key": "shell_command",
+      "form": "string",
+      "probe": [
+        "session_name: a",
+        "windows:",
+        "  - window_name: w",
+        "    panes:",
+        "      - shell_command: echo hi"
+      ],
+      "status": "supported"
+    },
+    {
+      "id": "pane-shell-command-list",
+      "scope": "pane",
+      "key": "shell_command",
+      "form": "list of strings",
+      "probe": [
+        "session_name: a",
+        "windows:",
+        "  - window_name: w",
+        "    panes:",
+        "      - shell_command:",
+        "          - echo hi",
+        "          - echo ho"
+      ],
+      "status": "supported"
+    },
+    {
+      "id": "pane-blank-null",
+      "scope": "pane",
+      "key": "panes",
+      "form": "blank pane written as null or empty",
+      "probe": ["session_name: a", "windows:", "  - window_name: w", "    panes:", "      -"],
+      "status": "supported"
+    },
+    {
+      "id": "pane-blank-mapping",
+      "scope": "pane",
+      "key": "panes",
+      "form": "blank pane written as {}",
+      "probe": ["session_name: a", "windows:", "  - window_name: w", "    panes:", "      - {}"],
+      "status": "supported"
+    },
+    {
+      "id": "pane-empty-string",
+      "scope": "pane",
+      "key": "panes",
+      "form": "empty string, sent as a carriage return",
+      "probe": ["session_name: a", "windows:", "  - window_name: w", "    panes:", "      - \"\""],
+      "status": "supported"
+    },
+    {
+      "id": "pane-cmd-mapping",
+      "scope": "pane",
+      "key": "shell_command",
+      "form": "list of cmd mappings",
+      "probe": [
+        "session_name: a",
+        "windows:",
+        "  - window_name: w",
+        "    panes:",
+        "      - shell_command:",
+        "          - cmd: echo hi"
+      ],
+      "status": "supported"
+    },
+    {
+      "id": "pane-enter",
+      "scope": "pane",
+      "key": "enter",
+      "form": "false, pane level",
+      "probe": [
+        "session_name: a",
+        "windows:",
+        "  - window_name: w",
+        "    panes:",
+        "      - shell_command: echo hi",
+        "        enter: false"
+      ],
+      "status": "supported"
+    },
+    {
+      "id": "pane-sleep-before",
+      "scope": "pane",
+      "key": "sleep_before",
+      "form": "seconds, pane level",
+      "probe": [
+        "session_name: a",
+        "windows:",
+        "  - window_name: w",
+        "    panes:",
+        "      - shell_command: echo hi",
+        "        sleep_before: 2"
+      ],
+      "status": "supported"
+    },
+    {
+      "id": "pane-sleep-after",
+      "scope": "pane",
+      "key": "sleep_after",
+      "form": "seconds, command level",
+      "probe": [
+        "session_name: a",
+        "windows:",
+        "  - window_name: w",
+        "    panes:",
+        "      - shell_command:",
+        "          - cmd: echo hi",
+        "            sleep_after: 2"
+      ],
+      "status": "supported"
+    },
+    {
+      "id": "pane-shell",
+      "scope": "pane",
+      "key": "shell",
+      "form": "command",
+      "probe": [
+        "session_name: a",
+        "windows:",
+        "  - window_name: w",
+        "    panes:",
+        "      - shell: /bin/sh"
+      ],
+      "status": "supported"
+    },
+    {
+      "id": "pane-suppress-history",
+      "scope": "pane",
+      "key": "suppress_history",
+      "form": "boolean",
+      "probe": [
+        "session_name: a",
+        "windows:",
+        "  - window_name: w",
+        "    panes:",
+        "      - shell_command: echo hi",
+        "        suppress_history: true"
+      ],
+      "status": "supported"
+    },
+    {
+      "id": "pane-focus",
+      "scope": "pane",
+      "key": "focus",
+      "form": "true",
+      "probe": [
+        "session_name: a",
+        "windows:",
+        "  - window_name: w",
+        "    panes:",
+        "      - focus: true",
+        "      - echo"
+      ],
+      "status": "supported"
+    },
+    {
+      "id": "pane-start-directory",
+      "scope": "pane",
+      "key": "start_directory",
+      "form": "absolute path",
+      "probe": [
+        "session_name: a",
+        "windows:",
+        "  - window_name: w",
+        "    panes:",
+        "      - start_directory: /tmp"
+      ],
+      "status": "supported",
+      "observed": { "path": ["windows", 0, "panes", 0, "directory"], "value": "/tmp" }
+    },
+    {
+      "id": "pane-environment",
+      "scope": "pane",
+      "key": "environment",
+      "form": "mapping of strings",
+      "probe": [
+        "session_name: a",
+        "windows:",
+        "  - window_name: w",
+        "    panes:",
+        "      - environment:",
+        "          A: b"
+      ],
+      "status": "supported"
+    },
+    {
+      "id": "pane-shell-command-before",
+      "scope": "pane",
+      "key": "shell_command_before",
+      "form": "string or list of strings",
+      "probe": [
+        "session_name: a",
+        "windows:",
+        "  - window_name: w",
+        "    panes:",
+        "      - shell_command_before: cd /tmp",
+        "        shell_command: ls"
+      ],
+      "status": "supported"
+    }
+  ]
+}

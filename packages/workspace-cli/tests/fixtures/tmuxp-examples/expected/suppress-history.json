@@ -1,0 +1,86 @@
+{
+  "source": "tmuxp examples/suppress-history.yaml, as tmuxp documents it. Written by hand.",
+  "session": { "name": "suppress", "start_directory": null, "environment": {}, "options": {} },
+  "windows": [
+    {
+      "name": "appended",
+      "index": 0,
+      "layout": null,
+      "focus": true,
+      "start_directory": null,
+      "options": {},
+      "panes": [
+        {
+          "focus": false,
+          "start_directory": null,
+          "environment": {},
+          "commands": ["echo \"window in the history!\""],
+          "suppress_history": false
+        }
+      ]
+    },
+    {
+      "name": "suppressed",
+      "index": 1,
+      "layout": null,
+      "focus": false,
+      "start_directory": null,
+      "options": {},
+      "panes": [
+        {
+          "focus": false,
+          "start_directory": null,
+          "environment": {},
+          "commands": ["echo \"window not in the history!\""]
+        }
+      ]
+    },
+    {
+      "name": "default",
+      "index": 2,
+      "layout": null,
+      "focus": false,
+      "start_directory": null,
+      "options": {},
+      "panes": [
+        {
+          "focus": false,
+          "start_directory": null,
+          "environment": {},
+          "commands": ["echo \"session in the history!\""],
+          "suppress_history": false
+        }
+      ]
+    },
+    {
+      "name": "mixed",
+      "index": 3,
+      "layout": null,
+      "focus": false,
+      "start_directory": null,
+      "options": {},
+      "panes": [
+        {
+          "focus": false,
+          "start_directory": null,
+          "environment": {},
+          "commands": ["echo \"command in the history!\""],
+          "suppress_history": false
+        },
+        {
+          "focus": false,
+          "start_directory": null,
+          "environment": {},
+          "commands": ["echo \"command not in the history!\""]
+        },
+        {
+          "focus": false,
+          "start_directory": null,
+          "environment": {},
+          "commands": ["echo \"window in the history!\""],
+          "suppress_history": false
+        }
+      ]
+    }
+  ]
+}
