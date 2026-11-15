@@ -30,6 +30,19 @@ are in the [`libtmux` changelog](../libtmux/CHANGELOG.md).
 
 ## Unreleased
 
+### `@libtmux/workspace-cli`
+
+`tmux-workspace load` now resolves a `start_directory` written `./x` or `../x`
+against the workspace file's directory at every level, as tmuxp does.
+
+Before: under a session or window that set a `start_directory`, a window or pane
+directory starting with a dot resolved against that directory instead, so
+`start_directory: ./` in tmuxp's `start-directory.yaml` started its panes in the
+session's directory.
+
+After: only a relative path with no leading dot continues the directory above
+it. (#202)
+
 ## 0.1.2 (2026-10-31)
 
 ### `@libtmux/workspace-cli`
