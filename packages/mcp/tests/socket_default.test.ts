@@ -234,6 +234,47 @@ test("with nothing chosen and no TMUX, it starts no server of its own", async ()
   });
 }, 60_000);
 
+test("LIBTMUX_START_SESSION starts a session on a socket no server answers", async () => {
+  await withWorld(async (world) => {
+    const launched = await world.launch({
+      LIBTMUX_SOCKET: "ltx-agent",
+      LIBTMUX_START_SESSION: "work",
+    });
+
+    expect(launched.sessions).toEqual(["work"]);
+    expect(launched.capabilities.connection).toMatchObject({
+      resolvedSocketPath: world.socketIn("ltx-agent"),
+      serverState: "absent",
+    });
+    expect(launched.startup).toMatch(
+      /^libtmux-mcp \S+ serving ltx-agent, toolsets execute,inspect,manage, 0 named inclusions, 0 exclusions, started session work$/u,
+    );
+  });
+}, 60_000);
+
+test("LIBTMUX_START_SESSION leaves a server that already answers alone", async () => {
+  await withWorld(async (world) => {
+    await world.start("ltx-agent", "mine");
+
+    const launched = await world.launch({
+      LIBTMUX_SOCKET: "ltx-agent",
+      LIBTMUX_START_SESSION: "work",
+    });
+
+    expect(launched.sessions).toEqual(["mine"]);
+    expect(launched.startup).toContain("serving existing ltx-agent,");
+    expect(launched.startup).not.toContain("started session");
+  });
+}, 60_000);
+
+test("LIBTMUX_START_SESSION without a socket of its own is refused", async () => {
+  await withWorld(async (world) => {
+    await expect(world.launch({ LIBTMUX_START_SESSION: "work" })).rejects.toThrow();
+
+    expect(await exists(world.socketIn("default"))).toBe(false);
+  });
+}, 60_000);
+
 async function withTwoServers(
   body: (
     world: World,

@@ -179,6 +179,7 @@ the socket variables from that environment.
 | [`LIBTMUX_SOCKET_PATH`][guide-choose-another-endpoint] | Absolute path to the tmux socket; wins over the name above |
 | [`LIBTMUX_TMUX_CONFIG`][guide-choose-another-endpoint] | Absolute path to the config used for a new server          |
 | [`LIBTMUX_TMUX_BIN`][guide-choose-another-endpoint]    | The `tmux` executable to use                               |
+| `LIBTMUX_START_SESSION`                                | Session to create when no server answers on that socket    |
 
 A variable that is empty or only whitespace counts as unset, each one alone.
 With neither set, [tmux picks the server](#let-tmux-pick-the-server).
@@ -187,24 +188,34 @@ With neither set, [tmux picks the server](#let-tmux-pick-the-server).
   connection; control characters are refused.
 - `LIBTMUX_SOCKET_NAME` is retired. Replace it with `LIBTMUX_SOCKET`; its
   presence stops startup.
+- `LIBTMUX_START_SESSION` needs `LIBTMUX_SOCKET` or `LIBTMUX_SOCKET_PATH`, and
+  stops startup without one.
 - `LIBTMUX_TMUX_CONFIG` is passed to tmux as written and must be a nonempty
   absolute path.
 - [The full contract](docs/contracts.md#socket-and-environment-variables).
 
-### Attach to a tmux server that is already running
+### Start a tmux server for the agent
 
-Start it on a socket of its own:
+Name a socket of its own and a session to create on it. When no server answers
+there, the executable starts one with that session, and the startup line says
+so:
 
 ```console
-$ tmux -L agent new-session -d -s work
+$ LIBTMUX_SOCKET=agent LIBTMUX_START_SESSION=work npx -y @libtmux/mcp@0.1.2
+libtmux-mcp 0.1.2 serving agent, toolsets execute,inspect,manage, 0 named inclusions, 0 exclusions, started session work
 ```
+
+- A server that already answers is left alone and gets no new session.
+- The server outlives the MCP process. Stop it with the `teardown` toolset's
+  `kill_session`, which ends a server whose last session is gone.
+
+### Attach to a tmux server that is already running
 
 Naming the socket points the server at that tmux. The startup line on stderr
 says `serving existing`, and the toolsets default to `inspect,manage,execute`:
 
 ```console
 $ LIBTMUX_SOCKET=agent npx -y @libtmux/mcp@0.1.2
-libtmux-mcp 0.1.2 serving existing agent, toolsets execute,inspect,manage, 0 named inclusions, 0 exclusions
 ```
 
 ### Let tmux pick the server

@@ -727,6 +727,9 @@ test("the startup line says whether a server was already there, and which", () =
   expect(absent).toContain("serving agent,");
   expect(existing).toContain("serving existing agent,");
   expect(absent).not.toEqual(existing);
+  expect(
+    describeStartup({ ...facts({ socketName: "agent" }, {}), startedSession: "work" }),
+  ).toContain(", 0 exclusions, started session work");
 
   // With no socket chosen the line names the one tmux picks.
   expect(describeStartup(facts({}, {}))).toContain("serving default,");

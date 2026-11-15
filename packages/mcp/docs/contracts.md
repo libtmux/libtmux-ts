@@ -30,6 +30,12 @@ Snapshots, live tails, and framed commands all use that selected server route.
 `LIBTMUX_SOCKET_NAME` is retired. Replace it with `LIBTMUX_SOCKET`; its presence
 stops startup instead of selecting a socket.
 
+`LIBTMUX_START_SESSION` names a session to create when no tmux server answers on
+the selected socket, which starts the server there. It needs `LIBTMUX_SOCKET` or
+`LIBTMUX_SOCKET_PATH`, and its presence without one stops startup. A server that
+already answers is left alone and gets no session. A blank value counts as
+unset.
+
 [`tmux://capabilities`][res-capabilities] reports what chose the socket as
 `socketProvenance`: `socket-path`, `socket-name`, or `tmux-choice` when no
 socket was passed.
@@ -79,6 +85,8 @@ diagnostic cannot corrupt the protocol stream.
 The verb says whether a tmux server was already running on that socket
 (`serving existing`) or not (`serving`). It is the only notice that an agent is
 sharing a daemon with whoever else is on it.
+A session created for `LIBTMUX_START_SESSION` adds `started session` and its
+name after the exclusions.
 
 With no socket chosen, the line names the one tmux picked: the socket `TMUX`
 names, otherwise `default`. Launched from a tmux pane, it ends with

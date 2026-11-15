@@ -32,6 +32,8 @@ import {
   attachCommand,
   describeStartup,
   inspectServerStartup,
+  sessionToStart,
+  startRequestedSession,
   type ServerStartup,
 } from "./startup.js";
 
@@ -216,6 +218,15 @@ export function serverFromEnvironment(
   } else if (server.socketName !== undefined) {
     assertSafeRouteValue("LIBTMUX_SOCKET", server.socketName);
   }
+  if (
+    sessionToStart(environment) !== undefined &&
+    server.socketPath === undefined &&
+    server.socketName === undefined
+  ) {
+    // With no socket named, tmux would start its default server, which is
+    // where the sessions you already have live.
+    throw new TypeError("LIBTMUX_START_SESSION needs LIBTMUX_SOCKET or LIBTMUX_SOCKET_PATH");
+  }
   return server;
 }
 
@@ -225,6 +236,7 @@ export async function main(): Promise<void> {
   // other than the one the tools were registered under.
   const tmux = serverFromEnvironment(process.env);
   const startup = await inspectServerStartup(tmux, process.env);
+  const startedSession = await startRequestedSession(tmux, startup, process.env);
   const policy = resolvePolicy(process.env);
   const mcp = createTmuxMcpServer(tmux, { policy, startup });
   // stderr, because stdout is the protocol: a byte written there that is not
@@ -238,6 +250,7 @@ export async function main(): Promise<void> {
       policy,
       server: tmux,
       serverState: startup.serverState,
+      ...(startedSession === undefined ? {} : { startedSession }),
       version: PACKAGE_VERSION,
     })}\n`,
   );

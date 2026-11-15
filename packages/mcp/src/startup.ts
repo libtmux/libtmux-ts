@@ -23,6 +23,8 @@ export interface StartupFacts {
   readonly server: Server;
   /** Whether a tmux server was already running on that socket. */
   readonly serverState: ServerState;
+  /** The session this process created because no server answered, if it did. */
+  readonly startedSession?: string;
   readonly version: string;
 }
 
@@ -127,6 +129,35 @@ export async function inspectServerStartup(
 }
 
 /**
+ * The session `LIBTMUX_START_SESSION` asks for, or `undefined`.
+ *
+ * A variable that is empty or only whitespace counts as unset, as the socket
+ * variables do.
+ */
+export function sessionToStart(
+  environment: Readonly<Record<string, string | undefined>>,
+): string | undefined {
+  const name = environment.LIBTMUX_START_SESSION;
+  return name === undefined || name.trim() === "" ? undefined : name;
+}
+
+/**
+ * Create the session `LIBTMUX_START_SESSION` names when no server answered on
+ * the socket, which starts the server. A server that is already there is
+ * left alone, so the variable never adds a session to somebody else's tmux.
+ */
+export async function startRequestedSession(
+  server: Server,
+  startup: ServerStartup,
+  environment: Readonly<Record<string, string | undefined>>,
+): Promise<string | undefined> {
+  const name = sessionToStart(environment);
+  if (name === undefined || startup.serverState !== "absent") return undefined;
+  await server.newSession({ name });
+  return name;
+}
+
+/**
  * The socket this server addresses, as an operator wrote it, or the one tmux
  * picked: the socket `TMUX` names inside tmux, otherwise `default`.
  */
@@ -156,12 +187,13 @@ const REACHED: Readonly<Record<ServerState, string>> = Object.freeze({
  * nothing without its server, so the pane is named with the socket it lives on.
  */
 export function describeStartup(facts: StartupFacts): string {
-  const { caller, policy, server, serverState, version } = facts;
+  const { caller, policy, server, serverState, startedSession, version } = facts;
   const toolsets = [...policy.toolsets].sort().join(",") || "none";
   const narrowed = `, toolsets ${toolsets}, ${String(policy.tools.size)} named inclusions, ${String(policy.excludeTools.size)} exclusions`;
   const pane =
     caller.paneId === undefined
       ? ""
       : `, from pane ${caller.paneId}${caller.socketPath === undefined ? "" : ` on ${caller.socketPath}`}`;
-  return `libtmux-mcp ${version} ${REACHED[serverState]} ${socketOf(server, facts.environment ?? process.env)}${narrowed}${pane}`;
+  const started = startedSession === undefined ? "" : `, started session ${startedSession}`;
+  return `libtmux-mcp ${version} ${REACHED[serverState]} ${socketOf(server, facts.environment ?? process.env)}${narrowed}${started}${pane}`;
 }
