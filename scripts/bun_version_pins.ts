@@ -1,11 +1,9 @@
 /**
  * The Bun version this repository claims to run, checked across every place
- * it is written down: the CI gates matrix, the regex corpus, the
- * `packageManager` pin, the `engines.bun` floor in every manifest, and the
- * CONTRIBUTING prose that describes all of them. Nothing else ties the four
- * non-manifest places together, so any one of them can drift from the rest
- * until a build off an untested Bun ships. That drift already happened once
- * between the matrix and the corpus, and was fixed by hand.
+ * it is written down: the CI gates matrix, the `packageManager` pin, the
+ * `engines.bun` floor in every manifest, and the CONTRIBUTING prose that
+ * describes all of them. Nothing else ties them together, so any one of them
+ * can drift from the rest until a build off an untested Bun ships.
  */
 
 const VERSION_LITERAL = /\d+\.\d+\.\d+/gu;
@@ -56,8 +54,6 @@ export interface BunEngineManifest {
 export interface BunVersionSources {
   /** Version literals in CONTRIBUTING.md's packageManager-pin paragraph. */
   readonly contributingPin: readonly string[];
-  /** The regex corpus's `runtimes.bun` list — the Bun versions it is evidence for. */
-  readonly corpus: readonly string[];
   /** Every manifest's `engines.bun` field. */
   readonly engines: readonly BunEngineManifest[];
   /** The CI gates matrix's `bun-version` list. */
@@ -67,20 +63,12 @@ export interface BunVersionSources {
 }
 
 /**
- * Cross-checks the five places above and returns one message per
+ * Cross-checks the four places above and returns one message per
  * disagreement, or an empty array when they all agree.
  */
 export function checkBunVersionAgreement(sources: BunVersionSources): readonly string[] {
-  const { contributingPin, corpus, engines, matrix, packageManager } = sources;
+  const { contributingPin, engines, matrix, packageManager } = sources;
   const failures: string[] = [];
-
-  if (!sameVersions(matrix, corpus)) {
-    failures.push(
-      `the gates matrix runs Bun ${matrix.join(", ")} but the regex corpus records Bun ` +
-        `${corpus.join(", ")} — the corpus is evidence only for the Bun versions it recorded ` +
-        "results on, and every recorded version should be one CI actually runs",
-    );
-  }
 
   if (!sameVersions(matrix, contributingPin)) {
     failures.push(

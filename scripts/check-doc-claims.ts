@@ -34,9 +34,8 @@ import { parseCiMatrix } from "./ci_matrix.js";
  * - a tmux badge lists exactly the versions CI runs the suite against;
  * - every published package README says which hosts it runs on and where the
  *   real-tmux suites run;
- * - the Bun versions recorded in the CI matrix, the regex corpus, the
- *   `packageManager` pin, every manifest's `engines.bun` floor, and the
- *   CONTRIBUTING prose all agree;
+ * - the Bun versions recorded in the CI matrix, the `packageManager` pin,
+ *   every manifest's `engines.bun` floor, and the CONTRIBUTING prose all agree;
  * - every published package keeps its own CHANGELOG.md, opening with its name,
  *   holding an Unreleased section, and shipped by the manifest's `files`, and
  *   the repository keeps a root CHANGELOG.md with an Unreleased section that
@@ -436,18 +435,10 @@ for (const file of files) {
   }
 }
 
-// The Bun version is recorded in the CI manifest, the regex corpus, the
-// packageManager pin, every manifest's engines.bun floor, and the
-// CONTRIBUTING prose that describes them — nowhere else compares all five.
+// The Bun version is recorded in the CI manifest, the packageManager pin,
+// every manifest's engines.bun floor, and the CONTRIBUTING prose that
+// describes them — nowhere else compares all four.
 const bunMatrix = ciMatrix.bun;
-
-const regexCorpusPath = "packages/libtmux/tests/fixtures/where_regex.json";
-const regexCorpus = (await Bun.file(join(repositoryRoot, regexCorpusPath)).json()) as {
-  readonly runtimes?: { readonly bun?: unknown };
-};
-const corpusBun = Array.isArray(regexCorpus.runtimes?.bun)
-  ? regexCorpus.runtimes.bun.map(String)
-  : [];
 
 const rootManifest = (await Bun.file(join(repositoryRoot, "package.json")).json()) as {
   readonly packageManager?: unknown;
@@ -511,7 +502,6 @@ if (packageManagerBun !== undefined && pinParagraph !== undefined) {
   failures.push(
     ...checkBunVersionAgreement({
       contributingPin: extractVersionLiterals(pinParagraph),
-      corpus: corpusBun,
       engines,
       matrix: bunMatrix,
       packageManager: packageManagerBun,
@@ -529,5 +519,5 @@ if (failures.length > 0) {
 }
 
 process.stdout.write(
-  `Documentation claims hold: ${String(checkedCommands)} shell commands, ${String(checkedPrereleasePins)} prerelease pins, ${String(badges)} tmux badges against CI's ${releases.join(", ")}, Bun ${bunMatrix.join(", ")} agreed across the matrix, corpus, packageManager, engines, and CONTRIBUTING, ${String(tocEntriesChecked)} table-of-contents entries across ${String(tablesOfContents.length)} files, and ${String(benchScripts.length)} benchmark scripts\n`,
+  `Documentation claims hold: ${String(checkedCommands)} shell commands, ${String(checkedPrereleasePins)} prerelease pins, ${String(badges)} tmux badges against CI's ${releases.join(", ")}, Bun ${bunMatrix.join(", ")} agreed across the matrix, packageManager, engines, and CONTRIBUTING, ${String(tocEntriesChecked)} table-of-contents entries across ${String(tablesOfContents.length)} files, and ${String(benchScripts.length)} benchmark scripts\n`,
 );

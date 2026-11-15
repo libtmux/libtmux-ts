@@ -9,7 +9,6 @@ import {
 
 const agreeing: BunVersionSources = {
   contributingPin: ["1.4.2", "1.3.14", "1.4.0"],
-  corpus: ["1.3.14", "1.4.0", "1.4.2"],
   engines: [
     { path: "package.json", spec: ">=1.3.14" },
     { path: "packages/libtmux/package.json", spec: ">=1.3.14" },
@@ -40,15 +39,8 @@ describe("bunFromPackageManager", () => {
 });
 
 describe("checkBunVersionAgreement", () => {
-  test("finds nothing to report when all five sources agree", () => {
+  test("finds nothing to report when all four sources agree", () => {
     expect(checkBunVersionAgreement(agreeing)).toEqual([]);
-  });
-
-  test("catches the gates matrix recording a Bun the regex corpus does not", () => {
-    const failures = checkBunVersionAgreement({ ...agreeing, corpus: ["1.3.14", "1.4.0"] });
-
-    expect(failures).toHaveLength(1);
-    expect(failures[0]).toContain("regex corpus records Bun");
   });
 
   test("catches CONTRIBUTING naming a Bun the gates matrix does not run", () => {

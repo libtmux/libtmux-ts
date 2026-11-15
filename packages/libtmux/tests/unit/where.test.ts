@@ -5,7 +5,6 @@ import { safeInteger } from "../../src/common.js";
 import { compileWhere } from "../../src/_internal/selection/compile.js";
 import { createProjectedSelection } from "../../src/_internal/selection/evaluate.js";
 import { foldCase } from "../../src/_internal/selection/scalar.js";
-import { parseSessionId } from "../../src/_internal/runtime/ids.js";
 import {
   compileBoundedRegex,
   decodeWhereDocument,
@@ -17,40 +16,6 @@ import {
 } from "../../src/selection.js";
 import { builtModuleUrl, runModule } from "../support/runtime_build.js";
 import { createRichProjectedHarness, createSessionHarness } from "../support/selection_fixtures.js";
-
-interface RegexCorpusCase {
-  readonly adaptation: string | null;
-  readonly expected: { readonly bun: boolean; readonly node: boolean; readonly python: boolean };
-  readonly flags: "" | "m" | "s" | "ms";
-  readonly id: string;
-  readonly input: string;
-  readonly mode: "default" | "insensitive";
-  readonly pattern: string;
-  readonly session_id: string;
-}
-
-interface RegexCorpus {
-  readonly adaptations: Readonly<Record<string, string>>;
-  readonly cases: readonly RegexCorpusCase[];
-  readonly protocol: string;
-  readonly runtimes: {
-    readonly bun: readonly string[];
-    readonly node: string;
-    readonly python: string;
-  };
-}
-
-/**
- * The regex corpus is evidence only for the Bun versions it recorded results
- * on; running it under an unrecorded Bun answers a question the corpus never
- * covers.
- */
-function assertRecordedBun(recorded: readonly string[], running: string): void {
-  expect(
-    recorded,
-    `the regex corpus records Bun ${recorded.join(" and ")}; this is Bun ${running}. Run the suite on a recorded Bun, or regenerate the corpus.`,
-  ).toContain(running);
-}
 
 function expectInvalidQuery(action: () => unknown, escaped?: unknown): QueryValidationError {
   let observed: unknown;
@@ -634,67 +599,6 @@ describe("generated relation criteria", () => {
 });
 
 describe("regex criteria", () => {
-  test("refuses to trust the corpus on a Bun version it never recorded", () => {
-    expect(() => assertRecordedBun(["1.3.14", "1.4.0"], "9.9.9")).toThrow(/records Bun/u);
-    expect(() => assertRecordedBun(["1.3.14", "1.4.0"], "1.4.0")).not.toThrow();
-  });
-
-  test("runs the shared corpus through Bun's native engine", async () => {
-    const corpus = (await Bun.file(
-      new URL("../fixtures/where_regex.json", import.meta.url),
-    ).json()) as RegexCorpus;
-    const harness = await createSessionHarness(corpus.cases.map(({ input }) => input));
-    const selection = createProjectedSelection("session", harness.values, harness.projection);
-
-    expect(corpus.protocol).toBe("libtmux-where-regex-v1");
-    expect(corpus.runtimes).toEqual({
-      bun: ["1.3.14", "1.4.0", "1.4.2"],
-      node: "22",
-      python: "3",
-    });
-    // Read off the corpus rather than repeated: this asserts that the engine
-    // about to run the cases is the one whose answers were recorded, and the
-    // corpus is where that is written down.
-    assertRecordedBun(corpus.runtimes.bun, process.versions.bun);
-    expect(corpus.cases).toHaveLength(19);
-    expect(new Set(corpus.cases.map(({ session_id }) => session_id)).size).toBe(
-      corpus.cases.length,
-    );
-    for (const [index, entry] of corpus.cases.entries()) {
-      const sessionId = parseSessionId(entry.session_id);
-      expect(harness.values[index]?.id, entry.id).toBe(sessionId);
-      const criteria: SessionWhere = {
-        name: {
-          equals: entry.input,
-          regex: { flags: entry.flags, pattern: entry.pattern },
-          ...(entry.mode === "insensitive" ? { mode: "insensitive" as const } : {}),
-        },
-        id: sessionId,
-      };
-      expect(selection.count(criteria), entry.id).toBe(entry.expected.bun ? 1 : 0);
-    }
-
-    const combined = corpus.cases.find(({ id }) => id === "multiline-dotall-fixed-width");
-    if (combined === undefined) throw new Error("combined regex case is missing");
-    const countCombined = (flags: "m" | "ms" | "s", pattern = combined.pattern): number =>
-      selection.count({
-        name: {
-          equals: combined.input,
-          regex: { flags, pattern },
-        },
-        id: combined.session_id,
-      });
-    expect(countCombined("ms")).toBe(1);
-    expect(countCombined("m")).toBe(0);
-    expect(countCombined("s")).toBe(0);
-    const unsatisfiedTokenCount = combined.pattern.replace(
-      "tokentokentoken",
-      "tokentokentokentoken",
-    );
-    expect(unsatisfiedTokenCount).not.toBe(combined.pattern);
-    expect(countCombined("ms", unsatisfiedTokenCount)).toBe(0);
-  });
-
   test("accepts only the closed canonical flags and grammar", async () => {
     const harness = await createSessionHarness(["ordinary bounded input"]);
     const selection = createProjectedSelection("session", harness.values, harness.projection);

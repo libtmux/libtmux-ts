@@ -40,8 +40,6 @@ const REPOSITORY_TESTS: Readonly<Record<string, string>> = {
   "CLI accepts exactly one explicit mode and rejected forms never write": "the format generator",
   "every claimed TypeScript symbol exists in the package": "the parity ledger",
   "root reference types are type-only exports and helpers are values": "compiles with tsc",
-  "runs the Python oracle and emitted library under Bun and Node 22": "drives both runtimes itself",
-  "runs the shared corpus through Bun's native engine": "Bun's regex engine, by name",
   "writes exact relation metadata and only the delimited cyclic interfaces": "compiles with tsc",
 };
 

@@ -45,11 +45,7 @@ well as with the newest — the declarations being built by the newest says
 nothing about whether an older one can read them.
 
 Development uses the exact Bun 1.4.2 `packageManager` pin; CI also runs the
-supported 1.3.14 floor and the 1.4.0 mid-range version. The three-runtime
-regex corpus is evidence that Bun, Node and Python agree on a pattern, and it
-records which engines produced each answer, so running it on an unrecorded
-Bun is asking a question the answers do not cover. It says so when that
-happens.
+supported 1.3.14 floor and the 1.4.0 mid-range version.
 
 ```console
 $ bun install
