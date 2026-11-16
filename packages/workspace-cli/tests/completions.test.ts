@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { existsSync, readFileSync, watch } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
@@ -189,31 +189,6 @@ for (const shell of ["bash", "fish"] as const) {
   });
 }
 
-/** Resolves once `ready` holds, rechecking whenever `root` changes, or rejects after four seconds. */
-function until(root: string, ready: () => boolean, trace: () => string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const watcher = watch(root);
-    const finish = (error?: Error) => {
-      clearTimeout(timer);
-      watcher.close();
-      if (error) reject(error);
-      else resolve();
-    };
-    const check = () => {
-      if (ready()) finish();
-    };
-    const timer = setTimeout(
-      () =>
-        finish(
-          new Error(`completion terminal did not produce a buffer: ${JSON.stringify(trace())}`),
-        ),
-      4000,
-    );
-    watcher.on("change", check);
-    check();
-  });
-}
-
 /** Types each line and a Tab into the shell, with the tool's own key bound to capture the edit buffer. */
 async function typedBuffers(root: string, shell: string, init: string, lines: string[]) {
   const buffers = join(root, "buffers");
@@ -231,19 +206,11 @@ async function typedBuffers(root: string, shell: string, init: string, lines: st
   });
   try {
     terminal.write(`${init}\n`);
-    await until(
-      root,
-      () => existsSync(join(root, "ready")),
-      () => terminal.output().slice(-2000),
-    );
+    await terminal.waitFor(() => existsSync(join(root, "ready")), 4000);
     for (const [index, line] of lines.entries()) {
       terminal.write(`${line}\t\x18`);
       // eslint-disable-next-line no-await-in-loop -- Each line is typed after the previous one lands.
-      await until(
-        root,
-        () => captured().length > index,
-        () => terminal.output().slice(-2000),
-      );
+      await terminal.waitFor(() => captured().length > index, 4000);
     }
     return captured();
   } finally {

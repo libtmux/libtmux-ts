@@ -21,6 +21,11 @@ export type Pty = {
   write(text: string): void;
   /** Kills the command and everything it started. */
   kill(): void;
+  /**
+   * Resolves once `ready()` holds, checked now and after each chunk of output,
+   * or rejects with the output so far after `timeoutMs`.
+   */
+  waitFor(ready: () => boolean, timeoutMs: number): Promise<void>;
   /** Resolves once the command has exited and the terminal has delivered its last byte. */
   result: Promise<PtyResult>;
 };
@@ -29,6 +34,7 @@ export function startPty(argv: string[], options: PtyOptions): Pty {
   const decoder = new TextDecoder();
   const closed = Promise.withResolvers<void>();
   let output = "";
+  const listeners = new Set<() => void>();
   const child: Subprocess = Bun.spawn(argv, {
     cwd: options.cwd,
     env: options.env,
@@ -37,6 +43,7 @@ export function startPty(argv: string[], options: PtyOptions): Pty {
       rows: options.rows ?? 24,
       data(_terminal, bytes) {
         output += decoder.decode(bytes, { stream: true });
+        for (const listener of listeners) listener();
       },
       exit() {
         closed.resolve();
@@ -70,6 +77,29 @@ export function startPty(argv: string[], options: PtyOptions): Pty {
     output: () => output,
     write: (text) => void child.terminal?.write(text),
     kill: killGroup,
+    waitFor: (ready, timeoutMs) =>
+      new Promise<void>((resolve, reject) => {
+        const finish = (error?: Error) => {
+          clearTimeout(timer);
+          listeners.delete(check);
+          if (error) reject(error);
+          else resolve();
+        };
+        const check = () => {
+          if (ready()) finish();
+        };
+        const timer = setTimeout(
+          () =>
+            finish(
+              new Error(
+                `terminal did not reach the awaited state: ${JSON.stringify(output.slice(-2000))}`,
+              ),
+            ),
+          timeoutMs,
+        );
+        listeners.add(check);
+        check();
+      }),
     result,
   };
 }
