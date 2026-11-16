@@ -3,9 +3,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { runBoundedCommand, type BoundedCommandTermination } from "./bounded_process.js";
+import {
+  runBoundedCommand,
+  type BoundedCommandTermination,
+} from "./bounded_process/bounded_process.js";
 import { readRootChangelog, releaseHeadingFailure } from "./changelog_policy.js";
-import { npmPack } from "./npm_pack.js";
+import { npmPack } from "./npm_pack/npm_pack.js";
 import {
   assertMinimumNpm,
   assertSemanticVersion,

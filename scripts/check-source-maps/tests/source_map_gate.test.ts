@@ -4,9 +4,9 @@ import { fileURLToPath } from "node:url";
 
 import { expect, test } from "bun:test";
 
-import { makeTestDirectory } from "../../src/_internal/test/testkit.js";
+import { makeTestDirectory } from "../../../packages/libtmux/src/_internal/test/testkit.js";
 
-const gate = fileURLToPath(new URL("../../../../scripts/check-source-maps.ts", import.meta.url));
+const gate = fileURLToPath(new URL("../check-source-maps.ts", import.meta.url));
 const source = "export const answer = 42;\n";
 const declarationMap = `${JSON.stringify({
   file: "index.d.ts",

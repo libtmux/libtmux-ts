@@ -4,8 +4,8 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { runBoundedCommand } from "../../../scripts/bounded_process.js";
-import { npmPack } from "../../../scripts/npm_pack.js";
+import { runBoundedCommand } from "../../../scripts/bounded_process/bounded_process.js";
+import { npmPack } from "../../../scripts/npm_pack/npm_pack.js";
 import { enterSandbox, resolveNode22 } from "../src/_internal/test/testkit.js";
 
 /**

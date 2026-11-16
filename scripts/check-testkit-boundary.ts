@@ -1,7 +1,7 @@
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { sandboxEntryFailures } from "./sandbox_entry.js";
+import { sandboxEntryFailures } from "./sandbox_entry/sandbox_entry.js";
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
 const legacyModule = /(?:^|[/])run_root\.(?:[cm]?[jt]s|[jt]sx)/u;
@@ -21,7 +21,9 @@ const recoveryAuthorityFiles = new Set([
   "packages/libtmux/src/_internal/test/fixture_launch.ts",
   "packages/libtmux/src/_internal/test/reaper.ts",
 ]);
-const scriptDirectory = /^(?:packages\/[^/]+\/|examples\/)?scripts\//u;
+// A script's tests sit in its directory, and `bun test` enters the sandbox for them
+// through the bunfig.toml preload, so only the scripts themselves are checked here.
+const scriptDirectory = /^(?:packages\/[^/]+\/|examples\/)?scripts\/(?!(?:[^/]+\/)*tests\/)/u;
 const needsNoSandbox: Readonly<Record<string, string>> = {
   "packages/libtmux/scripts/bench-modes.ts":
     "a manual benchmark; every server is on an explicit socket",

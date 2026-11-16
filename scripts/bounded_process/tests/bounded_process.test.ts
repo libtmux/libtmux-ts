@@ -4,15 +4,17 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, test } from "bun:test";
 
-import { killIfRunning, processExists } from "../support/converge.js";
-import { runBoundedCommand } from "../../../../scripts/bounded_process.js";
-import { makeTestDirectory } from "../../src/_internal/test/testkit.js";
+import { killIfRunning, processExists } from "../../../packages/libtmux/tests/support/converge.js";
+import { runBoundedCommand } from "../bounded_process.js";
+import { makeTestDirectory } from "../../../packages/libtmux/src/_internal/test/testkit.js";
 
-const repositoryRoot = fileURLToPath(new URL("../../../..", import.meta.url));
-const boundedProcessUrl = new URL("../../../../scripts/bounded_process.ts", import.meta.url).href;
-const coreInstallCheck = fileURLToPath(new URL("../../scripts/check-install.ts", import.meta.url));
+const repositoryRoot = fileURLToPath(new URL("../../..", import.meta.url));
+const boundedProcessUrl = new URL("../bounded_process.ts", import.meta.url).href;
+const coreInstallCheck = fileURLToPath(
+  new URL("../../../packages/libtmux/scripts/check-install.ts", import.meta.url),
+);
 const consumerInstallCheck = fileURLToPath(
-  new URL("../../../../scripts/check-consumer-install.ts", import.meta.url),
+  new URL("../../check-consumer-install.ts", import.meta.url),
 );
 
 async function exitsWithin(pid: number, timeoutMilliseconds: number): Promise<boolean> {

@@ -4,10 +4,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { runBoundedCommand } from "./bounded_process.js";
-import { npmPack } from "./npm_pack.js";
+import { runBoundedCommand } from "../bounded_process/bounded_process.js";
+import { npmPack } from "../npm_pack/npm_pack.js";
 
-const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
+const repositoryRoot = fileURLToPath(new URL("../..", import.meta.url));
 const packageRoot = process.cwd();
 const MAX_ANALYZER_OUTPUT_BYTES = 4 * 1024 * 1024;
 

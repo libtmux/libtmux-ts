@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 
-import { runBoundedCommand } from "../../../scripts/bounded_process.js";
+import { runBoundedCommand } from "../../../scripts/bounded_process/bounded_process.js";
 import {
   deadlineMs,
   makeTestDirectory,

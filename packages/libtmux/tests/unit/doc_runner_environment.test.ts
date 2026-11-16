@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, test } from "bun:test";
 
-import { scanSource } from "../../../../scripts/sandbox_entry.js";
+import { scanSource } from "../../../../scripts/sandbox_entry/sandbox_entry.js";
 
 /**
  * The runners that execute documented recipes against real tmux. A recipe's `new Server()`

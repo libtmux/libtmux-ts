@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 
-import { npmPack } from "./npm_pack.js";
+import { npmPack } from "../npm_pack/npm_pack.js";
 
 interface SourceMap {
   readonly file?: unknown;

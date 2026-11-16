@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { sandboxEntryFailures, scanSource } from "../../../../scripts/sandbox_entry.js";
+import { sandboxEntryFailures, scanSource } from "../sandbox_entry.js";
 
 const NONE: Readonly<Record<string, string>> = {};
 

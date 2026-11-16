@@ -4,12 +4,14 @@ import { fileURLToPath } from "node:url";
 
 import { expect, test } from "bun:test";
 
-import { killIfRunning, processExists, waitForProcessExit } from "../support/converge.js";
-import { makeTestDirectory } from "../../src/_internal/test/testkit.js";
+import {
+  killIfRunning,
+  processExists,
+  waitForProcessExit,
+} from "../../../packages/libtmux/tests/support/converge.js";
+import { makeTestDirectory } from "../../../packages/libtmux/src/_internal/test/testkit.js";
 
-const checker = fileURLToPath(
-  new URL("../../../../scripts/check-package-analysis.ts", import.meta.url),
-);
+const checker = fileURLToPath(new URL("../check-package-analysis.ts", import.meta.url));
 
 async function waitForMarker(path: string): Promise<string> {
   const deadline = performance.now() + 10_000;

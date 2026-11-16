@@ -1,7 +1,7 @@
 import { mkdir } from "node:fs/promises";
 import { basename, isAbsolute, relative, resolve } from "node:path";
 
-import { runBoundedCommand } from "./bounded_process.js";
+import { runBoundedCommand } from "../bounded_process/bounded_process.js";
 
 const MAX_NPM_PACK_OUTPUT_BYTES = 4 * 1024 * 1024;
 

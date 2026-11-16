@@ -3,8 +3,8 @@ import { join } from "node:path";
 
 import { expect, test } from "bun:test";
 
-import { npmPack } from "../../../../scripts/npm_pack.js";
-import { makeTestDirectory } from "../../src/_internal/test/testkit.js";
+import { npmPack } from "../npm_pack.js";
+import { makeTestDirectory } from "../../../packages/libtmux/src/_internal/test/testkit.js";
 
 test("packs the exact npm artifact and reports its entries", async () => {
   const root = await makeTestDirectory("ltx-npm-pack-");

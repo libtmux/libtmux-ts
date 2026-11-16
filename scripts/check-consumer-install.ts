@@ -5,8 +5,8 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { enterSandbox, resolveNode22 } from "../packages/libtmux/src/_internal/test/testkit.js";
-import { runBoundedCommand } from "./bounded_process.js";
-import { npmPack } from "./npm_pack.js";
+import { runBoundedCommand } from "./bounded_process/bounded_process.js";
+import { npmPack } from "./npm_pack/npm_pack.js";
 
 interface Manifest {
   readonly dependencies?: Readonly<Record<string, unknown>>;

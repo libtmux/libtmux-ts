@@ -20,7 +20,7 @@ import {
 } from "node:fs/promises";
 import { createHash, randomUUID } from "node:crypto";
 
-import { runBoundedCommand, type BoundedCommandResult } from "./bounded_process.js";
+import { runBoundedCommand, type BoundedCommandResult } from "./bounded_process/bounded_process.js";
 
 /**
  * Point selected installed agent CLIs at one build of this MCP server.

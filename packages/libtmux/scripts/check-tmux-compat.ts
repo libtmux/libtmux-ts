@@ -15,7 +15,7 @@
 import { readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 
-import { runBoundedCommand } from "../../../scripts/bounded_process.js";
+import { runBoundedCommand } from "../../../scripts/bounded_process/bounded_process.js";
 
 const GATES = ["test:integration", "test:node"] as const;
 
