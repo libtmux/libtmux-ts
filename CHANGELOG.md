@@ -48,6 +48,9 @@ changelog has the documentation, CI and release tooling entries up to 0.1.2.
 
 ### Development
 
+- MCP contract fixtures use an explicit non-login shell. Host startup programs
+  could otherwise change the foreground process during input preflight and
+  prevent the command under test from starting. (#209)
 - No test, script or CI step in the core package compares this port with Python
   libtmux or starts a Python interpreter. The `where_regex` corpus, the
   differential suite that cloned Python libtmux on every tmux lane, the parity
