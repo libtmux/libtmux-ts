@@ -1033,6 +1033,9 @@ Library features and workarounds for the daemon currently answering.
 Each call verifies daemon identity. A restart invalidates the cached version
 before the report is returned. The immutable result is advisory: later
 operations still enforce their own requirements before sending commands.
+This live read uses the ordinary observation transport: configured command
+aliases and hooks retain their native effects. Use a trusted daemon
+configuration. Snapshot capabilities require no additional I/O.
 
 ```ts
 const report = await server.capabilities();

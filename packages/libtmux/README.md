@@ -2021,6 +2021,9 @@ applies. A report describes one observation; later operations check their own
 requirements. `snapshot.capabilities` gives the same report for the daemon that
 answered that snapshot, without another query.
 
+The live call uses ordinary observation commands. Configured command aliases
+and hooks retain their native effects; use a trusted daemon configuration.
+
 [`Server.version`][ref-server-version] returns parsed `{ major, minor, suffix, raw }`
 fields; [`versionAtLeast`][ref-server-versionatleast] compares that version with a
 release you supply. Both reuse the version cached for the observed daemon epoch.

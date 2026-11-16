@@ -143,12 +143,13 @@ function endpointFields(endpoint: EndpointRequest): Partial<CommandRequest> {
 }
 
 /**
- * The request that reads a daemon's version and identity without firing a hook.
+ * Read a daemon's version and identity through its native run-shell command.
  *
  * `run-shell -C` expands the format, then parses it as a command after the
  * command itself has returned, so no `after-*` or `command-error` hook fires.
  * tmux refuses the unknown command and names the expansion on stderr; `-N`
- * keeps the probe from starting a server.
+ * keeps the probe from starting a server. This assumes the native run-shell
+ * spelling is unaliased; a configured override can execute server-defined code.
  */
 export function daemonProbe(endpoint: EndpointRequest): {
   readonly marker: string;
