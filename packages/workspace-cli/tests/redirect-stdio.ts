@@ -1,8 +1,11 @@
-// Runs a command with stdout and stderr in files and no stdin, while it keeps
-// the controlling terminal this process was started on.
+// Runs a command with stdout in a file, stderr in the same name plus `.err`
+// and no stdin, while it keeps the controlling terminal this process was
+// started on.
 // usage: bun redirect-stdio.ts <stdout-file> <command> [argument...]
 const [destination, ...argv] = process.argv.slice(2);
-if (!destination || argv.length === 0) throw new Error("usage: redirect-stdio.ts FILE COMMAND...");
+if (!destination || argv.length === 0) {
+  throw new Error("usage: redirect-stdio.ts <stdout-file> <command> [argument...]");
+}
 const child = Bun.spawn(argv, {
   stdin: "ignore",
   stdout: Bun.file(destination),

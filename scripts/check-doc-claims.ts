@@ -437,7 +437,7 @@ for (const file of files) {
 
 // The Bun version is recorded in the CI manifest, the packageManager pin,
 // every manifest's engines.bun floor, and the CONTRIBUTING prose that
-// describes them — nowhere else compares all four.
+// describes them — nowhere else compares them all.
 const bunMatrix = ciMatrix.bun;
 
 const rootManifest = (await Bun.file(join(repositoryRoot, "package.json")).json()) as {

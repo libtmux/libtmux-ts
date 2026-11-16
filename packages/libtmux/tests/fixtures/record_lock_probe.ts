@@ -2,10 +2,8 @@ import { closeSync, constants, openSync } from "node:fs";
 
 import { dlopen, FFIType } from "bun:ffi";
 
-/**
- * Tries the POSIX record lock on a file named by argv[2] without waiting, as a
- * second process, and prints `acquired` or `blocked`.
- */
+// Tries the POSIX record lock on the file named by argv[2] without waiting, as
+// a second process, and prints `acquired` or `blocked`.
 const F_ULOCK = 0;
 const F_TLOCK = 2;
 

@@ -39,7 +39,7 @@ describe("bunFromPackageManager", () => {
 });
 
 describe("checkBunVersionAgreement", () => {
-  test("finds nothing to report when all four sources agree", () => {
+  test("finds nothing to report when every source agrees", () => {
     expect(checkBunVersionAgreement(agreeing)).toEqual([]);
   });
 

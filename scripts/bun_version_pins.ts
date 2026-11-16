@@ -63,8 +63,8 @@ export interface BunVersionSources {
 }
 
 /**
- * Cross-checks the four places above and returns one message per
- * disagreement, or an empty array when they all agree.
+ * Cross-checks the places above and returns one message per disagreement, or
+ * an empty array when they all agree.
  */
 export function checkBunVersionAgreement(sources: BunVersionSources): readonly string[] {
   const { contributingPin, engines, matrix, packageManager } = sources;

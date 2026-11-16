@@ -4,15 +4,13 @@ import { dlopen, FFIType, read } from "bun:ffi";
 
 import { reapByPidfd, type PidfdOps, type PidfdTarget } from "../src/_internal/test/pidfd_reap.js";
 
-/**
- * Reaps one stale daemon through a pidfd and prints the outcome as JSON:
- * `pidfd_reap.ts <pid> <start identity> <comm> <executable> <argv JSON>
- * <generation name> <generation value>`.
- *
- * Bun runs it because Node has no pidfd binding. The syscall numbers are the
- * same on every Linux architecture since pidfd_send_signal, and `syscall`
- * works on a libc that predates the pidfd wrappers.
- */
+// Reaps one stale daemon through a pidfd and prints the outcome as JSON:
+// pidfd_reap.ts <pid> <start identity> <comm> <executable> <argv JSON>
+// <generation name> <generation value>
+//
+// Bun runs it because Node has no pidfd binding. The syscall numbers are the
+// same on every Linux architecture, and `syscall` works on a libc that predates
+// the pidfd wrappers.
 const SYS_PIDFD_SEND_SIGNAL = 424;
 const SYS_PIDFD_OPEN = 434;
 const SIGNALS = { SIGKILL: 9, SIGTERM: 15 } as const;

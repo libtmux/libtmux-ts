@@ -53,9 +53,7 @@ const SUITES: readonly string[] = [
   "tests/integration/engine.test.ts",
   "tests/integration/core_minimum.test.ts",
   "tests/integration/optional_features.test.ts",
-  // Cited as evidence elsewhere and, until this check existed, never run: the
-  // generated field types name `format_types` as what proves them on every
-  // version CI runs.
+  // The generated field types cite `format_types` as their proof on every CI version.
   "tests/integration/environment.test.ts",
   "tests/integration/format_types.test.ts",
   "tests/integration/capability_locale.test.ts",
