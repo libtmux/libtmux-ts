@@ -48,6 +48,9 @@ import {
 import { makeTestDirectory } from "../../src/_internal/test/testkit.js";
 
 const repositoryRoot = fileURLToPath(new URL("../../../..", import.meta.url));
+const exitWithParentModule = fileURLToPath(
+  new URL("../support/exit_with_parent.ts", import.meta.url),
+);
 const CLI_NAMES = ["claude", "codex", "cursor", "gemini", "grok", "agy", "opencode", "pi"];
 
 function* permutations(values: readonly string[]): Generator<readonly string[]> {
@@ -1402,8 +1405,10 @@ describe("swapping a config", () => {
     await writeFile(
       helper,
       `
+        const { exitWithParent } = await import(${JSON.stringify(exitWithParentModule)});
         const { buildSpec, knownClis, useNativeConfigs } = await import(${JSON.stringify(swapModule)});
         const [scratch, marker, release, repo, pause] = process.argv.slice(2);
+        exitWithParent();
         const all = knownClis({ XDG_CONFIG_HOME: scratch + "/.config" }, scratch);
         const info = all.find((candidate) => candidate.name === "cursor");
         await Bun.write(marker + ".started", "started\\n");
@@ -1434,44 +1439,52 @@ describe("swapping a config", () => {
       XDG_CONFIG_HOME: join(home, ".config"),
       XDG_STATE_HOME: join(home, ".local", "state"),
     };
-    const spawn = (repo: string, marker: string, pause: boolean) =>
-      Bun.spawn([process.execPath, helper, home, marker, release, repo, pause ? "yes" : "no"], {
-        env: environment,
-        stderr: "pipe",
-        stdout: "pipe",
-      });
-    const first = spawn("/one", firstMarker, true);
-    await waitForPath(firstMarker);
-    const second = spawn("/two", secondMarker, false);
-    await waitForPath(`${secondMarker}.started`);
-    let eventLoopTicks = 0;
-    const timer = setInterval(() => {
-      eventLoopTicks += 1;
-    }, 1);
-    for (let attempt = 0; attempt < 500; attempt += 1) {
-      // eslint-disable-next-line no-await-in-loop -- observe the exact serialization boundary.
-      if (await Bun.file(secondMarker).exists()) break;
-      // eslint-disable-next-line no-await-in-loop -- polling must leave the event loop responsive.
-      await Bun.sleep(2);
-    }
-    clearInterval(timer);
-    const serialized = !(await Bun.file(secondMarker).exists());
-    await writeFile(release, "go\n");
-    const [firstStatus, secondStatus, firstError, secondError] = await Promise.all([
-      first.exited,
-      second.exited,
-      new Response(first.stderr).text(),
-      new Response(second.stderr).text(),
-    ]);
+    const children: ReturnType<typeof Bun.spawn>[] = [];
+    const spawn = (repo: string, marker: string, pause: boolean) => {
+      const child = Bun.spawn(
+        [process.execPath, helper, home, marker, release, repo, pause ? "yes" : "no"],
+        { env: environment, stderr: "pipe", stdout: "pipe" },
+      );
+      children.push(child);
+      return child;
+    };
+    try {
+      const first = spawn("/one", firstMarker, true);
+      await waitForPath(firstMarker);
+      const second = spawn("/two", secondMarker, false);
+      await waitForPath(`${secondMarker}.started`);
+      let eventLoopTicks = 0;
+      const timer = setInterval(() => {
+        eventLoopTicks += 1;
+      }, 1);
+      for (let attempt = 0; attempt < 500; attempt += 1) {
+        // eslint-disable-next-line no-await-in-loop -- observe the exact serialization boundary.
+        if (await Bun.file(secondMarker).exists()) break;
+        // eslint-disable-next-line no-await-in-loop -- polling must leave the event loop responsive.
+        await Bun.sleep(2);
+      }
+      clearInterval(timer);
+      const serialized = !(await Bun.file(secondMarker).exists());
+      await writeFile(release, "go\n");
+      const [firstStatus, secondStatus, firstError, secondError] = await Promise.all([
+        first.exited,
+        second.exited,
+        new Response(first.stderr).text(),
+        new Response(second.stderr).text(),
+      ]);
 
-    expect(serialized).toBe(true);
-    expect(eventLoopTicks).toBeGreaterThan(10);
-    expect({ firstError, firstStatus, secondError, secondStatus }).toEqual({
-      firstError: "",
-      firstStatus: 0,
-      secondError: "",
-      secondStatus: 0,
-    });
+      expect(serialized).toBe(true);
+      expect(eventLoopTicks).toBeGreaterThan(10);
+      expect({ firstError, firstStatus, secondError, secondStatus }).toEqual({
+        firstError: "",
+        firstStatus: 0,
+        secondError: "",
+        secondStatus: 0,
+      });
+    } finally {
+      for (const child of children) child.kill("SIGKILL");
+      await Promise.all(children.map((child) => child.exited));
+    }
   });
 
   test("holds a POSIX record lock that blocks a second process's lockf", async () => {
@@ -1727,15 +1740,20 @@ describe("swapping a config", () => {
       ],
       { stderr: "pipe", stdin: "pipe", stdout: "pipe" },
     );
-    const reader = worker.stdout.getReader();
-    const first = await reader.read();
-    expect(first.done).toBe(false);
-    expect(new TextDecoder().decode(first.value)).toContain('"kind":"acquired"');
-    expect(await tryRecordLock(lock)).toBe("blocked");
+    try {
+      const reader = worker.stdout.getReader();
+      const first = await reader.read();
+      expect(first.done).toBe(false);
+      expect(new TextDecoder().decode(first.value)).toContain('"kind":"acquired"');
+      expect(await tryRecordLock(lock)).toBe("blocked");
 
-    worker.kill("SIGKILL");
-    await worker.exited;
-    await waitForRecordLock(lock);
+      worker.kill("SIGKILL");
+      await worker.exited;
+      await waitForRecordLock(lock);
+    } finally {
+      worker.kill("SIGKILL");
+      await worker.exited;
+    }
   });
 
   test("does not orphan the lock owner when the parent dies", async () => {
@@ -1747,6 +1765,8 @@ describe("swapping a config", () => {
     await writeFile(
       helper,
       `
+        const { exitWithParent } = await import(${JSON.stringify(exitWithParentModule)});
+        exitWithParent();
         const swap = await import(${JSON.stringify(swapModule)});
         const home = process.env.HOME;
         const all = swap.knownClis({ XDG_CONFIG_HOME: home + "/.config" }, home);
@@ -1781,13 +1801,18 @@ describe("swapping a config", () => {
       stderr: "pipe",
       stdout: "pipe",
     });
-    await waitForPath(marker);
-    expect(await tryRecordLock(swapLockPath())).toBe("blocked");
+    try {
+      await waitForPath(marker);
+      expect(await tryRecordLock(swapLockPath())).toBe("blocked");
 
-    parent.kill("SIGKILL");
-    await parent.exited;
-    await waitForRecordLock(swapLockPath());
-    expect(await readFile(info.configPath, "utf8")).toBe(originalConfig(info));
+      parent.kill("SIGKILL");
+      await parent.exited;
+      await waitForRecordLock(swapLockPath());
+      expect(await readFile(info.configPath, "utf8")).toBe(originalConfig(info));
+    } finally {
+      parent.kill("SIGKILL");
+      await parent.exited;
+    }
   });
 
   test("preflights every selected config before changing any", async () => {
