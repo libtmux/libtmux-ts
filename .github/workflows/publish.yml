@@ -59,21 +59,50 @@ jobs:
 
       # The workspace CLI's install canary drives its Python bridge, which
       # refuses an interpreter without this exact tmuxp.
-      - name: Install the workspace Python runtime
-        run: |
-          python3 -m venv "$RUNNER_TEMP/workspace-python"
-          "$RUNNER_TEMP/workspace-python/bin/python" -m pip install 'tmuxp==1.74.0'
-          echo "TMUX_WORKSPACE_PYTHON=$RUNNER_TEMP/workspace-python/bin/python" >> "$GITHUB_ENV"
+      - name: Create the workspace Python environment
+        run: python3 -m venv "$RUNNER_TEMP/workspace-python"
 
-      # `cd`, not `bun --cwd`: that flag does not exist, and bun answers an
-      # unknown flag with its usage text and exit code 0 — so every step passed
-      # while doing nothing, and the first release shipped a package with no
-      # dist in it.
-      - name: Build and check every package
-        run: |
-          for package in libtmux mcp workspace workspace-cli; do
-            ( cd "packages/$package" && bun run test:package && bun run test:install )
-          done
+      - name: Install tmuxp 1.74.0 in it
+        run: $RUNNER_TEMP/workspace-python/bin/pip install tmuxp==1.74.0
+
+      - name: Point the workspace CLI at the workspace Python
+        run: echo "TMUX_WORKSPACE_PYTHON=$RUNNER_TEMP/workspace-python/bin/python" >> "$GITHUB_ENV"
+
+      # `working-directory`, not `bun --cwd`: that flag does not exist, and bun
+      # answers an unknown flag with its usage text and exit code 0 — so every
+      # step passed while doing nothing, and the first release shipped a package
+      # with no dist in it.
+      - name: Check the packed libtmux
+        working-directory: packages/libtmux
+        run: bun run test:package
+
+      - name: Install the packed libtmux
+        working-directory: packages/libtmux
+        run: bun run test:install
+
+      - name: Check the packed @libtmux/mcp
+        working-directory: packages/mcp
+        run: bun run test:package
+
+      - name: Install the packed @libtmux/mcp
+        working-directory: packages/mcp
+        run: bun run test:install
+
+      - name: Check the packed @libtmux/workspace
+        working-directory: packages/workspace
+        run: bun run test:package
+
+      - name: Install the packed @libtmux/workspace
+        working-directory: packages/workspace
+        run: bun run test:install
+
+      - name: Check the packed @libtmux/workspace-cli
+        working-directory: packages/workspace-cli
+        run: bun run test:package
+
+      - name: Install the packed @libtmux/workspace-cli
+        working-directory: packages/workspace-cli
+        run: bun run test:install
 
       - name: Coordinate release
         run: bun scripts/publish-release/publish-release.ts

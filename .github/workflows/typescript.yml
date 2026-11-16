@@ -155,12 +155,19 @@ jobs:
 
       - run: bun install --frozen-lockfile
 
-      - name: Install the optional workspace Python test runtime
-        run: |
-          python3 -m venv "$RUNNER_TEMP/workspace-python"
-          "$RUNNER_TEMP/workspace-python/bin/python" -m pip install 'tmuxp==1.74.0'
-          echo "LIBTMUX_TEST_PYTHON=$RUNNER_TEMP/workspace-python/bin/python" >> "$GITHUB_ENV"
-          echo "TMUX_WORKSPACE_PYTHON=$RUNNER_TEMP/workspace-python/bin/python" >> "$GITHUB_ENV"
+      # The optional workspace Python test runtime: a venv with tmuxp, which the
+      # workspace CLI's Python bridge tests drive.
+      - name: Create the workspace Python environment
+        run: python3 -m venv "$RUNNER_TEMP/workspace-python"
+
+      - name: Install tmuxp 1.74.0 in it
+        run: $RUNNER_TEMP/workspace-python/bin/pip install tmuxp==1.74.0
+
+      - name: Point the library tests at the workspace Python
+        run: echo "LIBTMUX_TEST_PYTHON=$RUNNER_TEMP/workspace-python/bin/python" >> "$GITHUB_ENV"
+
+      - name: Point the workspace CLI at the workspace Python
+        run: echo "TMUX_WORKSPACE_PYTHON=$RUNNER_TEMP/workspace-python/bin/python" >> "$GITHUB_ENV"
 
       # Formatting, linting and the cross-package READMEs are the workspace's,
       # not any one package's.
@@ -208,60 +215,131 @@ jobs:
       - name: Check the CI configuration
         run: bun run ci:config
 
-      - name: Gate the library
+      - name: Check for unused code (knip)
         working-directory: packages/libtmux
-        run: |
-          bun run lint:unused
-          bun run typecheck
-          bun run typecheck:tests
-          bun run typecheck:readme
-          bun run typecheck:symbols
-          bun run docs:api:check
-          bun run docs:criteria:check
-          bun run generate:check
-          bun run capabilities:check
-          bun run build
+        run: bun run lint:unused
+
+      - name: Type-check the library (tsc)
+        working-directory: packages/libtmux
+        run: bun run typecheck
+
+      - name: Type-check the library's tests (tsc)
+        working-directory: packages/libtmux
+        run: bun run typecheck:tests
+
+      - name: Type-check the library's README examples (tsc)
+        working-directory: packages/libtmux
+        run: bun run typecheck:readme
+
+      - name: Type-check the symbol examples (tsc)
+        working-directory: packages/libtmux
+        run: bun run typecheck:symbols
+
+      - name: Check the generated API reference
+        working-directory: packages/libtmux
+        run: bun run docs:api:check
+
+      - name: Check the generated criteria reference
+        working-directory: packages/libtmux
+        run: bun run docs:criteria:check
+
+      - name: Check the generated format tables
+        working-directory: packages/libtmux
+        run: bun run generate:check
+
+      - name: Check the capability manifest
+        working-directory: packages/libtmux
+        run: bun run capabilities:check
+
+      - name: Build the library
+        working-directory: packages/libtmux
+        run: bun run build
 
       # Everything below needs the emitted declarations the build just made:
       # the ambient-free consumer, the fixture that imports the package by
       # name, and the packaging checks.
-      - name: Gate the emitted package
+      - name: Type-check a consumer with no ambient types
         working-directory: packages/libtmux
-        run: |
-          bun run typecheck:ambient-free
-          bun run typecheck:tooling
-          bun run test:package
-          # Packing and linting the tarball is not installing it. The two
-          # releases this repository shipped broken — one with no dist, one
-          # whose install command 404'd — both packed clean.
-          bun run test:install
+        run: bun run typecheck:ambient-free
 
-      - name: Test the library
+      - name: Type-check the library's tooling (tsc)
         working-directory: packages/libtmux
-        run: |
-          bun run test:types
-          bun run test:node
-          # Both suites in one run, because they cover different things: a
-          # pane's methods are proven against a real server, so a floor
-          # measured on the unit suite alone would push work towards mocking
-          # one. This runs them, so `test:unit` is not run separately here.
-          bun run test:coverage
+        run: bun run typecheck:tooling
+
+      - name: Check the packed library
+        working-directory: packages/libtmux
+        run: bun run test:package
+
+      # Packing and linting the tarball is not installing it. The two
+      # releases this repository shipped broken — one with no dist, one
+      # whose install command 404'd — both packed clean.
+      - name: Install the packed library
+        working-directory: packages/libtmux
+        run: bun run test:install
+
+      - name: Test the library's types
+        working-directory: packages/libtmux
+        run: bun run test:types
+
+      - name: Test the library on Node 22
+        working-directory: packages/libtmux
+        run: bun run test:node
+
+      # Both suites in one run, because they cover different things: a
+      # pane's methods are proven against a real server, so a floor
+      # measured on the unit suite alone would push work towards mocking
+      # one. This runs them, so `test:unit` is not run separately here.
+      - name: Test the library with coverage
+        working-directory: packages/libtmux
+        run: bun run test:coverage
 
       # In-repo consumers prove the published surface is enough to build on.
       # `test:package` runs here and not only at publish: the packaging
       # mistakes this repository actually shipped were in the consumers, and a
       # gate that only runs while releasing finds them after the release.
-      - name: Gate the MCP server
+      - name: Type-check the MCP server (tsc)
         working-directory: packages/mcp
-        run: bun run typecheck && bun run test && bun run test:package && bun run test:install
+        run: bun run typecheck
 
-      - name: Gate the workspace builder
+      - name: Test the MCP server
+        working-directory: packages/mcp
+        run: bun run test
+
+      - name: Check the packed MCP server
+        working-directory: packages/mcp
+        run: bun run test:package
+
+      - name: Install the packed MCP server
+        working-directory: packages/mcp
+        run: bun run test:install
+
+      - name: Type-check the workspace builder (tsc)
         working-directory: packages/workspace
-        run: bun run typecheck && bun run test && bun run test:package && bun run test:install
+        run: bun run typecheck
 
-      - name: Gate the workspace CLI
+      - name: Test the workspace builder
+        working-directory: packages/workspace
+        run: bun run test
+
+      - name: Check the packed workspace builder
+        working-directory: packages/workspace
+        run: bun run test:package
+
+      - name: Install the packed workspace builder
+        working-directory: packages/workspace
+        run: bun run test:install
+
+      - name: Type-check the workspace CLI (tsc)
         working-directory: packages/workspace-cli
-        run: bun run typecheck && bun run test && bun run test:install
+        run: bun run typecheck
+
+      - name: Test the workspace CLI
+        working-directory: packages/workspace-cli
+        run: bun run test
+
+      - name: Install the packed workspace CLI
+        working-directory: packages/workspace-cli
+        run: bun run test:install
 
       # The recipes above the library package, reaching across it to the
       # workspace builder and the MCP server. After those gates because each
@@ -272,9 +350,13 @@ jobs:
       # One step for all of them. Each example is a package of its own now, and
       # the umbrella typechecks and runs every sibling — so adding an example
       # does not mean remembering to add a step here.
-      - name: Gate the examples
+      - name: Type-check the examples (tsc)
         working-directory: examples
-        run: bun run typecheck && bun run test
+        run: bun run typecheck
+
+      - name: Test the examples
+        working-directory: examples
+        run: bun run test
 
   # Every tmux release the package claims to support is proven before it ships:
   # "3.3a or newer" is a claim about 3.5 and 3.6 as much as about the ends, and
@@ -323,12 +405,19 @@ jobs:
       - name: Point the emitted-Node lane at the provisioned Node 22
         run: echo "LIBTMUX_NODE22=$(which node)" >> "$GITHUB_ENV"
 
-      - name: Install the optional workspace Python test runtime
-        run: |
-          python3 -m venv "$RUNNER_TEMP/workspace-python"
-          "$RUNNER_TEMP/workspace-python/bin/python" -m pip install 'tmuxp==1.74.0'
-          echo "LIBTMUX_TEST_PYTHON=$RUNNER_TEMP/workspace-python/bin/python" >> "$GITHUB_ENV"
-          echo "TMUX_WORKSPACE_PYTHON=$RUNNER_TEMP/workspace-python/bin/python" >> "$GITHUB_ENV"
+      # The optional workspace Python test runtime: a venv with tmuxp, which the
+      # workspace CLI's Python bridge tests drive.
+      - name: Create the workspace Python environment
+        run: python3 -m venv "$RUNNER_TEMP/workspace-python"
+
+      - name: Install tmuxp 1.74.0 in it
+        run: $RUNNER_TEMP/workspace-python/bin/pip install tmuxp==1.74.0
+
+      - name: Point the library tests at the workspace Python
+        run: echo "LIBTMUX_TEST_PYTHON=$RUNNER_TEMP/workspace-python/bin/python" >> "$GITHUB_ENV"
+
+      - name: Point the workspace CLI at the workspace Python
+        run: echo "TMUX_WORKSPACE_PYTHON=$RUNNER_TEMP/workspace-python/bin/python" >> "$GITHUB_ENV"
 
       # A tag resolves to the same commit forever and a branch does not, so the
       # action keys its cache on the commit rather than the ref. Keyed on the
@@ -347,20 +436,17 @@ jobs:
         with:
           limit-access-to-actor: true
 
-      - name: Use tmux ${{ matrix.tmux-version }}
+      - name: Put tmux ${{ matrix.tmux-version }} on the path
+        env:
+          TMUX_PREFIX: ${{ steps.tmux.outputs.prefix }}
+        run: echo "$TMUX_PREFIX/bin" >> "$GITHUB_PATH"
+
+      # The expected version is a glob: master reports next-X.Y.
+      - name: Check that tmux is ${{ matrix.tmux-version }}
         env:
           TMUX_PREFIX: ${{ steps.tmux.outputs.prefix }}
           TMUX_EXPECT: ${{ matrix.expect }}
-        run: |
-          echo "$TMUX_PREFIX/bin" >> "$GITHUB_PATH"
-          actual_version=$("$TMUX_PREFIX/bin/tmux" -V)
-          printf '%s\n' "$actual_version"
-          # The expected version is a glob: master reports next-X.Y.
-          # shellcheck disable=SC2254
-          case "$actual_version" in
-            $TMUX_EXPECT) ;;
-            *) echo "::error::expected $TMUX_EXPECT, got $actual_version" >&2; exit 1 ;;
-          esac
+        run: bun scripts/check_tmux_version/check_tmux_version.ts
 
       - run: bun install --frozen-lockfile
 

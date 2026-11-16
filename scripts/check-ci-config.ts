@@ -54,6 +54,7 @@ interface WorkflowStep {
   readonly run?: unknown;
   readonly uses?: unknown;
   readonly with?: Readonly<Record<string, unknown>>;
+  readonly "working-directory"?: unknown;
 }
 
 interface WorkflowJob {
@@ -414,14 +415,18 @@ if (node22 < 0 || node22Path <= node22 || node24 <= node22Path) {
   );
 }
 
-const packageCheck = publishSteps.find(
-  (step) => step.name === "Build and check every package",
-)?.run;
-const expectedPackageCheck = `for package in libtmux mcp workspace workspace-cli; do
-  ( cd "packages/$package" && bun run test:package && bun run test:install )
-done
-`;
-if (packageCheck !== expectedPackageCheck) {
+// Each release package is checked and then installed from its own directory, in
+// that order, as two steps.
+const releasePackages = ["libtmux", "mcp", "workspace", "workspace-cli"] as const;
+const packageStep = (name: string, command: string): number =>
+  publishSteps.findIndex(
+    (step) => step["working-directory"] === `packages/${name}` && step.run === command,
+  );
+const packageCheckOrdered = releasePackages.every((name) => {
+  const check = packageStep(name, "bun run test:package");
+  return check >= 0 && packageStep(name, "bun run test:install") > check;
+});
+if (!packageCheckOrdered) {
   failures.push(
     ".github/workflows/publish.yml: must run test:install after test:package for libtmux, mcp, workspace, and workspace-cli",
   );
