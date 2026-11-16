@@ -6,13 +6,10 @@ import { spawnSync } from "node:child_process";
  * an unreleased tmux, `tmux 3.8` for a release.
  */
 export function matchesGlob(text: string, pattern: string): boolean {
-  const source = [...pattern]
-    .map((character) => {
-      if (character === "*") return ".*";
-      if (character === "?") return ".";
-      return character.replaceAll(/[.+^${}()|[\]\\]/gu, "\\$&");
-    })
-    .join("");
+  const source = pattern
+    .replaceAll(/[.+^${}()|[\]\\]/gu, "\\$&")
+    .replaceAll("*", ".*")
+    .replaceAll("?", ".");
   return new RegExp(`^${source}$`, "su").test(text);
 }
 
