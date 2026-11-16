@@ -2,7 +2,7 @@ import { existsSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { rawAptFailures } from "./ci_apt.js";
+import { rawAptFailures } from "./ci_apt/ci_apt.js";
 
 /**
  * Hold the dependabot configuration to the manifests this workspace has.

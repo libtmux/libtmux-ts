@@ -6,7 +6,7 @@ import {
   bunFromPackageManager,
   checkBunVersionAgreement,
   extractVersionLiterals,
-} from "./bun_version_pins.js";
+} from "./bun_version_pins/bun_version_pins.js";
 import { slugify } from "../packages/libtmux/scripts/markdown_anchors.js";
 import {
   changelogFailures,

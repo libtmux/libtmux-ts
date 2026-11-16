@@ -5,7 +5,7 @@ import {
   checkBunVersionAgreement,
   extractVersionLiterals,
   type BunVersionSources,
-} from "../../../../scripts/bun_version_pins.js";
+} from "../bun_version_pins.js";
 
 const agreeing: BunVersionSources = {
   contributingPin: ["1.4.2", "1.3.14", "1.4.0"],

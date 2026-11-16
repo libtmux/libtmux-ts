@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { rawAptFailures } from "../../../../scripts/ci_apt.js";
+import { rawAptFailures } from "../ci_apt.js";
 
 const workflow = (run: string, name = "Install shells"): unknown => ({
   jobs: { tmux: { "runs-on": "ubuntu-24.04", steps: [{ name, run }] } },

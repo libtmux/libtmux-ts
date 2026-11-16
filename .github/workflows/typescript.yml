@@ -170,6 +170,9 @@ jobs:
       # compiled them: a gate that crashes on its own type error reports no
       # failures, which reads exactly like a clean tree.
       - run: bun run typecheck:tooling
+      # Each script's tests sit beside it under scripts/<name>/tests.
+      - name: Test the scripts
+        run: bun run test:scripts
       - run: bun run typecheck:readme
       - run: bun run --cwd packages/workspace-cli build
       # The prose around the compiled snippets: that every doc comment reaches

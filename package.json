@@ -20,6 +20,7 @@
     "docs:runnable": "bun scripts/check-doc-runnable.ts",
     "test:namespace": "bun scripts/check-test-namespace.ts",
     "ci:config": "bun scripts/check-ci-config.ts",
+    "test:scripts": "bun test --timeout=30000 ./scripts",
     "typecheck:tooling": "tsc -p tsconfig.tooling.json"
   },
   "devDependencies": {
