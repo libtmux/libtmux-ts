@@ -1,9 +1,10 @@
-import { chmod, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rm } from "node:fs/promises";
 import { delimiter, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { describe, expect, test } from "bun:test";
 
+import { writeBunProgram } from "../../../packages/libtmux/tests/support/bun_program.js";
 import { killIfRunning, processExists } from "../../../packages/libtmux/tests/support/converge.js";
 import { runBoundedCommand } from "../bounded_process.js";
 import { makeTestDirectory } from "../../../packages/libtmux/src/_internal/test/testkit.js";
@@ -256,20 +257,11 @@ describe("install-check cleanup", () => {
       const npm = Bun.which("npm");
       if (npm === null) throw new Error("npm is unavailable");
       await Promise.all([mkdir(temporary), mkdir(binaries)]);
-      const shim = join(binaries, "npm");
-      await writeFile(
-        shim,
-        [
-          "#!/bin/sh",
-          'if [ "$1" = install ]; then',
-          '  echo "forced install failure" >&2',
-          "  exit 23",
-          "fi",
-          'exec "$REAL_NPM" "$@"',
-          "",
-        ].join("\n"),
+      await writeBunProgram(
+        join(binaries, "npm"),
+        new URL("./fixtures/failing_install.ts", import.meta.url),
+        { realNpm: npm },
       );
-      await chmod(shim, 0o755);
 
       try {
         const result = await runBoundedCommand([process.execPath, checker, ...arguments_], {

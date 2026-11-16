@@ -2,8 +2,10 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { TestServer } from "../../src/_internal/test/testkit.js";
+import { writeBunProgram } from "../../tests/support/bun_program.js";
 import type { Server as ServerHandle } from "../../src/server.js";
 import { Server } from "../../src/server.js";
+import type { StubCommand } from "./stub_command.js";
 import { sweepStrayTmux } from "./tmux_sweep.js";
 
 /**
@@ -40,7 +42,7 @@ const TMUX_CONF = "set -g status off\n";
  * documented and never executed, which is exactly the shape of example that
  * goes wrong quietly.
  */
-const MAKE_STUB = '#!/bin/sh\necho "BUILD OK"\n';
+const MAKE_STUB: StubCommand = { print: "BUILD OK" };
 
 /**
  * The long-running commands the shell-command examples name.
@@ -50,7 +52,7 @@ const MAKE_STUB = '#!/bin/sh\necho "BUILD OK"\n';
  * which the prose says will happen, and which makes the example look broken
  * here for a reason that has nothing to do with the example.
  */
-const STAYS_UP = "#!/bin/sh\nexec sleep 600\n";
+const STAYS_UP: StubCommand = { stayUp: true };
 
 /**
  * The commands the fixture supplies, because a machine cannot be assumed to
@@ -67,6 +69,13 @@ export const STAYS_UP_COMMANDS: readonly string[] = Object.freeze([
   "journalctl",
   "htop",
 ]);
+
+const STUB_PROGRAM = new URL("./stub_command.ts", import.meta.url);
+
+/** Write `destination` as an executable that behaves as `stub` says. */
+export async function writeStub(destination: string, stub: StubCommand): Promise<void> {
+  await writeBunProgram(destination, STUB_PROGRAM, stub);
+}
 
 export interface World {
   readonly bindings: Record<string, unknown>;
@@ -155,13 +164,13 @@ export async function buildWorld(request: WorldRequest): Promise<World> {
   await writeFile(join(home, "payload.bin"), new Uint8Array([0, 1, 2, 3]));
   const binary = join(home, "bin");
   await mkdir(binary, { recursive: true });
-  await writeFile(join(binary, "make"), MAKE_STUB, { mode: 0o755 });
+  await writeStub(join(binary, "make"), MAKE_STUB);
   // Every command the README names that the runner cannot count on having.
   // `tail`, `git`, `ls` and `echo` are everywhere; these are not, and a missing
   // one takes its pane down at once.
   for (const name of STAYS_UP_COMMANDS) {
     // eslint-disable-next-line no-await-in-loop -- two files, written in order.
-    await writeFile(join(binary, name), STAYS_UP, { mode: 0o755 });
+    await writeStub(join(binary, name), STAYS_UP);
   }
   // `tail -f log/development.log` reads a path relative to the pane's cwd.
   await mkdir(join(home, "log"), { recursive: true });

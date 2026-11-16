@@ -1,12 +1,13 @@
 /* eslint-disable no-await-in-loop -- Each README command runs after the one before it, against one private tmux directory. */
 import { expect, test } from "bun:test";
-import { chmod, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { runBoundedCommand } from "../../../scripts/bounded_process/bounded_process.js";
 import { fences, steps, words } from "../../../scripts/readme_blocks.js";
 import { makeTestDirectory, runWithCleanup } from "../../libtmux/src/_internal/test/testkit.js";
+import { writeBunProgram } from "../../libtmux/tests/support/bun_program.js";
 import manifest from "../package.json" with { type: "json" };
 
 /**
@@ -57,24 +58,16 @@ async function inWorld<T>(body: (world: World) => Promise<T>): Promise<T> {
   const cwd = join(directory, "work");
   const tmuxDirectory = join(directory, "t");
   await Promise.all([bin, cwd, tmuxDirectory, join(directory, "home")].map((path) => mkdir(path)));
-  await writeFile(
+  const launcher = await writeBunProgram(
     join(bin, "tmux-workspace"),
-    `#!/bin/sh\nexec '${process.execPath}' '${entry}' "$@"\n`,
+    new URL("./fixtures/readme_launcher.ts", import.meta.url),
+    { entry, runtime: process.execPath },
   );
-  await writeFile(
-    join(bin, "npx"),
-    [
-      "#!/bin/sh",
-      `if [ "$1" != "-y" ] || [ "$2" != "${PACKAGE}@${manifest.version}" ]; then`,
-      `  echo "npx: expected -y ${PACKAGE}@${manifest.version}, got: $*" >&2`,
-      "  exit 97",
-      "fi",
-      "shift 2",
-      'exec tmux-workspace "$@"',
-      "",
-    ].join("\n"),
-  );
-  await Promise.all(["tmux-workspace", "npx"].map((name) => chmod(join(bin, name), 0o755)));
+  await writeBunProgram(join(bin, "npx"), new URL("./fixtures/readme_npx.ts", import.meta.url), {
+    launcher,
+    package: PACKAGE,
+    version: manifest.version,
+  });
   const environment: Record<string, string> = {
     HOME: join(directory, "home"),
     LANG: process.env["LANG"] ?? "C.UTF-8",

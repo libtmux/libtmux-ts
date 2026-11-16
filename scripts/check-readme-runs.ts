@@ -7,6 +7,7 @@ import {
   fencedBlocks,
   type Example,
 } from "../packages/libtmux/scripts/doc-examples/example_harness.js";
+import { writeStub } from "../packages/libtmux/scripts/doc-examples/readme_world.js";
 import { sweepStrayTmux } from "../packages/libtmux/scripts/doc-examples/tmux_sweep.js";
 import { enterSandbox } from "../packages/libtmux/src/_internal/test/testkit.js";
 import { workspaceDocuments } from "./workspace_documents.js";
@@ -114,7 +115,7 @@ const binary = join(isolated, "bin");
 await mkdir(binary, { recursive: true });
 for (const name of STUBS) {
   // eslint-disable-next-line no-await-in-loop -- a handful of stubs, written in order.
-  await writeFile(join(binary, name), "#!/bin/sh\nexec sleep 600\n", { mode: 0o755 });
+  await writeStub(join(binary, name), { stayUp: true });
 }
 process.env["PATH"] = `${binary}:${process.env["PATH"] ?? ""}`;
 
