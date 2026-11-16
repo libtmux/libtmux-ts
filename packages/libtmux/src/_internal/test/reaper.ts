@@ -177,7 +177,9 @@ async function collectChild(
   });
 }
 
-const pidfdScript = fileURLToPath(new URL("../../../scripts/pidfd_reap.ts", import.meta.url));
+const pidfdScript = fileURLToPath(
+  new URL("../../../scripts/pidfd_reap/pidfd_reap.ts", import.meta.url),
+);
 
 /**
  * Bun runs the pidfd helper, because Node has no pidfd binding. Under Bun that

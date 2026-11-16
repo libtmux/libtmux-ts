@@ -19,6 +19,8 @@ const result = Bun.spawnSync({
     "--timeout=30000",
     "--no-orphans",
     "tests/unit",
+    // The tests of the scripts, each beside its script.
+    "./scripts",
     ...Bun.argv.slice(2),
   ],
   stderr: "inherit",

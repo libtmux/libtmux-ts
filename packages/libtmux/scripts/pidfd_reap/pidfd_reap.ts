@@ -2,7 +2,11 @@ import { readFileSync, realpathSync } from "node:fs";
 
 import { dlopen, FFIType, read } from "bun:ffi";
 
-import { reapByPidfd, type PidfdOps, type PidfdTarget } from "../src/_internal/test/pidfd_reap.js";
+import {
+  reapByPidfd,
+  type PidfdOps,
+  type PidfdTarget,
+} from "../../src/_internal/test/pidfd_reap.js";
 
 // Reaps one stale daemon through a pidfd and prints the outcome as JSON:
 // pidfd_reap.ts <pid> <start identity> <comm> <executable> <argv JSON>

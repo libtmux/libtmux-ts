@@ -2,6 +2,8 @@
   "$schema": "https://unpkg.com/knip@6/schema.json",
   "entry": [
     "scripts/*.ts",
+    "scripts/*/*.ts",
+    "scripts/*/tests/**/*.test.ts",
     "tests/**/*.test.ts",
     "tests/support/bun_hooks.ts",
     "tests/support/sandbox_preload.ts",

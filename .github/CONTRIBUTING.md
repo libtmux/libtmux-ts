@@ -337,7 +337,7 @@ refused. Set `LIBTMUX_TEST_DEADLINE_SCALE` on a machine slower or busier than
 the ones these bounds were tuned on.
 
 A daemon whose socket is already gone is stopped through a pidfd by
-`packages/libtmux/scripts/pidfd_reap.ts`, which Bun runs under both runtimes
+[`packages/libtmux/scripts/pidfd_reap`](../packages/libtmux/scripts/pidfd_reap/README.md), which Bun runs under both runtimes
 because Node has no pidfd binding. `LIBTMUX_TEST_BUN` names another `bun`.
 
 Ownership is a name prefix. Nesting

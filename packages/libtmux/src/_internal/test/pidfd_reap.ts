@@ -17,7 +17,7 @@ export interface PidfdTarget {
 }
 
 /**
- * The system calls the reaper needs. `scripts/pidfd_reap.ts` supplies them
+ * The system calls the reaper needs. `scripts/pidfd_reap/pidfd_reap.ts` supplies them
  * through `bun:ffi`, which Node lacks; a unit test supplies fakes.
  *
  * Methods that fail throw an error carrying a `code` such as `ENOENT` or
