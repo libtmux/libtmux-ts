@@ -28,7 +28,8 @@ The release packages share one version and one tag.
 - Documentation, user-facing text, `CHANGELOG.md`, release notes, commit
   messages, TSDoc, and source comments:
   [.github/WRITING.md](.github/WRITING.md)
-- Support scripts: what may stay, their language, layout and checks:
+- Support scripts: what may stay, their language, layout and checks. It gives
+  the commands that run them, and links a directory to copy:
   [.github/SCRIPTS.md](.github/SCRIPTS.md)
 - Building, testing, the gates, real tmux, releases, and pull requests:
   [.github/CONTRIBUTING.md](.github/CONTRIBUTING.md)

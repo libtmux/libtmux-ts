@@ -18,7 +18,7 @@ import { parseCiMatrix } from "./ci_matrix/ci_matrix.js";
 
 /**
  * Hold the shell blocks and version claims in the docs to what the repository
- * actually contains.
+ * actually contains. Run it with `bun run docs:claims`.
  *
  * The ` ```ts ` blocks have been compiled since early on, but the ` ```console `
  * blocks beside them never were — and that is where the instructions live. The

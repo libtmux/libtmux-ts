@@ -97,6 +97,14 @@ which reads exactly like a clean tree:
 $ bun run typecheck:tooling
 ```
 
+Each script keeps its tests beside it, in `scripts/<name>/tests`
+([SCRIPTS.md](SCRIPTS.md) has the layout). The workspace's own scripts run from
+the root, and a package's run with its `test:unit`:
+
+```console
+$ bun run test:scripts
+```
+
 Documentation is a gate. Every public method, getter, and
 readonly field carries a compiled example; `docs/api.md` is generated from the
 doc comments that implement it, and `docs/criteria.md` from the table the query
@@ -553,7 +561,7 @@ Exercise sustained pane output, a slow subscriber, reconnect loops, and daemon
 replacement:
 
 ```console
-$ bun packages/libtmux/scripts/bench-control.ts
+$ bun packages/libtmux/scripts/bench-control/bench-control.ts
 ```
 
 That benchmark requires bounded buffers, complete lifecycle transitions,

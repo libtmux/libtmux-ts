@@ -6,6 +6,7 @@ import { rawAptFailures } from "./ci_apt/ci_apt.js";
 
 /**
  * Hold the dependabot configuration to the manifests this workspace has.
+ * Run it with `bun run ci:config`.
  *
  * Nothing else can: a placeholder ecosystem configures nothing while reading as
  * configured, and no gate runs dependabot. Three claims, all answerable from
