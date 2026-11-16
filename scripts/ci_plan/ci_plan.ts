@@ -12,7 +12,7 @@
  * publish workflow asks for the whole table.
  */
 
-import { TMUX_REF, fail, validRef, validToolchain, type CiMatrix } from "./ci_matrix.js";
+import { TMUX_REF, fail, validRef, validToolchain, type CiMatrix } from "../ci_matrix/ci_matrix.js";
 
 const COMMIT = /^[0-9a-f]{40}$/u;
 const RELEASE = /^[0-9]+\.[0-9]+[a-z]?$/u;

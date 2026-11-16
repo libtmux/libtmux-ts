@@ -1,7 +1,7 @@
 import { appendFileSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-import { PlanError, parseCiMatrix } from "./ci_matrix.js";
+import { PlanError, parseCiMatrix } from "../ci_matrix/ci_matrix.js";
 import { planCi, unpassedJobs } from "./ci_plan.js";
 
 /**
@@ -9,8 +9,8 @@ import { planCi, unpassedJobs } from "./ci_plan.js";
  * passed. The rules live in `ci_plan.ts`; this reads the environment and
  * writes `$GITHUB_OUTPUT`.
  *
- *   bun scripts/plan-ci.ts          plan, from .github/ci-matrix.txt
- *   bun scripts/plan-ci.ts verify   read NEEDS_JSON and ALLOW_SKIPPED
+ *   bun scripts/ci_plan/plan-ci.ts          plan, from .github/ci-matrix.txt
+ *   bun scripts/ci_plan/plan-ci.ts verify   read NEEDS_JSON and ALLOW_SKIPPED
  */
 
 function annotate(message: string): never {
@@ -38,7 +38,7 @@ function verify(): void {
 
 function plan(): void {
   const manifest =
-    process.env.CI_MATRIX ?? fileURLToPath(new URL("../.github/ci-matrix.txt", import.meta.url));
+    process.env.CI_MATRIX ?? fileURLToPath(new URL("../../.github/ci-matrix.txt", import.meta.url));
   const matrix = parseCiMatrix(readFileSync(manifest, "utf8"));
   const event = process.env.GITHUB_EVENT_NAME;
   if (event === undefined || event === "") annotate("GITHUB_EVENT_NAME is not set");

@@ -43,13 +43,13 @@ import {
   useNativeConfigs,
   xdgConfigHome,
   type CliInfo,
-} from "../../../../scripts/mcp_swap.js";
+} from "../mcp_swap.js";
 
-import { makeTestDirectory } from "../../src/_internal/test/testkit.js";
+import { makeTestDirectory } from "../../../packages/libtmux/src/_internal/test/testkit.js";
 
-const repositoryRoot = fileURLToPath(new URL("../../../..", import.meta.url));
+const repositoryRoot = fileURLToPath(new URL("../../..", import.meta.url));
 const exitWithParentModule = fileURLToPath(
-  new URL("../support/exit_with_parent.ts", import.meta.url),
+  new URL("../../../packages/libtmux/tests/support/exit_with_parent.ts", import.meta.url),
 );
 const CLI_NAMES = ["claude", "codex", "cursor", "gemini", "grok", "agy", "opencode", "pi"];
 
@@ -210,7 +210,7 @@ async function runSwap(
   environment: Readonly<Record<string, string>> = {},
 ): Promise<{ status: number; stderr: string; stdout: string }> {
   const child = Bun.spawn(
-    [process.execPath, join(repositoryRoot, "scripts", "mcp_swap.ts"), ...args],
+    [process.execPath, join(repositoryRoot, "scripts", "mcp_swap", "mcp_swap.ts"), ...args],
     {
       env: {
         ...process.env,
@@ -232,7 +232,9 @@ async function runSwap(
   return { status, stderr, stdout };
 }
 
-const recordLockProbe = fileURLToPath(new URL("../fixtures/record_lock_probe.ts", import.meta.url));
+const recordLockProbe = fileURLToPath(
+  new URL("../../../packages/libtmux/tests/fixtures/record_lock_probe.ts", import.meta.url),
+);
 
 /** Tries the lock from a second process: `acquired` or `blocked`. */
 async function tryRecordLock(path: string): Promise<string> {
@@ -1401,7 +1403,7 @@ describe("swapping a config", () => {
     const firstMarker = join(home, "first-staged");
     const secondMarker = join(home, "second-staged");
     const release = join(home, "release-first");
-    const swapModule = join(repositoryRoot, "scripts", "mcp_swap.ts");
+    const swapModule = join(repositoryRoot, "scripts", "mcp_swap", "mcp_swap.ts");
     await writeFile(
       helper,
       `
@@ -1733,7 +1735,7 @@ describe("swapping a config", () => {
     const worker = Bun.spawn(
       [
         process.execPath,
-        join(repositoryRoot, "scripts", "mcp_swap.ts"),
+        join(repositoryRoot, "scripts", "mcp_swap", "mcp_swap.ts"),
         "__mcp-swap-lock-worker",
         directory,
         basename(lock),
@@ -1760,7 +1762,7 @@ describe("swapping a config", () => {
     const info = cliFor("cursor");
     const marker = join(home, "parent-held-lock");
     const helper = join(home, "parent-lock-helper.ts");
-    const swapModule = join(repositoryRoot, "scripts", "mcp_swap.ts");
+    const swapModule = join(repositoryRoot, "scripts", "mcp_swap", "mcp_swap.ts");
     await seed(info, originalConfig(info));
     await writeFile(
       helper,

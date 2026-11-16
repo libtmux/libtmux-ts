@@ -17,12 +17,8 @@ import { defineConfig } from "vitest/config";
 const REPOSITORY_GATES: Readonly<Record<string, string>> = {
   "integration/sandbox_runner": "starts a supervisor under bun",
   "integration/test_runners": "the repository's own runners, spawned under bun",
-  "unit/ci_matrix": "the CI manifest the workflow plans from",
-  "unit/ci_plan": "the CI plan script, spawned under bun",
   "unit/error_identity": "bundles a consumer with Bun.build",
-  "unit/mcp_swap": "swaps the MCP package's library under bun",
   "unit/package_contract": "checks the manifest and spawns bun",
-  "unit/publish_release": "the release workflow",
   "unit/sandbox_control":
     "starts bun test from each directory whose bunfig.toml enters the sandbox",
   "unit/thrown_exports": "scans source text",

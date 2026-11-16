@@ -13,8 +13,8 @@ import {
   readPackageChangelogs,
   readRootChangelog,
   rootChangelogFailures,
-} from "./changelog_policy.js";
-import { parseCiMatrix } from "./ci_matrix.js";
+} from "./release_policy/changelog_policy.js";
+import { parseCiMatrix } from "./ci_matrix/ci_matrix.js";
 
 /**
  * Hold the shell blocks and version claims in the docs to what the repository

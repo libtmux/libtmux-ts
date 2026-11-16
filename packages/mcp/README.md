@@ -105,7 +105,7 @@ $ bun packages/mcp/src/server.ts
 
 Repository contributors can preview, apply, and exactly revert registrations
 across supported clients with the
-[native MCP swap helper](../../scripts/mcp_swap.md).
+[native MCP swap helper](../../scripts/mcp_swap/README.md).
 
 ### [`createTmuxMcpServer`][mcpref-mcp-server-createtmuxmcpserver]: run it inside your own program
 

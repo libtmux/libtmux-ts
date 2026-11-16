@@ -6,9 +6,9 @@ import { fileURLToPath } from "node:url";
 import {
   runBoundedCommand,
   type BoundedCommandTermination,
-} from "./bounded_process/bounded_process.js";
-import { readRootChangelog, releaseHeadingFailure } from "./changelog_policy.js";
-import { npmPack } from "./npm_pack/npm_pack.js";
+} from "../bounded_process/bounded_process.js";
+import { readRootChangelog, releaseHeadingFailure } from "../release_policy/changelog_policy.js";
+import { npmPack } from "../npm_pack/npm_pack.js";
 import {
   assertMinimumNpm,
   assertSemanticVersion,
@@ -17,7 +17,7 @@ import {
   selectDistTag,
   type ReleaseManifest,
   validateReleaseManifests,
-} from "./release_policy.js";
+} from "../release_policy/release_policy.js";
 
 export interface RegistryPackageState {
   readonly distTags: Readonly<Record<string, string>>;
@@ -457,7 +457,7 @@ async function main(): Promise<void> {
         artifactDirectory,
         dryRun: eventName === "workflow_dispatch",
         eventName,
-        repositoryRoot: fileURLToPath(new URL("..", import.meta.url)),
+        repositoryRoot: fileURLToPath(new URL("../..", import.meta.url)),
         ...(refName === undefined ? {} : { refName }),
       },
       createReleaseIO(createNpmCommandRunner()),

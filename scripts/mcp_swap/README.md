@@ -3,8 +3,8 @@
 `mcp_swap.ts` points selected agent clients at this repository's MCP server and
 then restores the exact configuration that preceded the swap. It is a private
 contributor tool: it is not published, and it does not manage a user's configuration.
-The [MCP guide](../packages/mcp/README.md) documents the server itself; the
-[security policy](../SECURITY.md) defines its authority boundary.
+The [MCP guide](../../packages/mcp/README.md) documents the server itself; the
+[security policy](../../SECURITY.md) defines its authority boundary.
 
 The helper supports Claude, Codex, Cursor, Gemini, Grok, Antigravity (`agy`),
 opencode, and pi in one deterministic transaction. It edits only the selected
@@ -30,7 +30,7 @@ configuration is changed. `--dry-run` performs neither step.
 Report the executable and known configuration path for all eight clients:
 
 ```console
-$ bun scripts/mcp_swap.ts detect
+$ bun scripts/mcp_swap/mcp_swap.ts detect
 ```
 
 A client is detected for default `use` selection only when both its executable
@@ -41,20 +41,20 @@ pi has no built-in MCP client.
 Show the current registration without changing it:
 
 ```console
-$ bun scripts/mcp_swap.ts status
+$ bun scripts/mcp_swap/mcp_swap.ts status
 ```
 
 Claude status shows both `claude:user` and `claude:project`. Restrict it to the
 selected repository's project layer when that distinction matters:
 
 ```console
-$ bun scripts/mcp_swap.ts status --scope project
+$ bun scripts/mcp_swap/mcp_swap.ts status --scope project
 ```
 
 Run read-only configuration and recovery diagnostics:
 
 ```console
-$ bun scripts/mcp_swap.ts doctor
+$ bun scripts/mcp_swap/mcp_swap.ts doctor
 ```
 
 `doctor` parses existing configuration, authenticates outstanding TypeScript
@@ -67,25 +67,25 @@ Validate every detected client without building, starting a server, acquiring
 the mutation lock, or writing a file:
 
 ```console
-$ bun scripts/mcp_swap.ts use --source dev --dry-run
+$ bun scripts/mcp_swap/mcp_swap.ts use --source dev --dry-run
 ```
 
 Point the detected clients at the live TypeScript source:
 
 ```console
-$ bun scripts/mcp_swap.ts use --source dev
+$ bun scripts/mcp_swap/mcp_swap.ts use --source dev
 ```
 
 Build once, probe the compiled server, and register the built JavaScript:
 
 ```console
-$ bun scripts/mcp_swap.ts use --source build
+$ bun scripts/mcp_swap/mcp_swap.ts use --source build
 ```
 
 Probe and register a pinned published release:
 
 ```console
-$ bun scripts/mcp_swap.ts use --source published --version 0.1.2
+$ bun scripts/mcp_swap/mcp_swap.ts use --source published --version 0.1.2
 ```
 
 Pass `--cli` more than once or use comma-separated names. Selections are
@@ -93,7 +93,7 @@ deduplicated into the fixed eight-client transaction order. `antigravity` is
 an alias for `agy`.
 
 ```console
-$ bun scripts/mcp_swap.ts use --cli cursor,pi --cli antigravity --env LIBTMUX_TOOLSETS=inspect,manage
+$ bun scripts/mcp_swap/mcp_swap.ts use --cli cursor,pi --cli antigravity --env LIBTMUX_TOOLSETS=inspect,manage
 ```
 
 Existing entry environment is retained, and explicit `--env KEY=VALUE` values
@@ -121,24 +121,24 @@ though they share one file. A scoped revert cannot skip a newer layer in that
 file.
 
 ```console
-$ bun scripts/mcp_swap.ts use --scope user --cli claude
+$ bun scripts/mcp_swap/mcp_swap.ts use --scope user --cli claude
 ```
 
 ```console
-$ bun scripts/mcp_swap.ts use --scope project --cli claude
+$ bun scripts/mcp_swap/mcp_swap.ts use --scope project --cli claude
 ```
 
 Without `--scope`, revert restores every recorded selected layer in strict
 reverse swap order:
 
 ```console
-$ bun scripts/mcp_swap.ts revert
+$ bun scripts/mcp_swap/mcp_swap.ts revert
 ```
 
 Use a scope only when reverting that layer does not cross a newer one:
 
 ```console
-$ bun scripts/mcp_swap.ts revert --scope project --cli claude
+$ bun scripts/mcp_swap/mcp_swap.ts revert --scope project --cli claude
 ```
 
 ## Configuration boundaries
@@ -220,7 +220,7 @@ Windows is rejected because this helper has no compatible record-lock backend.
 Run the focused swap and bounded-process tests:
 
 ```console
-$ bun test packages/libtmux/tests/unit/mcp_swap.test.ts packages/libtmux/tests/unit/bounded_process.test.ts
+$ bun test scripts/mcp_swap scripts/bounded_process
 ```
 
 Check the repository tooling types:

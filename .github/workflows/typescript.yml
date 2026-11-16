@@ -2,7 +2,7 @@ name: typescript
 
 # A push or pull request runs the oldest and the newest released tmux. A call
 # from the publish workflow, and a dispatch with scope=full, run the whole
-# table. scripts/plan-ci.ts decides, from .github/ci-matrix.txt, and every tmux
+# table. scripts/ci_plan/plan-ci.ts decides, from .github/ci-matrix.txt, and every tmux
 # lane below takes its matrix from that plan.
 on:
   push:
@@ -76,7 +76,7 @@ jobs:
           INPUT_BUN: ${{ inputs.bun }}
           INPUT_OS: ${{ inputs.os }}
           INPUT_TMATE: ${{ inputs.tmate }}
-        run: bun scripts/plan-ci.ts
+        run: bun scripts/ci_plan/plan-ci.ts
 
   # One check to require. A job the plan left out of scope may be skipped; every
   # other job has to have passed. Matrices shrink through the plan, not through
@@ -98,7 +98,7 @@ jobs:
         env:
           NEEDS_JSON: ${{ toJSON(needs) }}
           ALLOW_SKIPPED: ${{ needs.plan.outputs.skip }}
-        run: bun scripts/plan-ci.ts verify
+        run: bun scripts/ci_plan/plan-ci.ts verify
 
   # Everything that does not depend on which tmux is installed. Split out
   # because it used to run once per tmux release: a lint rule and a doc link do

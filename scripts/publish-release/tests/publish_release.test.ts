@@ -4,7 +4,11 @@ import { basename, join } from "node:path";
 
 import { describe, expect, test } from "bun:test";
 
-import { killIfRunning, processExists, waitForProcessExit } from "../support/converge.js";
+import {
+  killIfRunning,
+  processExists,
+  waitForProcessExit,
+} from "../../../packages/libtmux/tests/support/converge.js";
 import {
   RegistryPackageNotFound,
   coordinateRelease,
@@ -14,8 +18,8 @@ import {
   type RegistryPackageState,
   type RegistryVersionState,
   type ReleaseIO,
-} from "../../../../scripts/publish-release.js";
-import { selectDistTag } from "../../../../scripts/release_policy.js";
+} from "../publish-release.js";
+import { selectDistTag } from "../../release_policy/release_policy.js";
 
 const packages = [
   ["libtmux", "libtmux"],

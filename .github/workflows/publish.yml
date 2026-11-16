@@ -76,4 +76,4 @@ jobs:
           done
 
       - name: Coordinate release
-        run: bun scripts/publish-release.ts
+        run: bun scripts/publish-release/publish-release.ts

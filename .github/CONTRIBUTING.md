@@ -369,7 +369,7 @@ A push or pull request runs the `tmux` job on the oldest and the newest
 released tmux, 3.3a and 3.8. Every release, the `release_3.8a` branch and tmux
 master run for a release and for a dispatch with `scope=full`.
 `.github/ci-matrix.txt` lists the releases and Bun versions, and
-`scripts/plan-ci.ts` turns it into the workflow's matrices. The `required` job
+`scripts/ci_plan/plan-ci.ts` turns it into the workflow's matrices. The `required` job
 is the one check that passes only when every planned job did.
 
 Dispatch the `typescript` workflow on any branch to run it against tmux
@@ -463,7 +463,7 @@ before the first publication. From that reviewed checkout, preview the
 coordinator with:
 
 ```console
-$ GITHUB_EVENT_NAME=workflow_dispatch bun scripts/publish-release.ts
+$ GITHUB_EVENT_NAME=workflow_dispatch bun scripts/publish-release/publish-release.ts
 ```
 
 A trusted publisher cannot be configured for a package the registry does not

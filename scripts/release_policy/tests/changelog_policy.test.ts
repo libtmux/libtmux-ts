@@ -10,10 +10,10 @@ import {
   releaseHeadingFailure,
   rootChangelogFailures,
   type PackageChangelog,
-} from "../../../../scripts/changelog_policy.js";
-import { RELEASE_PACKAGES } from "../../../../scripts/release_policy.js";
+} from "../changelog_policy.js";
+import { RELEASE_PACKAGES } from "../release_policy.js";
 
-const repositoryRoot = fileURLToPath(new URL("../../../../", import.meta.url));
+const repositoryRoot = fileURLToPath(new URL("../../..", import.meta.url));
 
 function changelogOf(name: string): string {
   return `# Changelog\n\nNotable changes to \`${name}\`.\n\n## Unreleased\n\n## 1.0.0\n`;

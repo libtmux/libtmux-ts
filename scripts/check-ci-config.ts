@@ -440,9 +440,9 @@ if (
 }
 
 const releaseCoordinator = publishSteps.find((step) => step.name === "Coordinate release")?.run;
-if (releaseCoordinator !== "bun scripts/publish-release.ts") {
+if (releaseCoordinator !== "bun scripts/publish-release/publish-release.ts") {
   failures.push(
-    ".github/workflows/publish.yml: must delegate tag publishing to scripts/publish-release.ts",
+    ".github/workflows/publish.yml: must delegate tag publishing to scripts/publish-release/publish-release.ts",
   );
 }
 

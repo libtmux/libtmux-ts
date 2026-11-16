@@ -3,10 +3,10 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { PlanError, parseCiMatrix } from "../../../../scripts/ci_matrix.js";
-import { planCi, unpassedJobs, type PlanInput } from "../../../../scripts/ci_plan.js";
+import { PlanError, parseCiMatrix } from "../../ci_matrix/ci_matrix.js";
+import { planCi, unpassedJobs, type PlanInput } from "../ci_plan.js";
 
-const repositoryRoot = new URL("../../../../", import.meta.url).pathname;
+const repositoryRoot = new URL("../../..", import.meta.url).pathname;
 
 /** A small table with a middle release, a preview and a development lane. */
 const table = `
@@ -295,7 +295,7 @@ describe("the command", () => {
       const output = join(directory, "output");
       writeFileSync(output, "");
       const result = Bun.spawnSync({
-        cmd: ["bun", join(repositoryRoot, "scripts/plan-ci.ts"), ...argv],
+        cmd: ["bun", join(repositoryRoot, "scripts/ci_plan/plan-ci.ts"), ...argv],
         env: { GITHUB_OUTPUT: output, PATH: process.env.PATH ?? "", ...environment },
         stderr: "pipe",
         stdout: "pipe",

@@ -1,4 +1,4 @@
-# What CI runs. scripts/plan-ci.ts turns this into the typescript workflow's
+# What CI runs. scripts/ci_plan/plan-ci.ts turns this into the typescript workflow's
 # matrices; the documentation gates and the argv budget test read it too.
 #
 # One entry per line: a kind, then a value. Releases run oldest first.

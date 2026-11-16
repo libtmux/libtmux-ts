@@ -36,7 +36,7 @@ const needsNoSandbox: Readonly<Record<string, string>> = {
   "packages/libtmux/scripts/doc-examples/readme_world.ts": "imported by the gates, which enter it",
   "packages/libtmux/scripts/doc-examples/tmux_sweep.ts": "imported by the gates, which enter it",
   "scripts/check-ci-config.ts": "reads the workflows, which name the tmux job, and starts nothing",
-  "scripts/ci_plan.ts": "plans the tmux lanes as data and starts nothing",
+  "scripts/ci_plan/ci_plan.ts": "plans the tmux lanes as data and starts nothing",
 };
 const scripts = new Map<string, string>();
 const listed =

@@ -20,7 +20,10 @@ import {
 } from "node:fs/promises";
 import { createHash, randomUUID } from "node:crypto";
 
-import { runBoundedCommand, type BoundedCommandResult } from "./bounded_process/bounded_process.js";
+import {
+  runBoundedCommand,
+  type BoundedCommandResult,
+} from "../bounded_process/bounded_process.js";
 
 /**
  * Point selected installed agent CLIs at one build of this MCP server.
@@ -3234,13 +3237,13 @@ function usage(): string {
   return [
     "Point selected installed agent CLIs at one build of this MCP server.",
     "",
-    "  bun scripts/mcp_swap.ts detect",
-    "  bun scripts/mcp_swap.ts status",
-    "  bun scripts/mcp_swap.ts doctor",
-    "  bun scripts/mcp_swap.ts use --source dev [--dry-run]",
-    "  bun scripts/mcp_swap.ts use --source build",
-    "  bun scripts/mcp_swap.ts use --source published --version 1.2.3",
-    "  bun scripts/mcp_swap.ts revert",
+    "  bun scripts/mcp_swap/mcp_swap.ts detect",
+    "  bun scripts/mcp_swap/mcp_swap.ts status",
+    "  bun scripts/mcp_swap/mcp_swap.ts doctor",
+    "  bun scripts/mcp_swap/mcp_swap.ts use --source dev [--dry-run]",
+    "  bun scripts/mcp_swap/mcp_swap.ts use --source build",
+    "  bun scripts/mcp_swap/mcp_swap.ts use --source published --version 1.2.3",
+    "  bun scripts/mcp_swap/mcp_swap.ts revert",
     "",
     "  --cli NAME[,NAME...]  limit clients; repeat to select more",
     "  --client NAME  alias for --cli",
@@ -3310,7 +3313,7 @@ function parseOptions(argv: readonly string[]): Options {
     throw new Error(`unknown source ${kind}; expected dev, build, or published`);
   }
   // The repository root, one directory above this repository-level script.
-  const repo = resolve(values.get("--repo") ?? join(import.meta.dir, ".."));
+  const repo = resolve(values.get("--repo") ?? join(import.meta.dir, "..", ".."));
   const version = values.get("--version");
   const rawScope = values.get("--scope");
   if (rawScope !== undefined && rawScope !== "project" && rawScope !== "user") {
