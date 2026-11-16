@@ -7,7 +7,8 @@
     "tests/support/sandbox_preload.ts",
     "tests/fixtures/ambient-free/consumer.ts",
     "tests/fixtures/type-aware-lint/no_floating_promise.ts",
-    "tests/support/bun_test_on_node.ts"
+    "tests/support/bun_test_on_node.ts",
+    "tests/fixtures/fake_tmux/*.ts"
   ],
   "project": ["src/**/*.ts", "scripts/**/*.ts", "tests/**/*.ts"],
   "ignoreBinaries": ["mkfifo"]

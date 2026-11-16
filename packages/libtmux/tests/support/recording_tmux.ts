@@ -1,23 +1,11 @@
-/**
- * A tmux that reaches no server. It appends argv, the names of the variables that choose one
- * and whether TMUX_TMPDIR is the sandbox to `trace` beside it, never a value.
- */
+import { dirname, join } from "node:path";
 
-export const RECORDING_TMUX = `#!/bin/sh
-{
-  printf 'argv'
-  for argument in "$@"; do printf '\\t%s' "$argument"; done
-  printf '\\n'
-  for name in TMUX TMUX_PANE TMUX_TMPDIR LIBTMUX_SOCKET LIBTMUX_SOCKET_PATH; do
-    eval "[ \\"\\\${$name+set}\\" = set ]" && printf 'set\\t%s\\n' "$name"
-  done
-  if [ -n "\${LIBTMUX_TEST_SANDBOX:-}" ] && [ "\${TMUX_TMPDIR:-}" = "$LIBTMUX_TEST_SANDBOX" ]; then
-    printf 'tmpdir-is-sandbox\\n'
-  fi
-  printf -- '--\\n'
-} >> "$(dirname "$0")/trace"
-exit 0
-`;
+import { writeRecording } from "./fake_tmux.js";
+
+/** A tmux that reaches no server, writing its `trace` beside itself; `parseCalls` reads it. */
+export function writeRecordingTmux(destination: string): Promise<string> {
+  return writeRecording(destination, { trace: join(dirname(destination), "trace") });
+}
 
 export interface Call {
   readonly argv: readonly string[];

@@ -14,14 +14,11 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { describe, expect, test } from "bun:test";
 
 import { closeChildWithin, waitForPathPresent } from "../support/converge.js";
+import { writeIgnoreTerm } from "../support/fake_tmux.js";
 import { parseNullFrames } from "../support/launch_frame.js";
 import { withTemporaryRunRoot } from "../support/run_root_harness.js";
 
 import { createRegisteredTestServer } from "../support/fixture_registry.js";
-
-function shellQuote(value: string): string {
-  return `'${value.replaceAll("'", `'"'"'`)}'`;
-}
 
 async function writeControlTimerProbe(
   parent: string,
@@ -32,15 +29,11 @@ async function writeControlTimerProbe(
     fileURLToPath(new URL("../../src/_internal/test/testkit.ts", import.meta.url)),
   ).href;
   const script = join(parent, `control-timer-${mode}.ts`);
-  const wrapper = join(parent, "ignore-control-term.sh");
+  const wrapper = join(parent, "ignore-control-term");
   const assertedMarker = join(parent, "control-controller-asserted");
   const registrationMarker = join(parent, "control-registration-probed");
   const spawnedMarker = join(parent, "control-child-spawned");
-  await writeFile(
-    wrapper,
-    `#!/bin/sh\nprintf spawned > ${shellQuote(spawnedMarker)}\ntrap '' TERM\nwhile :; do sleep 30; done\n`,
-    { mode: 0o700 },
-  );
+  await writeIgnoreTerm(wrapper, { spawned: spawnedMarker });
   const body =
     mode === "partial-open"
       ? `const fakeServer = {

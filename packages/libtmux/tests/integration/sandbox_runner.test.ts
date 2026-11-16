@@ -14,8 +14,11 @@ import {
   readProcessIdentity,
   resolveControllerIdentity,
 } from "../../src/_internal/test/testkit.js";
+import { writeTmuxProxy } from "../support/fake_tmux.js";
 
 const packageRoot = fileURLToPath(new URL("../..", import.meta.url));
+/** A call that stops the server, which the proxies below stall or swallow. */
+const KILL_SERVER = "(^| )kill-server( |$)";
 const supervise = fileURLToPath(new URL("../fixtures/supervise.ts", import.meta.url));
 const leaks = fileURLToPath(new URL("../fixtures/leaks_a_server.ts", import.meta.url));
 const uid = String(process.getuid?.() ?? 0);
@@ -94,11 +97,10 @@ describe("a supervised run", () => {
   test("a signal during the release neither waits on a closed child nor reports one late", async () => {
     const real = (await resolveControllerIdentity("tmux")).executablePath;
     const bin = await makeTestDirectory("ltx-slow-kill-");
-    await writeFile(
-      join(bin, "tmux"),
-      `#!/bin/sh\ncase " $* " in *" kill-server "*) sleep 3 ;; esac\nexec "${real}" "$@"\n`,
-      { mode: 0o755 },
-    );
+    await writeTmuxProxy(join(bin, "tmux"), {
+      rules: [{ passThrough: true, sleepSeconds: 3, when: KILL_SERVER }],
+      tmux: real,
+    });
     const child = spawn(process.execPath, [supervise, leaks, "custom"], {
       env: { ...outside(), PATH: `${bin}:${process.env["PATH"] ?? ""}` },
       stdio: ["ignore", "pipe", "pipe"],
@@ -254,11 +256,10 @@ test("starts a server on a socket of its own and never kills it", () => {
     const bin = join(directory, "inert-bin");
     await mkdir(bin, { recursive: true });
     // A kill-server that succeeds and stops nothing, as across a version mismatch.
-    await writeFile(
-      join(bin, "tmux"),
-      `#!/bin/sh\ncase " $* " in *" kill-server "*) exit 0 ;; esac\nexec "${(await resolveControllerIdentity("tmux")).executablePath}" "$@"\n`,
-      { mode: 0o755 },
-    );
+    await writeTmuxProxy(join(bin, "tmux"), {
+      rules: [{ exit: 0, when: KILL_SERVER }],
+      tmux: (await resolveControllerIdentity("tmux")).executablePath,
+    });
     const child = spawn(process.execPath, ["test", join(directory, "waits.test.ts")], {
       cwd: packageRoot,
       env: { ...outside(), PATH: `${bin}:${process.env["PATH"] ?? ""}` },
@@ -288,11 +289,10 @@ test("starts a server on a socket of its own and never kills it", () => {
     const real = (await resolveControllerIdentity("tmux")).executablePath;
     const bin = join(directory, "slow-bin");
     await mkdir(bin, { recursive: true });
-    await writeFile(
-      join(bin, "tmux"),
-      `#!/bin/sh\ncase " $* " in *" kill-server "*) sleep 3 ;; esac\nexec "${real}" "$@"\n`,
-      { mode: 0o755 },
-    );
+    await writeTmuxProxy(join(bin, "tmux"), {
+      rules: [{ passThrough: true, sleepSeconds: 3, when: KILL_SERVER }],
+      tmux: real,
+    });
     const child = spawn(process.execPath, ["test", join(directory, "leak.test.ts")], {
       cwd: packageRoot,
       env: { ...outside(), PATH: `${bin}:${process.env["PATH"] ?? ""}` },
@@ -323,11 +323,10 @@ test("starts a server on a socket of its own and never kills it", () => {
     const real = (await resolveControllerIdentity("tmux")).executablePath;
     const bin = join(directory, "bin");
     await mkdir(bin, { recursive: true });
-    await writeFile(
-      join(bin, "tmux"),
-      `#!/bin/sh\ncase " $* " in *" kill-server "*) sleep 600 ;; *) exec "${real}" "$@" ;; esac\n`,
-      { mode: 0o755 },
-    );
+    await writeTmuxProxy(join(bin, "tmux"), {
+      rules: [{ sleepSeconds: 600, when: KILL_SERVER }],
+      tmux: real,
+    });
     const child = spawn(process.execPath, ["test", join(directory, "leak.test.ts")], {
       cwd: packageRoot,
       env: { ...outside(), PATH: `${bin}:${process.env["PATH"] ?? ""}` },

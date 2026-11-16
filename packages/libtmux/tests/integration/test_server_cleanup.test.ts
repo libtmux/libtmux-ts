@@ -1,20 +1,11 @@
-import {
-  access,
-  chmod,
-  readFile,
-  readdir,
-  rename,
-  rm,
-  stat,
-  unlink,
-  writeFile,
-} from "node:fs/promises";
+import { access, readFile, readdir, rename, rm, stat, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { describe, expect, test } from "bun:test";
 
 import { waitForProcessExit } from "../support/converge.js";
 import { waitForOwnReservations, withTemporaryRunRoot } from "../support/run_root_harness.js";
+import { writeProbe, writeTmuxProxy } from "../support/fake_tmux.js";
 import { reapRedLaunch } from "../support/tmux_cleanup.js";
 
 import {
@@ -26,32 +17,13 @@ import {
   makeTestDirectory,
 } from "../../src/_internal/test/testkit.js";
 
-function shellQuote(value: string): string {
-  return `'${value.replaceAll("'", `'"'"'`)}'`;
-}
-
 async function writeExitStatusWrapper(parent: string, status: number): Promise<string> {
-  const wrapper = join(parent, `tmux-exit-${String(status)}`);
-  await writeFile(wrapper, `#!/bin/sh\nexit ${String(status)}\n`, { mode: 0o700 });
-  await chmod(wrapper, 0o700);
-  return wrapper;
+  return writeProbe(join(parent, `tmux-exit-${String(status)}`), { exit: status });
 }
-
 async function writeLoggingTmuxWrapper(parent: string, callLog: string): Promise<string> {
   const tmux = (await resolveControllerIdentity("tmux")).executablePath;
-  const wrapper = join(parent, "tmux-call-log");
-  await writeFile(
-    wrapper,
-    `#!/bin/sh
-printf '%s\\n' "$*" >> ${shellQuote(callLog)}
-exec ${shellQuote(tmux)} "$@"
-`,
-    { mode: 0o700 },
-  );
-  await chmod(wrapper, 0o700);
-  return wrapper;
+  return writeTmuxProxy(join(parent, "tmux-call-log"), { log: callLog, tmux });
 }
-
 describe("TestServer cleanup", () => {
   for (const fault of [
     "after-launch",

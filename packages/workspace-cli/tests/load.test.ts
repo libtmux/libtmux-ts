@@ -14,6 +14,7 @@ import {
   TestServer,
   withOwnedRunRoot,
 } from "../../libtmux/src/_internal/test/testkit.js";
+import { writeTmuxProxy } from "../../libtmux/tests/support/fake_tmux.js";
 
 async function fixture(
   body: (
@@ -863,17 +864,23 @@ test.each(["remove", "restore", "both", "disable"])(
       const wrapper = join(root, "tmux-failure");
       const remove = failure === "remove" || failure === "both";
       const restore = failure === "restore" || failure === "both";
-      const actual = `'${server.tmuxBin.replaceAll("'", "'\\''")}'`;
       const rules = [
-        remove ? "*kill-window*) echo removal-failed >&2; exit 1;;" : "",
-        restore ? "*set-option*-u*renumber-windows*) echo restore-failed >&2; exit 1;;" : "",
-        failure === "disable"
-          ? `*set-option*renumber-windows*off*) ${actual} "$@"; echo disable-failed >&2; exit 1;;`
-          : "",
-      ].join("\n");
-      await writeFile(wrapper, `#!/bin/sh\ncase "$*" in\n${rules}\nesac\nexec ${actual} "$@"\n`, {
-        mode: 0o700,
-      });
+        ...(remove ? [{ when: "kill-window", stderr: "removal-failed", exit: 1 }] : []),
+        ...(restore
+          ? [{ when: "set-option.*-u.*renumber-windows", stderr: "restore-failed", exit: 1 }]
+          : []),
+        ...(failure === "disable"
+          ? [
+              {
+                when: "set-option.*renumber-windows.*off",
+                runFirst: true,
+                stderr: "disable-failed",
+                exit: 1,
+              },
+            ]
+          : []),
+      ];
+      await writeTmuxProxy(wrapper, { rules, tmux: server.tmuxBin });
       const config = join(root, "cleanup.json");
       await writeFile(
         config,

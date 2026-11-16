@@ -1,12 +1,13 @@
 import { spawnSync } from "node:child_process";
-import { chmod, rm, writeFile } from "node:fs/promises";
+import { rm } from "node:fs/promises";
 import { join } from "node:path";
 
 import { afterEach, describe, expect, test } from "bun:test";
 
 import { TmuxCommandError, TmuxTransportError, VersionTooLowError } from "../../src/errors.js";
-import { makeTestDirectory } from "../../src/_internal/test/testkit.js";
+import { makeTestDirectory, resolveControllerIdentity } from "../../src/_internal/test/testkit.js";
 import { Server } from "../../src/server.js";
+import { writeReportVersion } from "../support/fake_tmux.js";
 import { controlSupported, tmuxAtLeast, tmuxRelease } from "../support/tmux_release.js";
 
 /**
@@ -75,24 +76,19 @@ describe("optional features on this tmux", () => {
 
   test("control mode is refused for a daemon that reports a 3.7 candidate or development build", async () => {
     const { env, socket } = await fixture();
-    // A client in front of the real tmux that rewrites the version it reports.
-    const wrapper = join(directories.at(-1) ?? "", "report-version.sh");
-    await writeFile(
-      wrapper,
-      [
-        "#!/bin/sh",
-        `v=$(tmux -V | cut -d' ' -f2 | sed 's/[.]/[.]/g')`,
-        "out=$(mktemp); err=$(mktemp)",
-        'tmux "$@" >"$out" 2>"$err"; rc=$?',
-        'sed "s/$v/$REPORTED_VERSION/g" "$out"; sed "s/$v/$REPORTED_VERSION/g" "$err" >&2',
-        'rm -f "$out" "$err"; exit $rc',
-        "",
-      ].join("\n"),
-    );
-    await chmod(wrapper, 0o700);
+    const real = (await resolveControllerIdentity("tmux")).executablePath;
     for (const reported of ["next-3.7", "3.7-rc2"]) {
+      // A client in front of the real tmux that rewrites the version it reports.
+      // eslint-disable-next-line no-await-in-loop -- each build is checked against the same daemon.
+      const wrapper = await writeReportVersion(
+        join(directories.at(-1) ?? "", `report-${reported}`),
+        {
+          reported,
+          tmux: real,
+        },
+      );
       const server = new Server({
-        environment: { ...env, REPORTED_VERSION: reported },
+        environment: env,
         socketPath: socket,
         tmuxBin: wrapper,
         configFile: "/dev/null",

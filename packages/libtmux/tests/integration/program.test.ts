@@ -1,10 +1,11 @@
 import { spawn, spawnSync } from "node:child_process";
-import { access, chmod, mkdir, readdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, readdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { describe, expect, test } from "bun:test";
 import { processExists } from "../support/converge.js";
+import { writeElsewhere } from "../support/fake_tmux.js";
 import { tmuxReaches } from "../support/tmux_release.js";
 
 import { leaseTimer } from "../../src/_internal/operations/program_lease.js";
@@ -1701,11 +1702,7 @@ setInterval(() => undefined, 1000);`,
       await withServer(async (_server, directory, fixture) => {
         // A tmux whose shell writes nowhere this process can see, as a remote one would.
         const elsewhere = join(directory, "tmux-elsewhere");
-        await writeFile(
-          elsewhere,
-          `#!/bin/sh\nfor arg do shift; case $arg in ": > "*) arg=: ;; esac; set -- "$@" "$arg"; done\nexec ${fixture.tmuxExecutable} "$@"\n`,
-        );
-        await chmod(elsewhere, 0o755);
+        await writeElsewhere(elsewhere, { tmux: fixture.tmuxExecutable });
         const remote = new Server({
           environment: fixture.controllerEnvironment,
           socketPath: fixture.socketPath,

@@ -240,6 +240,11 @@ step here.
 Real tmux, isolated sockets, deterministic cleanup — no mocks standing in for a
 server. A test asserting on timing carries a bound sized for what it does.
 
+A test that needs an executable in tmux's place writes one with
+`packages/libtmux/tests/support/fake_tmux.ts`: a TypeScript program that Bun
+runs, which hands off to the real tmux with `process.execve` where it should.
+A shell script is not written for it.
+
 Before claiming a test or a gate works, show it failing. A gate that has never
 been red is an assumption.
 

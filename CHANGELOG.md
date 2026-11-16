@@ -56,7 +56,10 @@ changelog has the documentation, CI and release tooling entries up to 0.1.2.
   integration suite alone. The test runners' pidfd reaper, launch-hold wrapper
   and record-lock probe run as TypeScript under Bun, and `LIBTMUX_TEST_BUN`
   replaces `LIBTMUX_TEST_PYTHON` for the reaper. The workspace CLI keeps
-  `LIBTMUX_TEST_PYTHON` for its tmuxp bridge tests. (#214)
+  `LIBTMUX_TEST_PYTHON` for its tmuxp bridge tests. The tests' stand-ins for
+  tmux are TypeScript programs that Bun runs, written by
+  `packages/libtmux/tests/support/fake_tmux.ts`, and the workspace CLI's
+  terminal tests take their pseudo-terminal from `Bun.spawn`. (#214)
 - The workspace CLI tests compare each of tmuxp's example files with a structure
   written by hand from what tmuxp documents, build it on a private tmux to
   compare the window and pane tree, and check

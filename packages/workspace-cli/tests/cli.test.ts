@@ -9,6 +9,9 @@ import { Server } from "libtmux";
 import { run as runCli } from "../src/app.ts";
 import { clientQueryArguments, handoffArguments } from "../src/tmux.ts";
 import manifest from "../package.json" with { type: "json" };
+import type { OldTmuxConfig } from "./fixtures/old_tmux.ts";
+import { writeBunProgram } from "../../libtmux/tests/support/bun_program.js";
+import { writeProbe } from "../../libtmux/tests/support/fake_tmux.js";
 
 let root: string;
 beforeEach(async () => {
@@ -258,14 +261,12 @@ test("an unknown subcommand is reported as such, not as excess arguments", async
 test("legacy 88-color load fails before invoking tmux in every output mode", async () => {
   const wrapper = join(root, "tmux-probe");
   const marker = join(root, "called");
-  await writeFile(wrapper, '#!/bin/sh\nprintf called > "$WORKSPACE_TEST_MARKER"\nexit 99\n', {
-    mode: 0o700,
-  });
+  await writeProbe(wrapper, { exit: 99, marker, text: "called" });
   await writeFile(join(root, "dev.json"), JSON.stringify({ session_name: "dev", windows: [{}] }));
   for (const mode of ["human", "json", "ndjson"]) {
     const response = await run(
       ["load", "dev.json", "-d", "-8", ...(mode === "human" ? [] : [`--${mode}`])],
-      { TMUX_BIN: wrapper, WORKSPACE_TEST_MARKER: marker },
+      { TMUX_BIN: wrapper },
     );
     expect(await Bun.file(marker).exists()).toBe(false);
     expect(response.code).toBe(2);
@@ -475,11 +476,12 @@ test("load logging records preflight errors and honors the selected severity", a
 async function oldTmuxRig() {
   const bin = join(root, "bin");
   await mkdir(bin);
-  const tmux = join(bin, "tmux");
-  await writeFile(
-    tmux,
-    '#!/bin/sh\nfor a in "$@"; do [ "$a" = -V ] && { echo "tmux 3.2a"; exit 0; }; [ "$a" = run-shell ] && { echo "no server running on /tmp/none" >&2; exit 1; }; done\nprintf "%s\\n" "$*" >> "$WORKSPACE_TEST_LOG"\necho "no server running on /tmp/none" >&2\nexit 1\n',
-    { mode: 0o700 },
+  const log = join(root, "tmux.log");
+  const config: OldTmuxConfig = { log };
+  const tmux = await writeBunProgram(
+    join(bin, "tmux"),
+    new URL("./fixtures/old_tmux.ts", import.meta.url),
+    config,
   );
   const python = join(bin, "python");
   await writeFile(
@@ -489,11 +491,11 @@ async function oldTmuxRig() {
   );
   return {
     bin,
+    log,
     env: {
       PATH: `${bin}:${process.env.PATH ?? ""}`,
       TMUX_BIN: tmux,
       TMUX_WORKSPACE_PYTHON: python,
-      WORKSPACE_TEST_LOG: join(root, "tmux.log"),
       WORKSPACE_TEST_MARKER: join(root, "python-ran"),
     },
   };
@@ -510,7 +512,7 @@ test("an extension load refuses a tmux below 3.3a before Python starts it", asyn
   expect(result.stderr).toContain("3.3a");
   expect(JSON.parse(result.stdout).errors[0]).toMatchObject({ code: "tmux_unsupported" });
   expect(await Bun.file(rig.env.WORKSPACE_TEST_MARKER).exists()).toBe(false);
-  expect(await Bun.file(rig.env.WORKSPACE_TEST_LOG).exists()).toBe(false);
+  expect(await Bun.file(rig.log).exists()).toBe(false);
 });
 
 test("shell refuses a tmux below 3.3a before tmuxp starts it", async () => {
@@ -525,7 +527,7 @@ test("shell refuses a tmux below 3.3a before tmuxp starts it", async () => {
     code: "tmux_unsupported",
   });
   expect(await Bun.file(rig.env.WORKSPACE_TEST_MARKER).exists()).toBe(false);
-  expect(await Bun.file(rig.env.WORKSPACE_TEST_LOG).exists()).toBe(false);
+  expect(await Bun.file(rig.log).exists()).toBe(false);
 });
 
 test("shell at a cold endpoint judges the executable and starts no daemon", async () => {

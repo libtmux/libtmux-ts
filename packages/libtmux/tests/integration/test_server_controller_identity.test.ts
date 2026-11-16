@@ -12,7 +12,6 @@ import {
   rm,
   stat,
   unlink,
-  writeFile,
 } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
@@ -30,11 +29,8 @@ import {
 } from "../../src/_internal/test/testkit.js";
 
 import { closeChildWithin, waitForProcessExit } from "../support/converge.js";
+import { writeProbe } from "../support/fake_tmux.js";
 import type { CapturedTmuxCleanup } from "../support/tmux_cleanup.js";
-
-function shellQuote(value: string): string {
-  return `'${value.replaceAll("'", `'"'"'`)}'`;
-}
 
 interface ReplacedControllerCleanup extends CapturedTmuxCleanup {
   readonly cleanupExecutable: string;
@@ -70,11 +66,7 @@ async function makeReplaceableControllerHarness(
   await link(controllerExecutable, cleanupExecutable);
   // Recording the argv, not just the fact: if this ever runs, the question is
   // which invocation reached it, and a bare "invoked" cannot answer that.
-  await writeFile(
-    decoyExecutable,
-    `#!/bin/sh\nprintf '%s\\n' "$@" > ${shellQuote(marker)}\nexit 91\n`,
-    { mode: 0o700 },
-  );
+  await writeProbe(decoyExecutable, { exit: 91, marker });
   await prepareRunRoot(root, controllerExecutable);
   return {
     cleanupExecutable,

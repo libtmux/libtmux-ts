@@ -1,11 +1,12 @@
 import { spawn } from "node:child_process";
 import { lstatSync, readFileSync } from "node:fs";
-import { chmod, lstat, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { lstat, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 import { describe, expect, test } from "bun:test";
 
 import { processExists, waitForPathPresent } from "../support/converge.js";
+import { writeBarrier } from "../support/fake_tmux.js";
 import { parseNullFrames } from "../support/launch_frame.js";
 import { withTemporaryRunRoot } from "../support/run_root_harness.js";
 import {
@@ -25,10 +26,6 @@ import {
 } from "../../src/_internal/test/testkit.js";
 import { closeChild } from "../support/owned_child.js";
 
-function shellQuote(value: string): string {
-  return `'${value.replaceAll("'", `'"'"'`)}'`;
-}
-
 async function writeBootstrapBarrierWrapper(
   parent: string,
   entered: string,
@@ -37,22 +34,14 @@ async function writeBootstrapBarrierWrapper(
   releasePipe: string,
 ): Promise<string> {
   const tmux = (await resolveControllerIdentity("tmux")).executablePath;
-  const wrapper = join(parent, "tmux-bootstrap-barrier");
-  await writeFile(
-    wrapper,
-    `#!/bin/sh
-for argument in "$@"; do printf '%s\\0' "$argument"; done > ${shellQuote(argumentLog)}
-env | sed -n '/^LIBTMUX_TEST_GENERATION_/p' > ${shellQuote(environmentLog)}
-printf 'entered\n' > ${shellQuote(entered)}
-IFS= read -r _ < ${shellQuote(releasePipe)}
-exec ${shellQuote(tmux)} "$@"
-`,
-    { mode: 0o700 },
-  );
-  await chmod(wrapper, 0o700);
-  return wrapper;
+  return writeBarrier(join(parent, "tmux-bootstrap-barrier"), {
+    argumentLog,
+    entered,
+    environmentLog,
+    releasePipe,
+    tmux,
+  });
 }
-
 async function writeSnapshotLaunchWrapper(
   parent: string,
   entered: string,
@@ -61,25 +50,15 @@ async function writeSnapshotLaunchWrapper(
   releasePipe: string,
 ): Promise<string> {
   const tmux = (await resolveControllerIdentity("tmux")).executablePath;
-  const wrapper = join(parent, "tmux-snapshot-launch");
-  await writeFile(
-    wrapper,
-    `#!/bin/sh
-for argument in "$@"; do printf '%s\\0' "$argument"; done > ${shellQuote(argumentLog)}
-{
-  printf 'BASE=%s\n' "\${LIBTMUX_ENTRY_SNAPSHOT-unset}"
-  env | sed -n '/^LIBTMUX_TEST_GENERATION_/p'
-} > ${shellQuote(environmentLog)}
-printf 'entered\n' > ${shellQuote(entered)}
-IFS= read -r _ < ${shellQuote(releasePipe)}
-exec ${shellQuote(tmux)} "$@"
-`,
-    { mode: 0o700 },
-  );
-  await chmod(wrapper, 0o700);
-  return wrapper;
+  return writeBarrier(join(parent, "tmux-snapshot-launch"), {
+    argumentLog,
+    entered,
+    environmentLog,
+    recordSnapshot: true,
+    releasePipe,
+    tmux,
+  });
 }
-
 async function runTmux(args: readonly string[]): Promise<{
   readonly code: number;
   readonly stderr: string;

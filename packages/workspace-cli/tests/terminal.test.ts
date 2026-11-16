@@ -10,6 +10,7 @@ import {
   withOwnedRunRoot,
 } from "../../libtmux/src/_internal/test/testkit.js";
 import { processRun } from "../src/process.ts";
+import { writeTmuxProxy } from "../../libtmux/tests/support/fake_tmux.js";
 import { runInPty, type PtyResult } from "./pty.ts";
 
 const runtime = process.env.LIBTMUX_WORKSPACE_CLI_RUNTIME ?? process.execPath;
@@ -321,11 +322,7 @@ test("attached load hands the terminal over with -N before attach-session", asyn
     const wrapper = join(root, "tmux-logged");
     await writeFile(source, JSON.stringify({ session_name: "handoff", windows: [{}] }));
     // The real tmux behind a logger, so the argv load() builds is the evidence.
-    await writeFile(
-      wrapper,
-      `#!/bin/sh\nprintf '%s\\n' "$*" >> '${log}'\nexec '${server.tmuxBin}' "$@"\n`,
-      { mode: 0o700 },
-    );
+    await writeTmuxProxy(wrapper, { log, tmux: server.tmuxBin });
     await terminal(
       [runtime, entry, "load", source, "-S", server.socketPath!],
       root,

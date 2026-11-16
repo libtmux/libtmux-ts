@@ -1,5 +1,5 @@
 import { existsSync, readdirSync } from "node:fs";
-import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 
 import { makeTestDirectory, resolveNode22 } from "../../src/_internal/test/testkit.js";
-import { parseCalls, RECORDING_TMUX } from "../support/recording_tmux.js";
+import { parseCalls, writeRecordingTmux } from "../support/recording_tmux.js";
 
 /**
  * Shows the canary can fail, and that each bunfig.toml is what makes it pass. Each case runs it
@@ -120,8 +120,7 @@ describe("sandbox canary controls", () => {
   test("a real-tmux suite started where no bunfig.toml enters the sandbox refuses its fixtures", async () => {
     const bin = join(decoys, "bin");
     await mkdir(bin);
-    await writeFile(join(bin, "tmux"), RECORDING_TMUX);
-    await chmod(join(bin, "tmux"), 0o755);
+    await writeRecordingTmux(join(bin, "tmux"));
 
     const { exitCode, output } = await runBunTest(
       decoys,

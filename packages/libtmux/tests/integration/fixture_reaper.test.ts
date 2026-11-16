@@ -1,7 +1,6 @@
 import { spawn } from "node:child_process";
 import {
   access,
-  chmod,
   link,
   lstat,
   mkdir,
@@ -19,6 +18,8 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, test } from "bun:test";
 
+import type { LaunchingHoldConfig } from "../fixtures/launching_hold.js";
+import { writeBunProgram } from "../support/bun_program.js";
 import { processExists, waitForPathPresent, waitForProcessExit } from "../support/converge.js";
 import {
   beginSyntheticLaunch,
@@ -75,27 +76,16 @@ async function reapWithoutMasking(label: string, reap: () => Promise<void>): Pro
   }
 }
 
-function shellQuote(value: string): string {
-  return `'${value.replaceAll("'", `'"'"'`)}'`;
-}
-
-const launchingHold = fileURLToPath(new URL("../fixtures/launching_hold.ts", import.meta.url));
-// The helper needs bun:ffi, which Node lacks, so it runs under the bun that
-// drives the suite or the one on PATH.
-const bun = process.versions.bun === undefined ? "bun" : process.execPath;
-
 async function writeLaunchingHoldWrapper(parent: string, marker: string): Promise<string> {
-  const tmux = (await resolveControllerIdentity("tmux")).executablePath;
-  const wrapper = join(parent, "tmux-launching-hold");
-  await writeFile(
-    wrapper,
-    `#!/bin/sh
-exec ${shellQuote(bun)} ${shellQuote(launchingHold)} ${shellQuote(marker)} ${shellQuote(tmux)} "$@"
-`,
-    { mode: 0o700 },
+  const config: LaunchingHoldConfig = {
+    marker,
+    tmux: (await resolveControllerIdentity("tmux")).executablePath,
+  };
+  return writeBunProgram(
+    join(parent, "tmux-launching-hold"),
+    new URL("../fixtures/launching_hold.ts", import.meta.url),
+    config,
   );
-  await chmod(wrapper, 0o700);
-  return wrapper;
 }
 
 describe("fixture launch and exact-root reaping", () => {

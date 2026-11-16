@@ -14,6 +14,7 @@ import {
   makeTestDirectory,
   testParallelism,
 } from "../src/_internal/test/testkit.js";
+import { writeIgnoreTerm } from "../tests/support/fake_tmux.js";
 
 // Every Node process below inherits this, vitest's among them: its setup file
 // joins it rather than entering a second one.
@@ -657,7 +658,7 @@ await runLateRootSiblingProbe();
 async function runControlTimerProbe(mode) {
   const probeScript = fileURLToPath(new URL("./control-timer-" + mode + ".mjs", import.meta.url));
   const marker = fileURLToPath(new URL("./control-timer-" + mode + ".done", import.meta.url));
-  const wrapper = fileURLToPath(new URL("./control-timer-" + mode + ".sh", import.meta.url));
+  const wrapper = fileURLToPath(new URL("./control-timer-" + mode + ".wrapper", import.meta.url));
   const assertedMarker = fileURLToPath(
     new URL("./control-timer-" + mode + ".asserted", import.meta.url),
   );
@@ -669,17 +670,6 @@ async function runControlTimerProbe(mode) {
   );
   const timerRoot = fileURLToPath(new URL("./control-timer-" + mode + ".root", import.meta.url));
   const newline = String.fromCharCode(10);
-  await writeFile(
-    wrapper,
-    [
-      "#!/bin/sh",
-      "printf spawned > " + JSON.stringify(spawnedMarker),
-      "trap '' TERM",
-      "while :; do sleep 30; done",
-      "",
-    ].join(newline),
-    { mode: 0o700 },
-  );
   const body = mode === "partial-open"
     ? [
         'const fakeServer = {',
@@ -903,6 +893,11 @@ let exactCleanupComplete = false;
 
 try {
   const scenarioPath = join(temporaryRoot, "scenarios.mjs");
+  // The partial-open scenario launches a tmux that ignores SIGTERM. Node cannot
+  // write one, so Bun does, where the scenario looks for it.
+  await writeIgnoreTerm(join(temporaryRoot, "control-timer-partial-open.wrapper"), {
+    spawned: join(temporaryRoot, "control-timer-partial-open.spawned"),
+  });
   await writeFile(scenarioPath, scenarioSource(tsRoot, executable));
   const child = spawn(executable, [scenarioPath], {
     cwd: tsRoot,

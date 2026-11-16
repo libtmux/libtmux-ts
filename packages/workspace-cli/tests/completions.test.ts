@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { completionScript } from "../src/completions.ts";
 import type { CommandCatalog, OptionReference } from "../src/reference.ts";
+import { writeProbe } from "../../libtmux/tests/support/fake_tmux.js";
 import { startPty } from "./pty.ts";
 
 function option(
@@ -112,11 +113,11 @@ const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
 async function fixture(body: (root: string) => Promise<void>) {
   const root = await mkdtemp(join(tmpdir(), "ltx-workspace-completion-"));
   try {
-    await writeFile(
-      join(root, "tmux-workspace"),
-      `#!/bin/sh\nprintf attempted > ${quote(join(root, "executed"))}\nexit 97\n`,
-      { mode: 0o700 },
-    );
+    await writeProbe(join(root, "tmux-workspace"), {
+      exit: 97,
+      marker: join(root, "executed"),
+      text: "attempted",
+    });
     await writeFile(join(root, "file space.yaml"), "");
     await writeFile(join(root, "file:colon.yaml"), "");
     await mkdir(join(root, "folder space"));

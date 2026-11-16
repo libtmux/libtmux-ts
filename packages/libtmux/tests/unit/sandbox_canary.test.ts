@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { realpathSync } from "node:fs";
-import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
@@ -11,7 +11,7 @@ import {
   tmuxSocketFor,
 } from "../../src/_internal/test/testkit.js";
 import { Server } from "../../src/server.js";
-import { parseCalls, RECORDING_TMUX } from "../support/recording_tmux.js";
+import { parseCalls, writeRecordingTmux } from "../support/recording_tmux.js";
 
 /**
  * What the harness left in this process; `sandbox_control.test.ts` reruns it without the harness.
@@ -38,8 +38,7 @@ function whereABareClientLands(environment: Record<string, string | undefined>):
 
 beforeAll(async () => {
   directory = await makeTestDirectory("ltx-canary-");
-  await writeFile(join(directory, "tmux"), RECORDING_TMUX);
-  await chmod(join(directory, "tmux"), 0o755);
+  await writeRecordingTmux(join(directory, "tmux"));
 });
 
 afterAll(async () => {

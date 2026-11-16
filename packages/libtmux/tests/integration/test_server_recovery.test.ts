@@ -1,10 +1,11 @@
 import { spawn } from "node:child_process";
-import { chmod, lstat, readFile, readdir, rm, stat, unlink, writeFile } from "node:fs/promises";
+import { lstat, readFile, readdir, rm, stat, unlink } from "node:fs/promises";
 import { join } from "node:path";
 
 import { describe, expect, test } from "bun:test";
 
 import { processExists, waitForPathAbsent, waitForProcessExit } from "../support/converge.js";
+import { writeLaunch } from "../support/fake_tmux.js";
 import { createRegisteredTestServer } from "../support/fixture_registry.js";
 import { waitForOwnReservations, withTemporaryRunRoot } from "../support/run_root_harness.js";
 import { reapRedLaunch } from "../support/tmux_cleanup.js";
@@ -19,10 +20,6 @@ import {
   makeTestDirectory,
 } from "../../src/_internal/test/testkit.js";
 
-function shellQuote(value: string): string {
-  return `'${value.replaceAll("'", `'"'"'`)}'`;
-}
-
 async function writeLaunchWrapper(
   parent: string,
   mode: "hold-after-launch" | "move-socket-after-launch" | "move-socket-and-hold",
@@ -30,109 +27,41 @@ async function writeLaunchWrapper(
   recoverySocket?: string,
 ): Promise<string> {
   const tmux = (await resolveControllerIdentity("tmux")).executablePath;
-  const wrapper = join(parent, `tmux-${mode}`);
-  const afterLaunch =
-    mode === "hold-after-launch"
-      ? "while :; do sleep 30; done"
-      : [
-          `socket=$(printf '%s' "$output" | cut -f1)`,
-          `session=$(printf '%s' "$output" | cut -f3)`,
-          "attempt=0",
-          "pane_command=",
-          'while [ "$attempt" -lt 1000 ]; do',
-          `  pane_command=$(${shellQuote(tmux)} -N -S "$socket" display-message -p -t "$session" '#{pane_current_command}')`,
-          '  if [ "$pane_command" = cat ]; then break; fi',
-          "  attempt=$((attempt + 1))",
-          "done",
-          'if [ "$pane_command" != cat ]; then exit 70; fi',
-          `mv -- "$socket" ${shellQuote(recoverySocket ?? "")}`,
-          ...(mode === "move-socket-and-hold" ? ["while :; do sleep 30; done"] : []),
-        ].join("\n");
-  await writeFile(
-    wrapper,
-    `#!/bin/sh
-case " $* " in
-  *" new-session "*)
-    output=$(${shellQuote(tmux)} "$@")
-    status=$?
-    printf '%s\n' "$output"
-    printf '%s\n' "$output" > ${shellQuote(marker)}
-    ${afterLaunch}
-    exit "$status"
-    ;;
-  *) exec ${shellQuote(tmux)} "$@" ;;
-esac
-`,
-    { mode: 0o700 },
-  );
-  await chmod(wrapper, 0o700);
-  return wrapper;
+  const after = {
+    "hold-after-launch": "hold",
+    "move-socket-after-launch": "move-socket",
+    "move-socket-and-hold": "move-socket-and-hold",
+  } as const;
+  return writeLaunch(join(parent, `tmux-${mode}`), {
+    after: after[mode],
+    kind: "launch",
+    marker,
+    ...(recoverySocket === undefined ? {} : { recoverySocket }),
+    tmux,
+  });
 }
-
 async function writeNonzeroLaunchFrameWrapper(parent: string, marker: string): Promise<string> {
   const tmux = (await resolveControllerIdentity("tmux")).executablePath;
-  const wrapper = join(parent, "tmux-nonzero-launch-frame");
-  await writeFile(
-    wrapper,
-    `#!/bin/sh
-case " $* " in
-  *" new-session "*)
-    output=$(${shellQuote(tmux)} "$@")
-    printf '%s\n' "$output"
-    printf '%s\n' "$output" > ${shellQuote(marker)}
-    exit 7
-    ;;
-  *) exec ${shellQuote(tmux)} "$@" ;;
-esac
-`,
-    { mode: 0o700 },
-  );
-  await chmod(wrapper, 0o700);
-  return wrapper;
+  return writeLaunch(join(parent, "tmux-nonzero-launch-frame"), {
+    after: "exit",
+    exit: 7,
+    kind: "launch",
+    marker,
+    tmux,
+  });
 }
-
 async function writeGonePidLaunchWrapper(parent: string, exitedPid: number): Promise<string> {
-  const wrapper = join(parent, "tmux-gone-launch-pid");
-  await writeFile(
-    wrapper,
-    `#!/bin/sh
-socket=
-while [ "$#" -gt 0 ]; do
-  if [ "$1" = "-S" ]; then
-    shift
-    socket=$1
-  fi
-  shift
-done
-printf '%s\\t${String(exitedPid)}\\t%s\\n' "$socket" '$42'
-`,
-    { mode: 0o700 },
-  );
-  await chmod(wrapper, 0o700);
-  return wrapper;
+  return writeLaunch(join(parent, "tmux-gone-launch-pid"), {
+    kind: "frame",
+    pid: String(exitedPid),
+  });
 }
-
 async function writeNoncanonicalPidLaunchWrapper(parent: string): Promise<string> {
-  const wrapper = join(parent, "tmux-noncanonical-launch-pid");
-  await writeFile(
-    wrapper,
-    `#!/bin/sh
-socket=
-while [ "$#" -gt 0 ]; do
-  if [ "$1" = "-S" ]; then
-    shift
-    socket=$1
-  fi
-  shift
-done
-printf '%s\\t999999999junk\\t%s\\n' "$socket" '$42'
-`,
-    { mode: 0o700 },
-  );
-  await chmod(wrapper, 0o700);
-  return wrapper;
+  return writeLaunch(join(parent, "tmux-noncanonical-launch-pid"), {
+    kind: "frame",
+    pid: "999999999junk",
+  });
 }
-
 describe("TestServer launch recovery", () => {
   test("reaps an indeterminate delegated launch that times out after publishing its frame", async () => {
     const parent = await makeTestDirectory("ltx4-launch-timeout-");

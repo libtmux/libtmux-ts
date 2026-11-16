@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { chmodSync, existsSync, rmSync, statSync } from "node:fs";
-import { chmod, mkdir, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readdir, readFile, rm, symlink } from "node:fs/promises";
 import { Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
@@ -20,6 +20,7 @@ import {
   type Sandbox,
   type SandboxOptions,
 } from "../../src/_internal/test/testkit.js";
+import { writeStub, type StubConfig } from "../support/fake_tmux.js";
 
 const NAMED: string[] = ["TMUX", "TMUX_PANE", "LIBTMUX_SOCKET", "LIBTMUX_SOCKET_PATH"];
 
@@ -254,30 +255,31 @@ describe("assertSandboxed", () => {
   });
 });
 
-/** A tmux whose every command runs `script`, which is handed `-S <socket> kill-server`. */
-async function tmuxRunning(script: string): Promise<string> {
+/** A tmux that is handed `-S <socket> kill-server` and does what `behavior` says. */
+async function tmuxRunning(behavior: StubConfig): Promise<string> {
   const directory = await makeTestDirectory("ltx-fake-tmux-");
   scratch.push(directory);
-  const path = join(directory, "tmux");
-  await writeFile(path, `#!/bin/sh\n${script}\n`);
-  await chmod(path, 0o755);
-  return path;
+  return writeStub(join(directory, "tmux"), behavior);
 }
 
-// The argument after -S is the socket; its server wrote its pid beside it.
-const STOPS = 'kill "$(cat "$2.pid")"';
-const STOPS_SLOWLY = `( sleep 0.5; ${STOPS} ) >/dev/null 2>&1 &`;
+// The server it stops wrote its pid beside its socket.
+const STOPS: StubConfig = { behavior: "stop" };
+const EXITS_OK: StubConfig = { behavior: "exit", code: 0 };
+const EXITS_FAILED: StubConfig = { behavior: "exit", code: 1 };
 
-/** A process listening where tmux would, so that stopping it is a real act. */
-async function serverOn(socketPath: string): Promise<ChildProcess> {
+/**
+ * A process listening where tmux would, so that stopping it is a real act. A
+ * slow one takes half a second to exit after SIGTERM.
+ */
+async function serverOn(socketPath: string, slowToStop = false): Promise<ChildProcess> {
   await mkdir(dirname(socketPath), { recursive: true });
   const server = spawn(
     process.execPath,
     [
       "-e",
-      'require("node:fs").writeFileSync(process.env.SOCKET + ".pid", String(process.pid)); require("node:net").createServer().listen(process.env.SOCKET);',
+      'require("node:fs").writeFileSync(process.env.SOCKET + ".pid", String(process.pid)); require("node:net").createServer().listen(process.env.SOCKET); if (process.env.SLOW) process.on("SIGTERM", () => setTimeout(() => process.exit(0), 500));',
     ],
-    { env: { SOCKET: socketPath }, stdio: "ignore" },
+    { env: { SOCKET: socketPath, ...(slowToStop ? { SLOW: "1" } : {}) }, stdio: "ignore" },
   );
   servers.push(server);
   for (let attempt = 0; attempt < 200 && !existsSync(socketPath); attempt += 1) {
@@ -376,9 +378,9 @@ describe("leaving the sandbox", () => {
   test("waits for a server that is slow to stop", async () => {
     const sandbox = await enter(ambient(), {
       settleMs: 3_000,
-      tmux: await tmuxRunning(STOPS_SLOWLY),
+      tmux: await tmuxRunning(STOPS),
     });
-    await serverOn(join(sandbox.root, "custom.sock"));
+    await serverOn(join(sandbox.root, "custom.sock"), true);
 
     expect(await released(sandbox)).toContain("had to be stopped");
     expect(existsSync(sandbox.root)).toBe(false);
@@ -387,9 +389,9 @@ describe("leaving the sandbox", () => {
   test("makes a second release wait for the one under way, and report no failure of its own", async () => {
     const sandbox = await enter(ambient(), {
       settleMs: 3_000,
-      tmux: await tmuxRunning(STOPS_SLOWLY),
+      tmux: await tmuxRunning(STOPS),
     });
-    await serverOn(join(sandbox.root, "custom.sock"));
+    await serverOn(join(sandbox.root, "custom.sock"), true);
 
     const first = released(sandbox);
     const second = released(sandbox).then((message) => ({
@@ -402,7 +404,7 @@ describe("leaving the sandbox", () => {
   });
 
   test("keeps the sandbox and fails when a socket cannot be probed, since a server may still answer", async () => {
-    const sandbox = await enter(ambient(), { settleMs: 300, tmux: await tmuxRunning("exit 0") });
+    const sandbox = await enter(ambient(), { settleMs: 300, tmux: await tmuxRunning(EXITS_OK) });
     const server = await serverOn(join(sandbox.root, "custom.sock"));
     // Not a refusal and not a missing socket: connecting is not allowed, which says nothing.
     await chmod(join(sandbox.root, "custom.sock"), 0o000);
@@ -418,9 +420,7 @@ describe("leaving the sandbox", () => {
   test("fails fast and names the call when kill-server never returns, leaving no process behind", async () => {
     const pids = join(await makeTestDirectory("ltx-pids-"), "pid");
     scratch.push(join(pids, ".."));
-    const stub = await tmuxRunning(
-      `echo $$ > "${pids}.child"; sleep 600 & echo $! > "${pids}.grandchild"; wait`,
-    );
+    const stub = await tmuxRunning({ behavior: "hang", pids });
     const sandbox = await enter(ambient(), { deadlineMs: 600, settleMs: 300, tmux: stub });
     const server = await serverOn(join(sandbox.root, "custom.sock"));
     const started = performance.now();
@@ -453,7 +453,7 @@ describe("leaving the sandbox", () => {
   });
 
   test("stops going on once its time is up, and keeps the sandbox", async () => {
-    const sandbox = await enter(ambient(), { releaseMs: 0, tmux: await tmuxRunning("exit 0") });
+    const sandbox = await enter(ambient(), { releaseMs: 0, tmux: await tmuxRunning(EXITS_OK) });
     const server = await serverOn(join(sandbox.root, "custom.sock"));
 
     const message = await released(sandbox);
@@ -467,10 +467,10 @@ describe("leaving the sandbox", () => {
   });
 
   test.each([
-    ["kill-server does nothing", "exit 0"],
-    ["kill-server fails, as it does across a version mismatch", "exit 1"],
-  ])("keeps the sandbox and fails when %s to a server that answers", async (_name, script) => {
-    const sandbox = await enter(ambient(), { settleMs: 300, tmux: await tmuxRunning(script) });
+    ["kill-server does nothing", EXITS_OK],
+    ["kill-server fails, as it does across a version mismatch", EXITS_FAILED],
+  ])("keeps the sandbox and fails when %s to a server that answers", async (_name, behavior) => {
+    const sandbox = await enter(ambient(), { settleMs: 300, tmux: await tmuxRunning(behavior) });
     const server = await serverOn(join(sandbox.root, "custom.sock"));
 
     const message = await released(sandbox);
@@ -486,7 +486,7 @@ describe("leaving the sandbox", () => {
   });
 
   test("keeps the event loop running while it waits", async () => {
-    const sandbox = await enter(ambient(), { settleMs: 1_000, tmux: await tmuxRunning("exit 0") });
+    const sandbox = await enter(ambient(), { settleMs: 1_000, tmux: await tmuxRunning(EXITS_OK) });
     const server = await serverOn(join(sandbox.root, "custom.sock"));
     let ticks = 0;
     const timer = setInterval(() => (ticks += 1), 10);
@@ -521,7 +521,7 @@ describe("leaving the sandbox", () => {
       const sandbox = await enter(ambient(), {
         deadlineMs: 200,
         settleMs: 100,
-        tmux: await tmuxRunning("exit 0"),
+        tmux: await tmuxRunning(EXITS_OK),
       });
       const server = await serverOn(join(sandbox.root, "custom.sock"));
       await released(sandbox);
@@ -541,7 +541,7 @@ describe("leaving the sandbox", () => {
     const sandbox = await enter(ambient(), {
       connect: stub.connect,
       settleMs: 300,
-      tmux: await tmuxRunning("exit 1"),
+      tmux: await tmuxRunning(EXITS_FAILED),
     });
     await deadSocketAt(join(sandbox.root, "custom.sock"));
 
@@ -558,7 +558,7 @@ describe("leaving the sandbox", () => {
       const sandbox = await enter(ambient(), {
         connect: stub.connect,
         settleMs: 300,
-        tmux: await tmuxRunning("exit 0"),
+        tmux: await tmuxRunning(EXITS_OK),
       });
       await deadSocketAt(join(sandbox.root, "custom.sock"));
       await chmod(join(sandbox.root, "custom.sock"), 0o000);
@@ -577,7 +577,7 @@ describe("leaving the sandbox", () => {
     const sandbox = await enter(ambient(), {
       connect: stub.connect,
       settleMs: 300,
-      tmux: await tmuxRunning("exit 1"),
+      tmux: await tmuxRunning(EXITS_FAILED),
     });
     await deadSocketAt(join(sandbox.root, "custom.sock"));
 
@@ -595,7 +595,7 @@ describe("leaving the sandbox", () => {
       const sandbox = await enter(ambient(), {
         connect: stub.connect,
         settleMs: 300,
-        tmux: await tmuxRunning("exit 0"),
+        tmux: await tmuxRunning(EXITS_OK),
       });
       root = sandbox.root;
       await deadSocketAt(join(root, "custom.sock"));
@@ -611,7 +611,10 @@ describe("leaving the sandbox", () => {
   );
 
   test("lets a socket go that nothing listens on", async () => {
-    const sandbox = await enter(ambient(), { settleMs: 300, tmux: await tmuxRunning("exit 1") });
+    const sandbox = await enter(ambient(), {
+      settleMs: 300,
+      tmux: await tmuxRunning(EXITS_FAILED),
+    });
     const directory = join(sandbox.root, `tmux-${uid}`);
     await mkdir(directory);
     await deadSocketAt(join(directory, "default"));
