@@ -10,58 +10,12 @@ import {
   withOwnedRunRoot,
 } from "../../libtmux/src/_internal/test/testkit.js";
 import { processRun } from "../src/process.ts";
+import { runInPty, type PtyResult } from "./pty.ts";
 
 const runtime = process.env.LIBTMUX_WORKSPACE_CLI_RUNTIME ?? process.execPath;
 const entry =
   process.env.LIBTMUX_WORKSPACE_CLI_ENTRY ?? new URL("../src/main.ts", import.meta.url).pathname;
-const ptyDriver = `
-import errno, os, pty, select, signal, sys, time
-pid, fd = pty.fork()
-if pid == 0:
-    cols, rows = os.environ.get("WORKSPACE_TEST_COLS"), os.environ.get("WORKSPACE_TEST_ROWS")
-    if cols and rows:
-        import fcntl, struct, termios
-        fcntl.ioctl(1, termios.TIOCSWINSZ, struct.pack("HHHH", int(rows), int(cols), 0, 0))
-    destination = os.environ.get("WORKSPACE_TEST_STDOUT")
-    if destination:
-        out = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        os.dup2(out, 1)
-        os.close(out)
-        null = os.open(os.devnull, os.O_RDONLY)
-        os.dup2(null, 0)
-        os.close(null)
-        err = os.open(destination + ".err", os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        os.dup2(err, 2)
-        os.close(err)
-    os.execvpe(sys.argv[1], sys.argv[1:], os.environ)
-def forward(sig, frame):
-    try: os.kill(pid, sig)
-    except ProcessLookupError: pass
-signal.signal(signal.SIGTERM, forward)
-signal.signal(signal.SIGINT, forward)
-deadline = time.monotonic() + 8
-status = None
-try:
-    while time.monotonic() < deadline:
-        if select.select([fd], [], [], 0.02)[0]:
-            try: data = os.read(fd, 65536)
-            except OSError as error:
-                if error.errno != errno.EIO: raise
-                data = b""
-            if data: os.write(1, data)
-        child, current = os.waitpid(pid, os.WNOHANG)
-        if child:
-            status = current
-            break
-finally:
-    if status is None:
-        try: os.killpg(pid, signal.SIGKILL)
-        except ProcessLookupError: pass
-        _, status = os.waitpid(pid, 0)
-    os.close(fd)
-code = os.waitstatus_to_exitcode(status)
-sys.exit(code if code >= 0 else 128 - code)
-`;
+const redirectStdio = new URL("./redirect-stdio.ts", import.meta.url).pathname;
 
 async function fixture(
   body: (server: Server, root: string, env: NodeJS.ProcessEnv) => Promise<void>,
@@ -97,18 +51,30 @@ async function fixture(
   );
 }
 
+/**
+ * Runs the command on a pseudo-terminal. `stdout` names a file that receives
+ * the command's stdout, with its stderr in the same name plus `.err`, while the
+ * command keeps the terminal as its controlling one.
+ */
 async function terminal<T>(
   argv: string[],
   root: string,
   env: NodeJS.ProcessEnv,
-  body: (result: ReturnType<typeof processRun>, interrupt: () => void) => Promise<T>,
+  body: (result: Promise<PtyResult>, interrupt: () => void) => Promise<T>,
+  options: { cols?: number; rows?: number; stdout?: string } = {},
 ) {
   const controller = new AbortController();
-  const result = processRun(["python3", "-u", "-c", ptyDriver, ...argv], {
-    cwd: root,
-    env,
-    signal: controller.signal,
-  });
+  const result = runInPty(
+    options.stdout ? [process.execPath, redirectStdio, options.stdout, ...argv] : argv,
+    {
+      cwd: root,
+      env,
+      signal: controller.signal,
+      cols: options.cols,
+      rows: options.rows,
+      deadline: 8000,
+    },
+  );
   try {
     return await body(result, () => controller.abort());
   } finally {
@@ -266,7 +232,7 @@ test("human load attaches only the final workspace through a separate terminal",
     await terminal(
       [runtime, entry, "load", first, last, "-S", server.socketPath!, "--color", "never"],
       root,
-      { ...env, WORKSPACE_TEST_STDOUT: saved },
+      env,
       async (result, interrupt) => {
         try {
           await until(async () =>
@@ -291,6 +257,7 @@ test("human load attaches only the final workspace through a separate terminal",
         expect(text).not.toContain("\u001b");
         expect(await readFile(saved + ".err", "utf8")).toBe("");
       },
+      { stdout: saved },
     );
   });
 });
@@ -308,7 +275,7 @@ test("attached load sizes the session, and every window in it, to the real termi
     await terminal(
       [runtime, entry, "load", source, "-S", server.socketPath!],
       root,
-      { ...env, WORKSPACE_TEST_COLS: "137", WORKSPACE_TEST_ROWS: "41" },
+      env,
       async (result) => {
         await until(async () => (await server.snapshot()).clients.length === 1);
         const session = (await server.snapshot()).sessions.one({ name: "sized-terminal" });
@@ -318,6 +285,7 @@ test("attached load sizes the session, and every window in it, to the real termi
         await (await server.snapshot()).clients.at(0)!.detach();
         expect((await result).code).toBe(0);
       },
+      { cols: 137, rows: 41 },
     );
   });
 });

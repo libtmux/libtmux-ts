@@ -1,10 +1,11 @@
 import { expect, test } from "bun:test";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync, watch } from "node:fs";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 import { completionScript } from "../src/completions.ts";
 import type { CommandCatalog, OptionReference } from "../src/reference.ts";
+import { startPty } from "./pty.ts";
 
 function option(
   long: string,
@@ -187,43 +188,68 @@ for (const shell of ["bash", "fish"] as const) {
   });
 }
 
-const terminalDriver = String.raw`
-import errno, json, os, pty, select, signal, sys, time
-root, shell = sys.argv[1:]
-result = root + '/buffers'
-init = open(root + '/init').read()
-cases = json.load(open(root + '/cases.json'))
-pid, fd = pty.fork()
-if pid == 0:
-    os.chdir(root)
-    os.execvpe(shell, [shell, '--norc', '--noprofile'] if shell == 'bash' else [shell, '-f'], dict(os.environ, PATH=root + os.pathsep + os.environ['PATH'], TERM='xterm', LC_ALL='C', HISTFILE='/dev/null'))
-trace = bytearray()
-def until(predicate):
-    end = time.monotonic() + 4
-    while time.monotonic() < end:
-        if predicate(): return
-        if select.select([fd], [], [], .01)[0]:
-            try: trace.extend(os.read(fd, 65536))
-            except OSError as error:
-                if error.errno != errno.EIO: raise
-                break
-    raise RuntimeError('completion terminal did not produce a buffer: ' + repr(trace[-2000:]))
-def buffers():
-    try: return open(result, 'rb').read().split(b'\0')[:-1]
-    except FileNotFoundError: return []
-try:
-    os.write(fd, (init + '\n').encode())
-    until(lambda: os.path.exists(root + '/ready'))
-    for i, line in enumerate(cases):
-        os.write(fd, (line + '\t\x18').encode())
-        until(lambda: len(buffers()) > i)
-    print(json.dumps([value.decode() for value in buffers()]))
-finally:
-    try: os.killpg(pid, signal.SIGKILL)
-    except ProcessLookupError: pass
-    os.waitpid(pid, 0)
-    os.close(fd)
-`;
+/** Resolves once `ready` holds, rechecking whenever `root` changes, or rejects after four seconds. */
+function until(root: string, ready: () => boolean, trace: () => string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const watcher = watch(root);
+    const finish = (error?: Error) => {
+      clearTimeout(timer);
+      watcher.close();
+      if (error) reject(error);
+      else resolve();
+    };
+    const check = () => {
+      if (ready()) finish();
+    };
+    const timer = setTimeout(
+      () =>
+        finish(
+          new Error(`completion terminal did not produce a buffer: ${JSON.stringify(trace())}`),
+        ),
+      4000,
+    );
+    watcher.on("change", check);
+    check();
+  });
+}
+
+/** Types each line and a Tab into the shell, with the tool's own key bound to capture the edit buffer. */
+async function typedBuffers(root: string, shell: string, init: string, lines: string[]) {
+  const buffers = join(root, "buffers");
+  const captured = () =>
+    existsSync(buffers) ? readFileSync(buffers, "utf8").split("\0").slice(0, -1) : [];
+  const terminal = startPty(shell === "bash" ? [shell, "--norc", "--noprofile"] : [shell, "-f"], {
+    cwd: root,
+    env: {
+      ...process.env,
+      PATH: `${root}${delimiter}${process.env.PATH}`,
+      TERM: "xterm",
+      LC_ALL: "C",
+      HISTFILE: "/dev/null",
+    },
+  });
+  try {
+    terminal.write(`${init}\n`);
+    await until(
+      root,
+      () => existsSync(join(root, "ready")),
+      () => terminal.output().slice(-2000),
+    );
+    for (const [index, line] of lines.entries()) {
+      terminal.write(`${line}\t\x18`);
+      // eslint-disable-next-line no-await-in-loop -- Each line is typed after the previous one lands.
+      await until(
+        root,
+        () => captured().length > index,
+        () => terminal.output().slice(-2000),
+      );
+    }
+    return captured();
+  } finally {
+    process.kill(-terminal.pid, "SIGKILL");
+    await terminal.result;
+  }
+}
 
 for (const [shell, autoload] of [
   ["bash", false],
@@ -241,11 +267,8 @@ for (const [shell, autoload] of [
         shell === "bash"
           ? `source ${quote(script)}; bind 'set keyseq-timeout 1'; _capture() { printf '%s\\0' "$READLINE_LINE" >> ${quote(join(root, "buffers"))}; READLINE_LINE=; READLINE_POINT=0; }; bind -x '"\\C-x":_capture'`
           : `KEYTIMEOUT=1; ${zshLoad}; _capture() { printf '%s\\0' "$BUFFER" >> ${quote(join(root, "buffers"))}; BUFFER=; zle reset-prompt; }; zle -N _capture; bindkey '^X' _capture`;
-      await writeFile(
-        join(root, "init"),
-        `${setup}; PS1='prompt> '; : > ${quote(join(root, "ready"))}`,
-      );
-      const cases = [
+      const init = `${setup}; PS1='prompt> '; : > ${quote(join(root, "ready"))}`;
+      const cases: [string, string][] = [
         ["tmux-workspace lo", "tmux-workspace load "],
         ["tmux-workspace import tea", "tmux-workspace import teamocil "],
         ["tmux-workspace load --choice two", "tmux-workspace load --choice two\\ words "],
@@ -261,18 +284,13 @@ for (const [shell, autoload] of [
         ["tmux-workspace load file:c", "tmux-workspace load file:colon.yaml "],
         ["tmux-workspace load --directory fol", "tmux-workspace load --directory folder\\ space/"],
       ];
-      await writeFile(join(root, "cases.json"), JSON.stringify(cases.map(([input]) => input)));
-      const child = Bun.spawn(["python3", "-c", terminalDriver, root, shell], {
-        stdout: "pipe",
-        stderr: "pipe",
-      });
-      const [stdout, stderr, code] = await Promise.all([
-        new Response(child.stdout).text(),
-        new Response(child.stderr).text(),
-        child.exited,
-      ]);
-      expect({ code, stderr }).toEqual({ code: 0, stderr: "" });
-      expect(JSON.parse(stdout)).toEqual(cases.map(([, expected]) => expected));
+      const typed = await typedBuffers(
+        root,
+        shell,
+        init,
+        cases.map(([input]) => input),
+      );
+      expect(typed).toEqual(cases.map(([, expected]) => expected));
     });
   });
 }
