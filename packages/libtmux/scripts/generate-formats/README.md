@@ -23,7 +23,7 @@ deterministic, that check mode detects drift without writing, the generated
 `Where` region, and the command's refusals when it runs as a process:
 
 ```console
-$ bun test ./scripts/generate-formats
+$ bun test packages/libtmux/scripts/generate-formats
 ```
 
-Run from `packages/libtmux`.
+Run the `bun run` commands from `packages/libtmux` and the tests from the repository root.

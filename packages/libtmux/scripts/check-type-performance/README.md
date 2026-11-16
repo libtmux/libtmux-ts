@@ -19,7 +19,7 @@ Its tests run the command against fixtures with a stand-in compiler, so each
 refusal is reproduced without a real compile:
 
 ```console
-$ bun test ./scripts/check-type-performance
+$ bun test packages/libtmux/scripts/check-type-performance
 ```
 
-Run from `packages/libtmux`.
+Run the `bun run` commands from `packages/libtmux` and the tests from the repository root.

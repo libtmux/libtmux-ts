@@ -19,7 +19,7 @@ It is a module with no command of its own. Its tests cover each kind of
 disagreement, and a manifest with no declaration exports:
 
 ```console
-$ bun test ./scripts/declaration-closure
+$ bun test packages/libtmux/scripts/declaration-closure
 ```
 
-Run from `packages/libtmux`.
+Run the `bun run` commands from `packages/libtmux` and the tests from the repository root.

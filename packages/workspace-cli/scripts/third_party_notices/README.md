@@ -19,7 +19,7 @@ tests check that the shipped notices reproduce each bundled package's licence,
 and that a package left out is named:
 
 ```console
-$ bun test ./scripts/third_party_notices
+$ bun test packages/workspace-cli/scripts/third_party_notices
 ```
 
-Run from `packages/workspace-cli`.
+Run the `bun run` commands from `packages/workspace-cli` and the tests from the repository root.

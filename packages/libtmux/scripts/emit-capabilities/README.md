@@ -21,7 +21,7 @@ and kebab-case, that a refusing capability names its error, and that every API
 name resolves to a public symbol read by [`api_surface`](../api_surface/README.md):
 
 ```console
-$ bun test ./scripts/emit-capabilities
+$ bun test packages/libtmux/scripts/emit-capabilities
 ```
 
-Run from `packages/libtmux`.
+Run the `bun run` commands from `packages/libtmux` and the tests from the repository root.

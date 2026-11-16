@@ -16,7 +16,7 @@ platform used. The test covers the output-marker tracker the workload reads
 with, and starts no server:
 
 ```console
-$ bun test ./scripts/bench-control
+$ bun test packages/libtmux/scripts/bench-control
 ```
 
-Run the tests from `packages/libtmux`.
+Run the test from the repository root.

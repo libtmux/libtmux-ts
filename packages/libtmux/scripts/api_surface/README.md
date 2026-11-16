@@ -21,7 +21,7 @@ public member or root declaration with no example is rejected, and that root
 overloads are kept without their implementation:
 
 ```console
-$ bun test ./scripts/api_surface
+$ bun test packages/libtmux/scripts/api_surface
 ```
 
-Run from `packages/libtmux`.
+Run the `bun run` commands from `packages/libtmux` and the tests from the repository root.
