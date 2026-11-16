@@ -164,24 +164,32 @@ jobs:
 
       # Formatting, linting and the cross-package READMEs are the workspace's,
       # not any one package's.
-      - run: bun run format:check
-      - run: bun run lint
+      - name: Check formatting (oxfmt)
+        run: bun run format:check
+      - name: Lint (oxlint)
+        run: bun run lint
       # The gates below are themselves TypeScript, and until this ran nothing
       # compiled them: a gate that crashes on its own type error reports no
       # failures, which reads exactly like a clean tree.
-      - run: bun run typecheck:tooling
+      - name: Type-check the tooling (tsc)
+        run: bun run typecheck:tooling
       # Each script's tests sit beside it under scripts/<name>/tests.
       - name: Test the scripts
         run: bun run test:scripts
-      - run: bun run typecheck:readme
+      - name: Type-check the README examples (tsc)
+        run: bun run typecheck:readme
       - run: bun run --cwd packages/workspace-cli build
       # The prose around the compiled snippets: that every doc comment reaches
       # a symbol, that every link resolves, and that the shell blocks name
       # paths and packages this workspace has.
-      - run: bun run docs:comments
-      - run: bun run docs:links
-      - run: bun run docs:claims
-      - run: bun run docs:runnable
+      - name: Check doc comments
+        run: bun run docs:comments
+      - name: Check documentation links
+        run: bun run docs:links
+      - name: Check documentation claims
+        run: bun run docs:claims
+      - name: Check runnable documentation
+        run: bun run docs:runnable
       # Compiling a snippet proves it typechecks; only running it proves the
       # target exists and the recipe terminates. This starts real tmux servers,
       # so it also has to leave none behind, and it says so if it does.
@@ -192,11 +200,13 @@ jobs:
       - run: bun run --cwd packages/libtmux test:symbols
       # Every temporary directory the suites create is named for this
       # package, so a sweep can never reap another libtmux port's servers.
-      - run: bun run test:namespace
+      - name: Check the test namespace
+        run: bun run test:namespace
       # dependabot is the one configuration nothing else here executes, so a
       # placeholder in it reads exactly like a working one until a dependency
       # has been stale for a year.
-      - run: bun run ci:config
+      - name: Check the CI configuration
+        run: bun run ci:config
 
       - name: Gate the library
         working-directory: packages/libtmux
