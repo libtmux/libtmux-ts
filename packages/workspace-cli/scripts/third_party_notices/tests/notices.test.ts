@@ -5,7 +5,7 @@ import {
   missingNotices,
   noticesPath,
   renderNotices,
-} from "../scripts/third_party_notices.ts";
+} from "../third_party_notices.ts";
 
 test("the shipped notices reproduce every bundled package's license", async () => {
   const packages = await collectBundledPackages();

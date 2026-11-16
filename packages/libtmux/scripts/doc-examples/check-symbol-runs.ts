@@ -15,7 +15,7 @@ import {
   readRootApiSurface,
   requireRootExamples,
   requireSymbolExamples,
-} from "../api_surface.js";
+} from "../api_surface/api_surface.js";
 import { packageRoot } from "../package_root.js";
 import { bindingsFor, fencedBlocks, splitForExecution, type Example } from "./example_harness.js";
 import { buildWorld, disposeWorld, type World } from "./readme_world.js";

@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 
-import { OUTPUT_MARKER, OutputMarkerTracker } from "../../scripts/bench-control.js";
+import { OUTPUT_MARKER, OutputMarkerTracker } from "../bench-control.js";
 
 test.each([
   { chunks: [`xxxx${OUTPUT_MARKER}`], expected: 4, name: "a whole marker" },

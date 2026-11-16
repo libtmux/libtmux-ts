@@ -4,7 +4,7 @@ import {
   readRootApiSurface,
   requireRootExamples,
   requireSymbolExamples,
-} from "../api_surface.js";
+} from "../api_surface/api_surface.js";
 
 /**
  * Require a working example on every public method and getter, and compile it.

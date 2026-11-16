@@ -20,6 +20,9 @@ import { fileURLToPath } from "node:url";
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
+import { writeBunProgram } from "../../../packages/libtmux/tests/support/bun_program.js";
+import type { TouchConfig } from "./fixtures/touch.js";
+
 import {
   backupPath,
   BUILD_ENTRY,
@@ -47,9 +50,16 @@ import {
 
 import { makeTestDirectory } from "../../../packages/libtmux/src/_internal/test/testkit.js";
 
+const TOUCH_PROGRAM = new URL("./fixtures/touch.ts", import.meta.url);
+
+/** An executable that leaves the files `config` names and exits with its status. */
+async function writeTouch(destination: string, config: TouchConfig): Promise<void> {
+  await writeBunProgram(destination, TOUCH_PROGRAM, config);
+}
+
 const repositoryRoot = fileURLToPath(new URL("../../..", import.meta.url));
 const exitWithParentModule = fileURLToPath(
-  new URL("../../../packages/libtmux/tests/support/exit_with_parent.ts", import.meta.url),
+  new URL("./fixtures/exit_with_parent.ts", import.meta.url),
 );
 const CLI_NAMES = ["claude", "codex", "cursor", "gemini", "grok", "agy", "opencode", "pi"];
 
@@ -232,9 +242,7 @@ async function runSwap(
   return { status, stderr, stdout };
 }
 
-const recordLockProbe = fileURLToPath(
-  new URL("../../../packages/libtmux/tests/fixtures/record_lock_probe.ts", import.meta.url),
-);
+const recordLockProbe = fileURLToPath(new URL("./fixtures/record_lock_probe.ts", import.meta.url));
 
 /** Tries the lock from a second process: `acquired` or `blocked`. */
 async function tryRecordLock(path: string): Promise<string> {
@@ -339,11 +347,7 @@ describe("source specs", () => {
     await seed(info, originalConfig(info));
     await mkdir(dirname(emitted), { recursive: true });
     await mkdir(bin);
-    await writeFile(
-      join(bin, "bun"),
-      `#!/bin/sh\n: > ${JSON.stringify(marker)}\n: > ${JSON.stringify(emitted)}\n`,
-    );
-    await chmod(join(bin, "bun"), 0o700);
+    await writeTouch(join(bin, "bun"), { files: [marker, emitted] });
 
     const result = await runSwap(
       ["use", "--source", "build", "--repo", repo, "--no-preflight", "--cli", "cursor"],
@@ -362,8 +366,7 @@ describe("source specs", () => {
     const marker = join(home, "rejected-build-ran");
     await seed(info, '{"mcpServers":[]}\n');
     await mkdir(bin);
-    await writeFile(join(bin, "bun"), `#!/bin/sh\n: > ${JSON.stringify(marker)}\n`);
-    await chmod(join(bin, "bun"), 0o700);
+    await writeTouch(join(bin, "bun"), { files: [marker] });
 
     const result = await runSwap(
       ["use", "--source", "build", "--repo", repositoryRoot, "--no-preflight", "--cli", "cursor"],
@@ -2049,8 +2052,7 @@ describe("dry-run", () => {
     const bin = join(home, "bin");
     const serverMarker = join(home, "server-started");
     await mkdir(bin);
-    await writeFile(join(bin, "node"), `#!/bin/sh\n: > ${JSON.stringify(serverMarker)}\nexit 1\n`);
-    await chmod(join(bin, "node"), 0o700);
+    await writeTouch(join(bin, "node"), { files: [serverMarker], status: 1 });
     const beforeState = await configState(infos);
     const beforeTree = (await readdir(home, { recursive: true })).toSorted();
 

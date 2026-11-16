@@ -1,9 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import {
-  declarationClosureErrors,
-  packageDeclarationExports,
-} from "../../scripts/declaration-closure.js";
+import { declarationClosureErrors, packageDeclarationExports } from "../declaration-closure.js";
 
 describe("published declaration closure", () => {
   test("accepts TypeScript's recursive graph when every declaration is exported", () => {

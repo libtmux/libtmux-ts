@@ -3,7 +3,7 @@ import { readFile, readdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-export const packageRoot = fileURLToPath(new URL("..", import.meta.url));
+export const packageRoot = fileURLToPath(new URL("../..", import.meta.url));
 export const noticesPath = join(packageRoot, "THIRD-PARTY-NOTICES.md");
 
 /**
@@ -106,8 +106,8 @@ if (import.meta.main) {
     if (missing.length > 0 || current !== rendered) {
       process.stderr.write(
         missing.length > 0
-          ? `THIRD-PARTY-NOTICES.md omits ${missing.map((entry) => `${entry.name} ${entry.version}`).join(", ")}; run bun scripts/third_party_notices.ts\n`
-          : "THIRD-PARTY-NOTICES.md is stale; run bun scripts/third_party_notices.ts\n",
+          ? `THIRD-PARTY-NOTICES.md omits ${missing.map((entry) => `${entry.name} ${entry.version}`).join(", ")}; run bun scripts/third_party_notices/third_party_notices.ts\n`
+          : "THIRD-PARTY-NOTICES.md is stale; run bun scripts/third_party_notices/third_party_notices.ts\n",
       );
       process.exit(1);
     }

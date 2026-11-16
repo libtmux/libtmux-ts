@@ -363,7 +363,9 @@ async function run(mode: Mode): Promise<void> {
 
 const argument = process.argv[2];
 if ((argument !== "--check" && argument !== "--update") || process.argv.length !== 3) {
-  process.stderr.write("usage: bun scripts/check-type-performance.ts (--check|--update)\n");
+  process.stderr.write(
+    "usage: bun scripts/check-type-performance/check-type-performance.ts (--check|--update)\n",
+  );
   process.exitCode = 2;
 } else {
   try {

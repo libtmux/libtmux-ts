@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import { packageRoot } from "./package_root.js";
+import { packageRoot } from "../package_root.js";
 
 /**
  * Read the public surface of the handle classes out of their source.

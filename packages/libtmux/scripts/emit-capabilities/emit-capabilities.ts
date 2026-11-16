@@ -1,10 +1,12 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 
-import { renderCapabilityManifest } from "../src/_internal/support/capabilities.js";
+import { renderCapabilityManifest } from "../../src/_internal/support/capabilities.js";
 
 /** The manifest the docs read, committed at the repository root. */
-export const MANIFEST_PATH = fileURLToPath(new URL("../../../capabilities.json", import.meta.url));
+export const MANIFEST_PATH = fileURLToPath(
+  new URL("../../../../capabilities.json", import.meta.url),
+);
 
 const usage = "usage: emit-capabilities.ts (--check|--write)";
 

@@ -2,11 +2,11 @@ import { readFile } from "node:fs/promises";
 
 import { describe, expect, test } from "bun:test";
 
-import { MANIFEST_PATH } from "../../scripts/emit-capabilities.js";
-import { readApiSurface } from "../../scripts/api_surface.js";
-import * as errors from "../../src/errors.js";
-import { parseTmuxVersion } from "../../src/_internal/runtime/tmux_version.js";
-import { MINIMUM_TMUX } from "../../src/_internal/support/versions.js";
+import { MANIFEST_PATH } from "../emit-capabilities.js";
+import { readApiSurface } from "../../api_surface/api_surface.js";
+import * as errors from "../../../src/errors.js";
+import { parseTmuxVersion } from "../../../src/_internal/runtime/tmux_version.js";
+import { MINIMUM_TMUX } from "../../../src/_internal/support/versions.js";
 import {
   CAPABILITIES,
   WORKAROUNDS,
@@ -14,7 +14,7 @@ import {
   hasCapability,
   renderCapabilityManifest,
   workaroundApplies,
-} from "../../src/_internal/support/capabilities.js";
+} from "../../../src/_internal/support/capabilities.js";
 
 const version = parseTmuxVersion;
 

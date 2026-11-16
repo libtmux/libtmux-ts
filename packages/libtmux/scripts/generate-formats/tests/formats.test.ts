@@ -5,28 +5,28 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, test } from "bun:test";
 
-import { generateFormats } from "../../scripts/generate-formats.js";
-import { releaseAtLeast } from "../../src/_internal/runtime/tmux_version.js";
-import { MINIMUM_TMUX } from "../../src/_internal/support/versions.js";
-import type { FormatFieldName, FormatScope } from "../../src/_generated/format_field_names.js";
-import { FORMAT_FIELD_TOKENS } from "../../src/_generated/format_fields.js";
-import { WHERE_ALIASES_V1, WHERE_FIELDS_V1 } from "../../src/_generated/where_fields.js";
+import { generateFormats } from "../generate-formats.js";
+import { releaseAtLeast } from "../../../src/_internal/runtime/tmux_version.js";
+import { MINIMUM_TMUX } from "../../../src/_internal/support/versions.js";
+import type { FormatFieldName, FormatScope } from "../../../src/_generated/format_field_names.js";
+import { FORMAT_FIELD_TOKENS } from "../../../src/_generated/format_fields.js";
+import { WHERE_ALIASES_V1, WHERE_FIELDS_V1 } from "../../../src/_generated/where_fields.js";
 import {
   FORMAT_REGISTRY,
   formatFieldsForListCommand,
   lookupFormatField,
   renderGeneratedFormatSources,
   validateWhereSchemaHistory,
-} from "../../src/_internal/codec/format_registry.js";
+} from "../../../src/_internal/codec/format_registry.js";
 
-import { makeTestDirectory } from "../../src/_internal/test/testkit.js";
+import { makeTestDirectory } from "../../../src/_internal/test/testkit.js";
 
 interface FormatFixture {
   fields: Array<{ scope: FormatScope; since: string; token: FormatFieldName }>;
 }
 
-const fieldUrl = new URL("../fixtures/tmux-format-fields.json", import.meta.url);
-const tsRootPath = fileURLToPath(new URL("../..", import.meta.url));
+const fieldUrl = new URL("../../../tests/fixtures/tmux-format-fields.json", import.meta.url);
+const tsRootPath = fileURLToPath(new URL("../../..", import.meta.url));
 
 async function readFields(): Promise<FormatFixture["fields"]> {
   return (JSON.parse(await readFile(fieldUrl, "utf8")) as FormatFixture).fields;
@@ -62,7 +62,7 @@ async function runBoundedCommand(
 }
 
 function runGeneratorCli(arguments_: readonly string[], cwd = tsRootPath) {
-  return runBoundedCommand(["bun", "scripts/generate-formats.ts", ...arguments_], {
+  return runBoundedCommand(["bun", "scripts/generate-formats/generate-formats.ts", ...arguments_], {
     cwd,
   });
 }
@@ -425,11 +425,11 @@ describe("format registry", () => {
         }),
       );
     try {
-      await mkdir(join(cliRoot, "scripts"), { recursive: true });
+      await mkdir(join(cliRoot, "scripts/generate-formats"), { recursive: true });
       await Promise.all([
         cp(
-          join(tsRootPath, "scripts/generate-formats.ts"),
-          join(cliRoot, "scripts/generate-formats.ts"),
+          join(tsRootPath, "scripts/generate-formats/generate-formats.ts"),
+          join(cliRoot, "scripts/generate-formats/generate-formats.ts"),
         ),
         cp(join(tsRootPath, "src"), join(cliRoot, "src"), { recursive: true }),
         cp(join(tsRootPath, "tests/fixtures"), join(cliRoot, "tests/fixtures"), {

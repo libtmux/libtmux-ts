@@ -120,7 +120,7 @@ links. A test holds that.
 ## Observing a server
 
 ```console
-$ bun packages/libtmux/scripts/bench-control.ts
+$ bun packages/libtmux/scripts/bench-control/bench-control.ts
 ```
 
 Run: tmux 3.7c, Linux, 10 cores. The script medians the daemon-replacement row

@@ -13,7 +13,10 @@ import { fileURLToPath } from "node:url";
 
 import { runBoundedCommand } from "../../../scripts/bounded_process/bounded_process.js";
 import { npmPack } from "../../../scripts/npm_pack/npm_pack.js";
-import { declarationClosureErrors, packageDeclarationExports } from "./declaration-closure.js";
+import {
+  declarationClosureErrors,
+  packageDeclarationExports,
+} from "./declaration-closure/declaration-closure.js";
 
 const tsRoot = fileURLToPath(new URL("..", import.meta.url));
 const MAX_COMMAND_OUTPUT_BYTES = 4 * 1024 * 1024;

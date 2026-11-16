@@ -10,9 +10,9 @@ import {
   readRootApiSurface,
   type ApiDeclaration,
   type PublicMember,
-} from "../../scripts/api_surface.js";
-import * as index from "../../src/index.js";
-import { runTypeScriptApi } from "../support/typescript_api.js";
+} from "../api_surface.js";
+import * as index from "../../../src/index.js";
+import { runTypeScriptApi } from "../../../tests/support/typescript_api.js";
 
 /**
  * The API surface reader sees every handle the package exports.
@@ -89,8 +89,8 @@ try {
 `;
 
 async function rootExports(): Promise<RootExports> {
-  const rootPath = fileURLToPath(new URL("../../src/index.ts", import.meta.url));
-  const packageRoot = fileURLToPath(new URL("../..", import.meta.url));
+  const rootPath = fileURLToPath(new URL("../../../src/index.ts", import.meta.url));
+  const packageRoot = fileURLToPath(new URL("../../..", import.meta.url));
   const { exitCode, stderr, stdout } = await runTypeScriptApi(
     rootExportsScript,
     [rootPath],

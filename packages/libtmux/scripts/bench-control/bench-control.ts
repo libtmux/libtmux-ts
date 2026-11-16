@@ -5,23 +5,23 @@
  * state: complete output, a bounded slow-consumer queue, recovered connections,
  * retired daemon-bound handles, and no attached client left behind.
  *
- * Run with `bun scripts/bench-control.ts`. Live-runtime support is Linux-only;
+ * Run with `bun scripts/bench-control/bench-control.ts`. Live-runtime support is Linux-only;
  * the tmux and platform used are reported with the results.
  */
 import { cpus } from "node:os";
 import { join } from "node:path";
 
-import { TmuxServerRestartedError } from "../src/errors.js";
-import { Server, type DaemonIdentity } from "../src/server.js";
-import { createEventStream } from "../src/_internal/control/stream.js";
-import { parsePaneId } from "../src/_internal/runtime/ids.js";
+import { TmuxServerRestartedError } from "../../src/errors.js";
+import { Server, type DaemonIdentity } from "../../src/server.js";
+import { createEventStream } from "../../src/_internal/control/stream.js";
+import { parsePaneId } from "../../src/_internal/runtime/ids.js";
 import {
   assertOwnedSocketPath,
   enterSandbox,
   sweepStaleRunRoots,
   TestServer,
   withOwnedRunRoot,
-} from "../src/_internal/test/testkit.js";
+} from "../../src/_internal/test/testkit.js";
 
 interface Row {
   readonly outcome: string;

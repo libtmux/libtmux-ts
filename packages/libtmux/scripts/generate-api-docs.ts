@@ -8,7 +8,7 @@ import {
   type ApiClass,
   type ApiDeclaration,
   type Member,
-} from "./api_surface.js";
+} from "./api_surface/api_surface.js";
 import { slugify } from "./markdown_anchors.js";
 import { packageRoot } from "./package_root.js";
 

@@ -5,11 +5,11 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { describe, expect, test } from "bun:test";
 
-import { runTypeScriptApi } from "../support/typescript_api.js";
+import { runTypeScriptApi } from "../../../tests/support/typescript_api.js";
 
-import { generateFormats } from "../../scripts/generate-formats.js";
+import { generateFormats } from "../generate-formats.js";
 
-import { makeTestDirectory } from "../../src/_internal/test/testkit.js";
+import { makeTestDirectory } from "../../../src/_internal/test/testkit.js";
 
 const markerStart = "// <libtmux-generated-where-types>";
 const markerEnd = "// </libtmux-generated-where-types>";
@@ -364,7 +364,7 @@ async function runGeneratorReadOnly(root: string, action: () => Promise<void>): 
 }
 
 async function summarizeGeneratedRegion(path: string): Promise<GeneratedRegionSummary> {
-  const packageRoot = fileURLToPath(new URL("../..", import.meta.url));
+  const packageRoot = fileURLToPath(new URL("../../..", import.meta.url));
   const { exitCode, stderr, stdout } = await runTypeScriptApi(
     generatedRegionAstScript,
     [path],

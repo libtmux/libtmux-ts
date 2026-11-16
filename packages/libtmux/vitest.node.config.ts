@@ -22,7 +22,6 @@ const REPOSITORY_GATES: Readonly<Record<string, string>> = {
   "unit/sandbox_control":
     "starts bun test from each directory whose bunfig.toml enters the sandbox",
   "unit/thrown_exports": "scans source text",
-  "unit/type_performance_gate": "measures tsc",
   "unit/typescript_api": "the tsc runner the gates share",
 };
 

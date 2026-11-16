@@ -18,7 +18,7 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, test } from "bun:test";
 
-import { makeTestDirectory } from "../../src/_internal/test/testkit.js";
+import { makeTestDirectory } from "../../../src/_internal/test/testkit.js";
 
 /**
  * A temporary directory under its resolved path.
@@ -51,9 +51,9 @@ interface CheckerReport {
   readonly status: "passed";
 }
 
-const scriptRelativePath = "scripts/check-type-performance.ts";
+const scriptRelativePath = "scripts/check-type-performance/check-type-performance.ts";
 const baselineRelativePath = "tests/types/performance-baseline.json";
-const repositoryRoot = fileURLToPath(new URL("../..", import.meta.url));
+const repositoryRoot = fileURLToPath(new URL("../../..", import.meta.url));
 /**
  * Where the installed TypeScript actually is.
  *
@@ -246,7 +246,10 @@ async function createCheckerFixture(root: string): Promise<void> {
   expect((await lstat(localCompiler)).isSymbolicLink()).toBe(true);
   expect(await readlink(localCompiler)).toBe("../typescript/bin/tsc");
   expect(await realpath(localCompiler)).toBe(await realpath(directCompiler));
-  await cp(new URL(`../../${scriptRelativePath}`, import.meta.url), join(root, scriptRelativePath));
+  await cp(
+    new URL(`../../../${scriptRelativePath}`, import.meta.url),
+    join(root, scriptRelativePath),
+  );
   await writeFixture(
     join(root, "package.json"),
     `${JSON.stringify({ devDependencies: { typescript: "7.0.2" } }, null, 2)}\n`,
@@ -878,14 +881,14 @@ describe("TypeScript instantiation performance gate", () => {
 
   test("is registered cumulatively without weakening package exports", async () => {
     const manifest = JSON.parse(
-      await readFile(new URL("../../package.json", import.meta.url), "utf8"),
+      await readFile(new URL("../../../package.json", import.meta.url), "utf8"),
     ) as {
       readonly exports: Readonly<Record<string, unknown>>;
       readonly scripts: Readonly<Record<string, string>>;
     };
 
     expect(manifest.scripts["test:type-performance"]).toBe(
-      "bun scripts/check-type-performance.ts --check",
+      "bun scripts/check-type-performance/check-type-performance.ts --check",
     );
     expect(manifest.scripts["test:types"]).toBe(
       "tsc -p tests/types/tsconfig.json --noEmit && bun run test:type-performance",
