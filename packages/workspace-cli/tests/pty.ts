@@ -19,6 +19,8 @@ export type Pty = {
   output(): string;
   /** Types text at the command. */
   write(text: string): void;
+  /** Kills the command and everything it started. */
+  kill(): void;
   /** Resolves once the command has exited and the terminal has delivered its last byte. */
   result: Promise<PtyResult>;
 };
@@ -67,6 +69,7 @@ export function startPty(argv: string[], options: PtyOptions): Pty {
     pid: child.pid,
     output: () => output,
     write: (text) => void child.terminal?.write(text),
+    kill: killGroup,
     result,
   };
 }

@@ -246,7 +246,7 @@ async function typedBuffers(root: string, shell: string, init: string, lines: st
     }
     return captured();
   } finally {
-    process.kill(-terminal.pid, "SIGKILL");
+    terminal.kill();
     await terminal.result;
   }
 }
