@@ -87,6 +87,8 @@ const run = Bun.spawnSync({
     "--no-orphans",
     "tests/unit",
     "tests/integration",
+    // The scripts' tests count too: generate-formats' reach the format registry.
+    "./scripts",
   ],
   cwd: packageRoot,
   stderr: "inherit",
