@@ -11,8 +11,8 @@ import * as index from "../../src/index.js";
  *
  * A caller who reads `@throws WaitTimeout` reaches for
  * `import { WaitTimeout } from "libtmux"`, at the same import site as every
- * other error they catch. `WaitTimeout` was not there: it sat in `exc.ts` for
- * parity long before anything threw it, so when `waitFor` began throwing it
+ * other error they catch. `WaitTimeout` was not there: it sat in `exc.ts` long
+ * before anything threw it, so when `waitFor` began throwing it
  * and its doc comment began promising it, nobody added the export — the
  * behaviour moved, the sentence moved, and the export stayed where it was.
  *

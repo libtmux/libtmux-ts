@@ -52,6 +52,7 @@ function moveSocket(config: LaunchConfig & { kind: "launch" }, output: string): 
       renameSync(socket ?? "", config.recoverySocket ?? "");
       return 0;
     }
+    Bun.sleepSync(5);
   }
   return 70;
 }

@@ -366,11 +366,11 @@ export class TmuxObjectNotFoundError extends ObjectNotFoundError {
 /**
  * A tmux too old for the operation, or a version libtmux does not recognize.
  *
- * Constructed bare for parity with the Python library, which has this name and
- * throws it with no message. Constructed with its parts by this package, so a
- * caller filtering on a field their tmux predates is told which field, which
- * release has it, and which release answered — rather than being handed an
- * empty result that reads as "no object has this".
+ * It can be constructed bare, and then carries no message. This package
+ * constructs it with its parts, so a caller filtering on a field their tmux
+ * predates is told which field, which release has it, and which release
+ * answered — rather than being handed an empty result that reads as "no object
+ * has this".
  *
  * Every command refused for the minimum tmux release carries `delivery` of
  * `not_started` and a `remedy`: upgrade tmux and restart the server, or pin
