@@ -211,7 +211,7 @@ invocations a snapshot and a hundred queries make.
 - [Run inside tmux](#run-inside-tmux)
   - [`Session.fromEnv`: find the session you are in](#sessionfromenv-find-the-session-you-are-in)
 - [tmux versions](#tmux-versions)
-  - [`Server.version` and `versionAtLeast`: gate your own code](#serverversion-and-versionatleast-gate-your-own-code)
+  - [`Server.capabilities`: gate on named features](#servercapabilities-gate-on-named-features)
   - [`VersionTooLowError`: tmux older than 3.3a is refused](#versiontoolowerror-tmux-older-than-33a-is-refused)
   - [Features above the floor](#features-above-the-floor)
 - [Consumers](#consumers)
@@ -1988,27 +1988,45 @@ pane moves, so the session is resolved through `$TMUX_PANE`.
 - Release candidates are not supported:
   [why](https://libtmux.org/en/tmux/guides/tmux-support/#release-candidates).
 
-### [`Server.version`][ref-server-version] and [`versionAtLeast`][ref-server-versionatleast]: gate your own code
+### [`Server.capabilities`](docs/api.md#servercapabilities): gate on named features
 
-Ask the server rather than parsing `#{version}` yourself. The version is probed
-once per connection and cached, so asking repeatedly costs nothing:
+Read the same feature decisions the library uses before sending commands.
+Each call verifies the connected daemon's identity and refreshes its cached
+version after a restart. The immutable report names the minimum release,
+availability and reason for each feature:
 
 ```ts
+import { randomUUID } from "node:crypto";
+
 import { Server } from "libtmux";
 
-const server = new Server({ socketName: "libtmux-version" });
+const server = new Server({ socketName: `ltx-version-${randomUUID()}` });
 try {
   await server.newSession({ name: "work" });
-  const version = await server.version(); // { major, minor, suffix, raw }
+  const report = await server.capabilities();
 
   await server.setBuffer("scratch", "text");
-  if (await server.versionAtLeast("3.4")) {
-    await server.deleteBuffer("scratch"); // needs tmux 3.4
+  if (report.features["buffer-delete-named"].supported) {
+    await server.deleteBuffer("scratch");
+  } else {
+    console.log(report.features["buffer-delete-named"].reason);
   }
 } finally {
   await server.kill();
 }
 ```
+
+`report.workarounds` lists version-specific defects and whether each workaround
+applies. A report describes one observation; later operations check their own
+requirements. `snapshot.capabilities` gives the same report for the daemon that
+answered that snapshot, without another query.
+
+The live call uses ordinary observation commands. Configured command aliases
+and hooks retain their native effects; use a trusted daemon configuration.
+
+[`Server.version`][ref-server-version] returns parsed `{ major, minor, suffix, raw }`
+fields; [`versionAtLeast`][ref-server-versionatleast] compares that version with a
+release you supply. Both reuse the version cached for the observed daemon epoch.
 
 - `raw` is tmux's own string, so a development form such as `next-3.8` survives
   the parsed fields.

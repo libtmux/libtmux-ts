@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import type { ConnectionAlias, DaemonEpoch } from "../../src/common.js";
 import { LibTmuxError, TmuxTransportError, VersionTooLowError } from "../../src/errors.js";
+import { Server } from "../../src/server.js";
 import { TmuxConnection } from "../../src/_internal/runtime/connection.js";
 import {
   deriveTmuxCapabilities,
@@ -14,7 +15,7 @@ import type {
 } from "../../src/_internal/transport/types.js";
 import { flattenInvocation } from "../../src/_internal/transport/invocation.js";
 import { singleCommandTransport } from "../support/transport_double.js";
-import { answerVersionProbe, probeMarker } from "../support/version_probe.js";
+import { answerVersionProbe, checkedEngine, probeMarker } from "../support/version_probe.js";
 
 const encoder = new TextEncoder();
 
@@ -42,6 +43,99 @@ function deferred(): { promise: Promise<void>; resolve: () => void } {
     },
   };
 }
+
+/** Change the replying daemon without changing the Server or its socket. */
+function discoveryFixture(version = "3.8") {
+  const state = { version, identity: { pid: "101", startTime: "202" } };
+  const requests: CommandRequest[] = [];
+  const probes: CommandRequest[] = [];
+  const server = new Server({
+    socketName: "capability-report",
+    engine: checkedEngine(
+      async (request) => {
+        requests.push(request);
+        expect(request.commands).toEqual([["display-message", "-p", "ltxI#{pid};#{start_time}"]]);
+        return {
+          cmd: [request.executable, ...flattenInvocation(request)],
+          exitCode: 0,
+          signal: null,
+          stderr: new Uint8Array(),
+          stdout: encoder.encode(`ltxI${state.identity.pid};${state.identity.startTime}\n`),
+        };
+      },
+      {
+        probe(request) {
+          probes.push(request);
+          return answerVersionProbe(request, state.version, state.identity);
+        },
+      },
+    ),
+  });
+  return { server, state, requests, probes };
+}
+
+describe("public capability discovery", () => {
+  test.each([
+    ["3.7c", false],
+    ["next-3.8", false],
+    ["3.8-rc2", false],
+    ["3.8", true],
+    ["3.8a", true],
+  ] as const)("reports qualified program support on %s", async (version, supported) => {
+    const { server, state, requests } = discoveryFixture(version);
+    const report = await server.capabilities();
+    expect(report.version).toBe(version);
+    expect(report.minimumVersion).toBe("3.3a");
+    expect(report.daemonIdentity).toEqual(state.identity);
+    expect(report.features["program-run"].supported).toBe(supported);
+    expect(report.features["program-run"].since).toBe("3.8");
+    expect(report.features["program-run"].reason).toContain(version);
+    expect(report.features["buffer-rename"].supported).toBe(true);
+    expect(requests).toHaveLength(1);
+  });
+
+  test("rechecks identity before returning cached capability decisions", async () => {
+    const { server, state, probes } = discoveryFixture();
+    const first = await server.capabilities();
+    state.version = "3.7c";
+    state.identity = { pid: "303", startTime: "404" };
+    const second = await server.capabilities();
+    expect(second.daemonIdentity).toEqual(state.identity);
+    expect(second.features["program-run"].supported).toBe(false);
+    expect(second.daemonEpoch).not.toBe(first.daemonEpoch);
+    expect(second.fingerprint).not.toBe(first.fingerprint);
+    expect(first.features["program-run"].supported).toBe(true);
+    expect(probes).toHaveLength(2);
+  });
+
+  test("freezes nested metadata without exposing mutable admission rules", async () => {
+    const { server } = discoveryFixture("3.3a");
+    const report = await server.capabilities();
+    const feature = report.features["program-run"];
+    expect(Reflect.set(feature, "supported", true)).toBe(false);
+    expect(Reflect.set(feature, "since", "3.3a")).toBe(false);
+    expect(Reflect.set(feature.commands[0]!.flags!, "0", "-bad")).toBe(false);
+    expect(Reflect.set(report.features, "program-run", {})).toBe(false);
+    expect(Reflect.set(report.daemonIdentity, "pid", "999")).toBe(false);
+    const next = await server.capabilities();
+    expect(next.features["program-run"].supported).toBe(false);
+    expect(next.features["program-run"].since).toBe("3.8");
+    expect(next.workarounds["name-separators-rejected"].active).toBe(false);
+    expect(next.workarounds["run-shell-output-in-copy-mode"].active).toBe(true);
+  });
+
+  test("refuses unknown versions and already-cancelled discovery", async () => {
+    const unknown = discoveryFixture("unidentified-tmux");
+    await expect(unknown.server.capabilities()).rejects.toThrow();
+    expect(unknown.requests).toHaveLength(0);
+    const cancelled = discoveryFixture();
+    const abort = new AbortController();
+    abort.abort();
+    await expect(cancelled.server.capabilities({ signal: abort.signal })).rejects.toThrow();
+    expect(cancelled.probes).toHaveLength(0);
+    expect(cancelled.requests).toHaveLength(0);
+  });
+});
 
 describe("tmux capabilities", () => {
   test("derives frozen capabilities that carry no per-release flags", () => {

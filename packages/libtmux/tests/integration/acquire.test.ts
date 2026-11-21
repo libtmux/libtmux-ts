@@ -4,7 +4,12 @@ import { join } from "node:path";
 import { describe, expect, test } from "bun:test";
 
 import { executeGuardedListGroup } from "../../src/_internal/codec/guarded_listing.js";
-import { acquireServerGraph, daemonIdentityOf } from "../../src/_internal/operations/acquire.js";
+import {
+  acquireServerCapabilities,
+  acquireServerGraph,
+  daemonIdentityOf,
+} from "../../src/_internal/operations/acquire.js";
+import { probeMarker } from "../support/version_probe.js";
 import { prepareInvocationRequest } from "../../src/_internal/operations/request.js";
 import { createRuntimeContext, lastObservedDaemon } from "../../src/_internal/runtime/context.js";
 import type { RuntimeContext } from "../../src/_internal/runtime/context.js";
@@ -45,7 +50,7 @@ class GatedTransport implements CommandTransport {
   invocations = 0;
 
   async execute(request: CommandRequest) {
-    if (request.commands.length === 1) {
+    if (probeMarker(request) !== undefined) {
       const result = await this.#raw.execute(request);
       this.capabilityProbes += 1;
       await this.#afterCapabilityProbe?.(this.capabilityProbes);
@@ -217,6 +222,7 @@ describe("server graph acquisition", () => {
       });
       const publicIdentity = await publicServer.daemonIdentity();
       const snapshot = await publicServer.snapshot();
+      const capabilities = await publicServer.capabilities();
 
       expect(daemon).toBeDefined();
       if (daemon === undefined) throw new Error("zero-row capture omitted its daemon identity");
@@ -224,6 +230,8 @@ describe("server graph acquisition", () => {
       expect(daemon.startTime).toMatch(/^\d+$/u);
       expect(publicIdentity).toEqual(daemon);
       expect(snapshot.daemonIdentity).toEqual(daemon);
+      expect(snapshot.capabilities.daemonIdentity).toEqual(daemon);
+      expect(capabilities).toEqual(snapshot.capabilities);
       expect(snapshot.sessions.length).toBe(0);
       expect(graph.records).toEqual([]);
     });
@@ -415,12 +423,33 @@ describe("server graph acquisition", () => {
     });
   }, 30_000);
 
+  test("does not return a delayed capability report from a replaced daemon", async () => {
+    await withRestartableServer(async ({ controller, runtime, transport }) => {
+      const baseline = await acquireServerCapabilities(runtime);
+      const held = transport.holdNextInvocation();
+      const delayed = acquireServerCapabilities(runtime);
+      try {
+        await held.captured;
+        await restartServer(controller, "capabilities-after");
+        const current = await acquireServerCapabilities(runtime).finally(held.release);
+        const retried = await delayed;
+        expect(current.daemonIdentity).not.toEqual(baseline.daemonIdentity);
+        expect(retried.daemonIdentity).toEqual(current.daemonIdentity);
+        expect(retried.daemonEpoch).toBe(current.daemonEpoch);
+        expect(retried.fingerprint).toBe(current.fingerprint);
+      } finally {
+        held.release();
+        await delayed.catch(() => undefined);
+      }
+    });
+  }, 30_000);
+
   test("stops after two capability and capture conflicts", async () => {
     await withRestartableServer(async ({ controller, runtime, transport }) => {
       transport.afterCapabilityProbe((probe) => restartServer(controller, `after-probe-${probe}`));
 
       await expect(acquireServerGraph(runtime)).rejects.toThrow(
-        "daemon changed repeatedly during graph acquisition",
+        "daemon changed repeatedly during acquisition",
       );
       expect(transport.capabilityProbes).toBe(2);
       expect(transport.invocations).toBe(2);

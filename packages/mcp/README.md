@@ -97,6 +97,11 @@ Ask the client to call `list_sessions`, then read
 [`tmux://capabilities`][res-capabilities] to see which tools it was offered. The
 [connection guide][guide-verify-and-expand-the-surface] shows the same check.
 
+Call [`get_server_info`][tool-get_server_info] for the connected daemon's version,
+library feature availability and active workarounds. Each feature names its
+minimum release, decision and reason. These describe core library operations;
+the tools this MCP process enables remain listed in `tmux://capabilities`.
+
 ### `bun packages/mcp/src/server.ts`: run it from a clone
 
 ```console

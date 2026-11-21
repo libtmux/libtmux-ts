@@ -45,6 +45,12 @@ are in the [`libtmux` changelog](../libtmux/CHANGELOG.md).
 
 ### `@libtmux/mcp`
 
+`get_server_info` returns `libraryFeatures` and `libraryWorkarounds`, with the
+same decisions in its text response. Version, daemon PID and counts come from
+one snapshot. The report distinguishes core APIs from the configured MCP tools
+in `tools/list` and `tmux://capabilities`. Both native reads honor request
+cancellation. (#209)
+
 Add `LIBTMUX_START_SESSION`, the name of a session to create when no tmux server
 answers on the socket `LIBTMUX_SOCKET` or `LIBTMUX_SOCKET_PATH` names. The
 executable starts the server with that session, so a client needs no `tmux

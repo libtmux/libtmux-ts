@@ -161,7 +161,9 @@ testControl(
 
         await call("list_windows", { session: created.session.id });
         await call("list_panes", { session: created.session.id });
-        await call("get_server_info");
+        const serverInfo = await call("get_server_info");
+        expect(JSON.stringify(serverInfo.content)).toContain("program-run:");
+        expect(JSON.stringify(serverInfo.content)).toContain("tmux://capabilities");
         await call("get_session_info", { session: created.session.id });
         await call("get_window_info", { windowId: created.windowId });
         await call("capture_pane", { paneId: created.paneId });
@@ -454,7 +456,6 @@ testControl(
 // that returns first, or finds its pane killed, removes the directory itself.
 test("a run past its timeout no longer needs its private directory", async () => {
   await withServer(async (fixture) => {
-    await fixture.executeText(["set-option", "-g", "default-command", "sh"]);
     const scratchTmp = await mkdtemp(join(tmpdir(), "ltxscratch-"));
     try {
       await withClient(
@@ -466,12 +467,12 @@ test("a run past its timeout no longer needs its private directory", async () =>
               name: "create_session",
             }),
           );
-          const result = structured<{ outcome: string }>(
-            await client.callTool({
-              arguments: { command: "sleep 3", paneId: created.paneId, timeoutMs: 1_000 },
-              name: "run_shell_command",
-            }),
-          );
+          const answer = await client.callTool({
+            arguments: { command: "sleep 3", paneId: created.paneId, timeoutMs: 1_000 },
+            name: "run_shell_command",
+          });
+          expect(answer.isError, JSON.stringify(answer)).not.toBe(true);
+          const result = structured<{ outcome: string }>(answer);
           expect(result.outcome).toBe("timed_out");
           // The shell holds the script open once it starts, so nothing waits on its trailer.
           const leftover = await readdir(scratchTmp);
@@ -563,7 +564,9 @@ test("a pane killed mid-run returns what it printed and takes its private direct
           await fixture.executeText(["kill-pane", "-t", created.paneId]);
           const killed = performance.now();
 
-          const result = structured<{ outcome: string; output: string }>(await running);
+          const answer = await running;
+          expect(answer.isError, JSON.stringify(answer)).not.toBe(true);
+          const result = structured<{ outcome: string; output: string }>(answer);
           expect(result.outcome).toBe("pane_died");
           expect(result.output).toBe("one\ntwo\n");
           // Answered once the pane is seen gone, not at the timeout.
@@ -590,11 +593,20 @@ test.each(["prefix", "mirrored", "uppercase-saved", "pruned-saved"] as const)(
           expect(result.isError, JSON.stringify(result)).not.toBe(true);
           return result;
         };
-        const server = structured<{ minimumVersion: string; pid: string; version: string }>(
-          await call("get_server_info"),
-        );
+        const server = structured<{
+          minimumVersion: string;
+          pid: string;
+          version: string;
+          libraryFeatures: { id: string; supported: boolean; since: string }[];
+          libraryWorkarounds: { id: string; active: boolean }[];
+        }>(await call("get_server_info"));
         expect(server.pid).toMatch(/^\d+$/u);
         expect(server.minimumVersion).toBe("3.3a");
+        expect(server.libraryFeatures.find(({ id }) => id === "program-run")?.since).toBe("3.8");
+        expect(server.libraryFeatures.find(({ id }) => id === "buffer-rename")).toBeDefined();
+        expect(
+          server.libraryWorkarounds.find(({ id }) => id === "name-separators-rejected"),
+        ).toBeDefined();
         const hasMirroredLayouts = await serverFor(fixture).versionAtLeast("3.5");
         const created = structured<{ paneId: string; windowId: string }>(
           await call("create_session", {

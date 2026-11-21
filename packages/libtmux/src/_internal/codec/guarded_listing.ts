@@ -150,7 +150,7 @@ export async function executeGuardedListGroup(
   });
 
   const current = await options.capabilities.bind(options.signal);
-  if (prepared.some(({ request }) => current.fingerprint !== request.capabilityFingerprint)) {
+  if (current.fingerprint !== capabilities.fingerprint) {
     throw new FormatProtocolError("capability fingerprint changed before execution");
   }
 

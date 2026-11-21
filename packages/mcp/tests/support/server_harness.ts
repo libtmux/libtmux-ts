@@ -26,7 +26,12 @@ export async function withServer(body: (fixture: TestServer) => Promise<void>): 
     const fixture = await TestServer.create({ runRoot, sessionName: "mcp" });
     assertOwnedSocketPath(fixture.socketPath);
     await runWithCleanup(
-      () => body(fixture),
+      async () => {
+        // Host login startup can change the foreground process during input preflight.
+        await fixture.executeText(["set-option", "-g", "default-shell", "/bin/sh"]);
+        await fixture.executeText(["set-option", "-g", "default-command", "exec /bin/sh"]);
+        await body(fixture);
+      },
       () => fixture.dispose(),
     );
   });

@@ -49,6 +49,13 @@ Entries of that kind from before it existed are listed below.
 
 ### `libtmux`
 
+`Server.capabilities()` reports the connected daemon identity and named library
+features and workarounds. Each call verifies the daemon again; snapshots include
+decisions from the same acquisition. Reports reuse the operation gates, so
+callers can check `report.features["program-run"].supported` without parsing
+version strings. Live discovery uses ordinary observation commands and their
+configured alias/hook effects; snapshot reports perform no extra I/O. (#209)
+
 `Server.saveBuffer` now creates the file with mode 0600, whatever the umask.
 
 Before: tmux created a missing file under the umask of the process that opened

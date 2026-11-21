@@ -21,6 +21,11 @@ export {
 
 export type {
   AbortLike,
+  CapabilityAvailability,
+  CapabilityCommand,
+  CapabilityHandling,
+  CapabilityId,
+  CapabilityRecord,
   CaptureOptions,
   ConnectOptions,
   ConnectionOptions,
@@ -53,6 +58,7 @@ export type {
   SaveBufferOptions,
   SendKeysOptions,
   ServerSnapshot,
+  ServerCapabilities,
   SnapshotOptions,
   SetEnvironmentOptions,
   SetHookOptions,
@@ -85,6 +91,9 @@ export type {
   TmuxWindowRenamedEvent,
   WatchOptions,
   WindowTarget,
+  WorkaroundAvailability,
+  WorkaroundId,
+  WorkaroundRecord,
 } from "./types.js";
 export { isSplitSize, isTmuxName, splitSize } from "./types.js";
 
