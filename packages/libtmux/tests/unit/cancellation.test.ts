@@ -1,9 +1,7 @@
+import { describe, expect, test } from "bun:test";
 import { readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-
-import { describe, expect, test } from "bun:test";
-
 import {
   readProcessIdentity,
   type ProcessIdentity,

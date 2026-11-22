@@ -1,5 +1,5 @@
-import type { TmuxEvent, TmuxSubscriptionEvent } from "../../types.js";
 import type { PaneId } from "../../common.js";
+import type { TmuxEvent, TmuxSubscriptionEvent } from "../../types.js";
 import { isPaneId, isSessionId, isWindowId } from "../runtime/ids.js";
 
 /**

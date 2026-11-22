@@ -17,14 +17,12 @@
  */
 
 import { describe, expect, test } from "bun:test";
-
 import {
   completeUtf8Length,
   parseControlLine,
   unescapeOutput,
 } from "../../src/_internal/control/events.js";
 import { LineFramer, MAX_CARRY_BYTES } from "../../src/_internal/control/framing.js";
-
 import { layoutIsValid } from "../../src/_internal/operations/layout.js";
 import { parseTmuxVersion } from "../../src/_internal/runtime/tmux_version.js";
 

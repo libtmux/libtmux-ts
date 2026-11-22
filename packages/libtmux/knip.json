@@ -12,6 +12,5 @@
     "tests/support/bun_test_on_node.ts",
     "tests/fixtures/fake_tmux/*.ts"
   ],
-  "project": ["src/**/*.ts", "scripts/**/*.ts", "tests/**/*.ts"],
-  "ignoreBinaries": ["mkfifo"]
+  "project": ["src/**/*.ts", "scripts/**/*.ts", "tests/**/*.ts"]
 }

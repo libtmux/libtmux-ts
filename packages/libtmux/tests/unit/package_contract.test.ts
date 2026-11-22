@@ -1,11 +1,8 @@
+import { describe, expect, test } from "bun:test";
 import { readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
-
 import type { BunConnectionOptions } from "node:tls";
-
-import { describe, expect, test } from "bun:test";
-
+import { fileURLToPath } from "node:url";
 import { makeTestDirectory } from "../../src/_internal/test/testkit.js";
 
 interface PackageManifest {
@@ -81,16 +78,16 @@ const expectedScripts = {
 const expectedDependencies = {};
 
 const expectedDevDependencies = {
-  "@types/bun": "1.4.4",
+  "@types/bun": "1.4.5",
   // Held at the floor deliberately: `engines.node` is ">=22", and types
   // describing a newer Node would compile calls the floor cannot run. The root
   // `overrides` pins it for the whole workspace, so a manifest naming anything
   // else would name a version that does not install.
   "@types/node": "22.20.5",
-  knip: "6.45.1",
-  oxfmt: "0.78.0",
-  oxlint: "1.93.0",
-  "oxlint-tsgolint": "7.0.2006",
+  knip: "6.47.0",
+  oxfmt: "0.79.0",
+  oxlint: "1.94.0",
+  "oxlint-tsgolint": "7.0.2008",
   typescript: "7.0.2",
   // The oldest TypeScript a consumer may hold. Aliased rather than a second
   // `typescript` entry because `test:install` compiles its fixture with both:
@@ -98,7 +95,7 @@ const expectedDevDependencies = {
   // older one can read them, and 5.6 ships no `ES2024` lib at all.
   "typescript-floor": "npm:typescript@5.7.3",
   // Runs the Bun suites on Node against `dist`, `bun:test` answered by a shim.
-  vitest: "5.1.0",
+  vitest: "5.1.1",
   zod: "4.6.7",
 };
 
@@ -382,19 +379,40 @@ describe("package contract", () => {
     expect(lockfile).not.toContain('"bun-types/@types/node"');
   });
 
-  test("turns off only the lint rule that is broken for this package's idiom", async () => {
+  test("turns off only the lint rule that @types/bun breaks in tests", async () => {
     const config = JSON.parse(
       await readFile(new URL("../../../../.oxlintrc.json", import.meta.url), "utf8"),
-    ) as { rules?: Record<string, string> };
+    ) as {
+      overrides?: Array<{ files?: string[]; rules?: Record<string, unknown> }>;
+      rules?: Record<string, unknown>;
+    };
+    const rootTsconfig = JSON.parse(
+      await readFile(new URL("../../../../tsconfig.json", import.meta.url), "utf8"),
+    ) as { files?: string[]; references?: Array<{ path: string }> };
+    const offEntries = (rules: Record<string, unknown> = {}) =>
+      Object.fromEntries(
+        Object.entries(rules).filter(
+          ([, value]) => value === "off" || (Array.isArray(value) && value[0] === "off"),
+        ),
+      );
 
-    // typescript/await-thenable reports every `await using`, whatever the type
-    // implements — a plain class with a real Symbol.asyncDispose no less than
-    // an interface — so it is noise against this package's central idiom.
-    // TypeScript rejects a genuinely non-disposable `await using` on its own,
-    // and promise/no-floating-promises still catches an unawaited promise.
-    //
-    // A second entry here needs its own reason.
-    expect(config.rules).toEqual({ "typescript/await-thenable": "off" });
+    // Root references keep scripts/** and libtmux tests/** out of tsgolint's
+    // unconfigured fallback project so ESNext.Disposable and Bun types resolve.
+    expect(rootTsconfig).toEqual({
+      files: [],
+      references: [
+        { path: "./tsconfig.tooling.json" },
+        { path: "./packages/libtmux/tsconfig.tooling.json" },
+        { path: "./packages/libtmux/tests/types/tsconfig.json" },
+      ],
+    });
+    expect(offEntries(config.rules)).toEqual({});
+    // @types/bun types `expect(...).rejects.toThrow(...)` as `void` rather than `Promise<void>`.
+    expect(
+      (config.overrides ?? [])
+        .map((override) => ({ files: override.files, off: offEntries(override.rules) }))
+        .filter((override) => Object.keys(override.off).length > 0),
+    ).toEqual([{ files: ["**/*.test.ts"], off: { "typescript/await-thenable": "off" } }]);
   });
 
   /**

@@ -2,8 +2,8 @@ import { expect, test } from "bun:test";
 import { Readable, Writable } from "node:stream";
 import { stripVTControlCharacters } from "node:util";
 import type { CLIContext } from "../src/app.ts";
-import { LoadProgress } from "../src/progress.ts";
 import type { Request } from "../src/parser.ts";
+import { LoadProgress } from "../src/progress.ts";
 
 function fixture(values: Record<string, unknown> = {}, env: NodeJS.ProcessEnv = {}) {
   const chunks: string[] = [];

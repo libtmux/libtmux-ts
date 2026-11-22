@@ -1,8 +1,6 @@
+import { describe, expect, test } from "bun:test";
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
-
-import { describe, expect, test } from "bun:test";
-
 import {
   prepareRunRoot,
   reapOwnedRunRoot,
@@ -10,7 +8,6 @@ import {
   TestServer,
   makeTestDirectory,
 } from "../../src/_internal/test/testkit.js";
-
 import { Server } from "../../src/server.js";
 
 async function withServer(body: (fixture: TestServer) => Promise<void>): Promise<void> {

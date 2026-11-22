@@ -1,10 +1,10 @@
-import type { AbortLike } from "../../types.js";
 import { spawn } from "node:child_process";
-
 import type { Readable } from "node:stream";
-
 import type { DeliveryStatus } from "../../common.js";
-import type { CommandRequest, RawCommandResult } from "./types.js";
+import { TmuxServerRestartedError } from "../../errors.js";
+import type { AbortLike } from "../../types.js";
+import { timerDelay } from "../timing.js";
+import { guardRequest } from "./daemon_guard.js";
 import {
   flattenInvocation,
   MAX_PACKED_ARGV_BYTES,
@@ -12,10 +12,8 @@ import {
   packedCommandBytes,
   packedCommandCount,
 } from "./invocation.js";
+import type { CommandRequest, RawCommandResult } from "./types.js";
 import { snapshotInvocationRequest, TmuxTransportError } from "./types.js";
-import { guardRequest } from "./daemon_guard.js";
-import { TmuxServerRestartedError } from "../../errors.js";
-import { timerDelay } from "../timing.js";
 
 export interface NodeSpawnTransportOptions {
   readonly maxOutputBytes?: number;

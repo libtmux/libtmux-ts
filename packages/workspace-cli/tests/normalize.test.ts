@@ -1,9 +1,9 @@
 import { expect, test } from "bun:test";
 import { Readable, Writable } from "node:stream";
+import type { Document } from "../src/documents.ts";
+import { extensionPlan } from "../src/extensions.ts";
 import { normalize } from "../src/normalize.ts";
 import { connection } from "../src/tmux.ts";
-import { extensionPlan } from "../src/extensions.ts";
-import type { Document } from "../src/documents.ts";
 
 const context = { cwd: "/project", env: { HOME: "/home/test" } };
 

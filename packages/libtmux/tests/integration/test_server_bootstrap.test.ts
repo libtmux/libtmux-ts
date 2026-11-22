@@ -1,20 +1,8 @@
+import { describe, expect, test } from "bun:test";
 import { spawn } from "node:child_process";
 import { lstatSync, readFileSync } from "node:fs";
 import { lstat, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-
-import { describe, expect, test } from "bun:test";
-
-import { processExists, waitForPathPresent } from "../support/converge.js";
-import { writeBarrier } from "../support/fake_tmux.js";
-import { parseNullFrames } from "../support/launch_frame.js";
-import { withTemporaryRunRoot } from "../support/run_root_harness.js";
-import {
-  captureTmuxCleanup,
-  terminateCapturedTmux,
-  type CapturedTmuxCleanup,
-} from "../support/tmux_cleanup.js";
-
 import {
   prepareRunRoot,
   readFixtureRecord,
@@ -24,7 +12,16 @@ import {
   type TestServerRequestSnapshot,
   makeTestDirectory,
 } from "../../src/_internal/test/testkit.js";
+import { processExists, waitForPathPresent } from "../support/converge.js";
+import { writeBarrier } from "../support/fake_tmux.js";
+import { parseNullFrames } from "../support/launch_frame.js";
 import { closeChild } from "../support/owned_child.js";
+import { withTemporaryRunRoot } from "../support/run_root_harness.js";
+import {
+  captureTmuxCleanup,
+  terminateCapturedTmux,
+  type CapturedTmuxCleanup,
+} from "../support/tmux_cleanup.js";
 
 async function writeBootstrapBarrierWrapper(
   parent: string,

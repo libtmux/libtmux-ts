@@ -186,8 +186,6 @@ export async function runBoundedCommand(
   let forcedTermination: "accepted" | "output_limit_exceeded" | "timed_out" | undefined;
   let hardDeadline: ReturnType<typeof setTimeout> | undefined;
   let pipeDeadline: ReturnType<typeof setTimeout> | undefined;
-  let stdout: ReturnType<typeof capturePipe> | undefined;
-  let stderr: ReturnType<typeof capturePipe> | undefined;
 
   const signalTree = (signal: NodeJS.Signals): void => {
     if (process.platform !== "win32") {
@@ -204,8 +202,8 @@ export async function runBoundedCommand(
     child.kill(signal);
   };
   const cancelPipes = (): void => {
-    stdout?.cancel();
-    stderr?.cancel();
+    stdout.cancel();
+    stderr.cancel();
   };
   reapOwnedProcessGroup = () => signalTree("SIGKILL");
   const stop = (reason: "accepted" | "output_limit_exceeded" | "timed_out"): void => {
@@ -219,14 +217,14 @@ export async function runBoundedCommand(
     }, terminationGraceMilliseconds);
     hardDeadline.unref?.();
   };
-  stdout = capturePipe(
+  const stdout = capturePipe(
     child.stdout,
     retain,
     () => stop("output_limit_exceeded"),
     options.acceptStdoutLine,
     () => stop("accepted"),
   );
-  stderr = capturePipe(child.stderr, retain, () => stop("output_limit_exceeded"));
+  const stderr = capturePipe(child.stderr, retain, () => stop("output_limit_exceeded"));
   const deadline = setTimeout(() => stop("timed_out"), options.timeoutMilliseconds);
   deadline.unref?.();
   const exit = child.exited.then((exitCode) => {

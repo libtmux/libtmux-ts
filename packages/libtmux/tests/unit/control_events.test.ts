@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test";
-
 import { parseControlLine, unescapeOutput } from "../../src/_internal/control/events.js";
 import { parsePaneId, parseSessionId, parseWindowId } from "../../src/_internal/runtime/ids.js";
 import type { TmuxEvent } from "../../src/types.js";

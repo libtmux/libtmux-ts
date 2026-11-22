@@ -1,5 +1,4 @@
 import { createHash } from "node:crypto";
-
 import type { ConnectionAlias, DaemonEpoch } from "../../common.js";
 import type { DaemonGuard } from "../../engine.js";
 import { LibTmuxError, TmuxTransportError } from "../../errors.js";
@@ -219,22 +218,25 @@ export class LazyCapabilityBinding implements CapabilityBinding {
 
   #startProbe(daemonEpoch: DaemonEpoch): InFlightCapabilityProbe {
     const abort = new AbortController();
-    let inFlight!: InFlightCapabilityProbe;
-    const promise = this.#probe(daemonEpoch, abort.signal)
-      .then((capabilities) => {
-        if (
-          this.#inFlight === inFlight &&
-          !abort.signal.aborted &&
-          this.#getDaemonEpoch() === daemonEpoch
-        ) {
-          this.#cached = capabilities;
-        }
-        return capabilities;
-      })
-      .finally(() => {
-        if (this.#inFlight === inFlight) this.#inFlight = undefined;
-      });
-    inFlight = { abort, daemonEpoch, promise, waiters: 0 };
+    const inFlight: InFlightCapabilityProbe = {
+      abort,
+      daemonEpoch,
+      promise: this.#probe(daemonEpoch, abort.signal)
+        .then((capabilities) => {
+          if (
+            this.#inFlight === inFlight &&
+            !abort.signal.aborted &&
+            this.#getDaemonEpoch() === daemonEpoch
+          ) {
+            this.#cached = capabilities;
+          }
+          return capabilities;
+        })
+        .finally(() => {
+          if (this.#inFlight === inFlight) this.#inFlight = undefined;
+        }),
+      waiters: 0,
+    };
     this.#inFlight = inFlight;
     return inFlight;
   }

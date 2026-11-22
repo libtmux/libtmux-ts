@@ -1,7 +1,8 @@
-import type { CommandOptions } from "./common.js";
-import { runPipeline } from "./_internal/operations/pipeline.js";
-import type { TmuxVersion } from "./types.js";
-import { parseTmuxVersion, tmuxVersionAtLeast } from "./_internal/runtime/tmux_version.js";
+import { randomUUID } from "node:crypto";
+import { createConnectedServer } from "./_internal/control/connected_server.js";
+import { ControlConnection, watchServer } from "./_internal/control/connection.js";
+import { observerBoundTransport } from "./_internal/control/observer_transport.js";
+import { acquireServerGraph } from "./_internal/operations/acquire.js";
 import {
   getEnvironment,
   removeEnvironment,
@@ -9,51 +10,19 @@ import {
   showEnvironment,
   unsetEnvironment,
 } from "./_internal/operations/environment.js";
-import type { EnvironmentValue, SetEnvironmentOptions } from "./types.js";
-import type {
-  CmdOptions,
-  ConnectOptions,
-  ConnectedServer,
-  IfShellOptions,
-  NewSessionOptions,
-  PlannedOperation,
-  ProgramResult,
-  RunOptions,
-  RunShellOptions,
-  ServerSnapshot,
-  SnapshotOptions,
-  SaveBufferOptions,
-  SetHookOptions,
-  SetOptionOptions,
-  SpawnOptions,
-  TmuxEventStream,
-  WatchOptions,
-} from "./types.js";
-import { randomUUID } from "node:crypto";
-
-import { runRawCommand } from "./_internal/operations/raw.js";
-import { acquireServerGraph } from "./_internal/operations/acquire.js";
-
-import { Client } from "./client.js";
-import type { ConnectionAlias, DaemonEpoch, TmuxInvocationObserver } from "./common.js";
-import type { DaemonGuard, TmuxEngine } from "./engine.js";
-import { LibTmuxError, VersionTooLowError } from "./errors.js";
-import { Pane } from "./pane.js";
-import type { Selection } from "./selection.js";
-import { Session } from "./session.js";
-import { Window } from "./window.js";
 import { setHook, showHooks, unsetHook } from "./_internal/operations/hooks.js";
-import { killServer, newSession } from "./_internal/operations/mutations.js";
 import { validateLayouts } from "./_internal/operations/layout.js";
+import { killServer, newSession } from "./_internal/operations/mutations.js";
 import {
   setOption,
   showOptions,
   showResolvedOptions,
   unsetOption,
 } from "./_internal/operations/options.js";
-import { ifShell, runShell } from "./_internal/operations/shell.js";
+import { runPipeline } from "./_internal/operations/pipeline.js";
 import { runProgram, spawnProgram } from "./_internal/operations/program_start.js";
-import type { Program } from "./program.js";
+import { runRawCommand } from "./_internal/operations/raw.js";
+import { connectionArguments } from "./_internal/operations/request.js";
 import {
   deleteBuffer,
   isAlive,
@@ -68,7 +37,14 @@ import {
   showBufferBytes,
   sourceFile,
 } from "./_internal/operations/server_utils.js";
+import { ifShell, runShell } from "./_internal/operations/shell.js";
 import { buildServerSnapshot } from "./_internal/operations/snapshot.js";
+import {
+  socketFromEnvironment,
+  TmuxConnection,
+  type EnvironmentSocket,
+} from "./_internal/runtime/connection.js";
+import type { RuntimeConstructors } from "./_internal/runtime/constructors.js";
 import {
   createRuntimeContext,
   registerServerRuntime,
@@ -77,25 +53,54 @@ import {
   type RuntimeContext,
 } from "./_internal/runtime/context.js";
 import {
-  socketFromEnvironment,
-  TmuxConnection,
-  type EnvironmentSocket,
-} from "./_internal/runtime/connection.js";
-import type { RuntimeConstructors } from "./_internal/runtime/constructors.js";
-
-import { ControlConnection, watchServer } from "./_internal/control/connection.js";
-import { createConnectedServer } from "./_internal/control/connected_server.js";
-import { observerBoundTransport } from "./_internal/control/observer_transport.js";
+  parseTmuxVersion,
+  releaseAtLeast,
+  tmuxVersionAtLeast,
+} from "./_internal/runtime/tmux_version.js";
+import { capabilitySince } from "./_internal/support/capabilities.js";
+import { checkDaemonVersion, VersionCheckTransport } from "./_internal/support/versions.js";
 import {
   BoundedTransport,
   DEFAULT_MAX_IN_FLIGHT,
 } from "./_internal/transport/bounded_transport.js";
 import { NodeSpawnTransport } from "./_internal/transport/node_spawn_transport.js";
-import { connectionArguments } from "./_internal/operations/request.js";
-import { releaseAtLeast } from "./_internal/runtime/tmux_version.js";
-import { capabilitySince } from "./_internal/support/capabilities.js";
-import { checkDaemonVersion, VersionCheckTransport } from "./_internal/support/versions.js";
 import type { CommandTransport } from "./_internal/transport/types.js";
+import { Client } from "./client.js";
+import type {
+  CommandOptions,
+  ConnectionAlias,
+  DaemonEpoch,
+  TmuxInvocationObserver,
+} from "./common.js";
+import type { DaemonGuard, TmuxEngine } from "./engine.js";
+import { LibTmuxError, VersionTooLowError } from "./errors.js";
+import { Pane } from "./pane.js";
+import type { Program } from "./program.js";
+import type { Selection } from "./selection.js";
+import { Session } from "./session.js";
+import type {
+  CmdOptions,
+  ConnectOptions,
+  ConnectedServer,
+  EnvironmentValue,
+  IfShellOptions,
+  NewSessionOptions,
+  PlannedOperation,
+  ProgramResult,
+  RunOptions,
+  RunShellOptions,
+  ServerSnapshot,
+  SnapshotOptions,
+  SaveBufferOptions,
+  SetEnvironmentOptions,
+  SetHookOptions,
+  SetOptionOptions,
+  SpawnOptions,
+  TmuxEventStream,
+  TmuxVersion,
+  WatchOptions,
+} from "./types.js";
+import { Window } from "./window.js";
 
 /**
  * Which tmux daemon answered, as tmux itself reports it.

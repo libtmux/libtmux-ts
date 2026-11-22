@@ -4,13 +4,13 @@ import type { Pane } from "../../pane.js";
 import type { Session } from "../../session.js";
 import type { ServerSnapshot } from "../../types.js";
 import type { Window } from "../../window.js";
+import type { WinlinkRef } from "../graph/refs.js";
 import type { RuntimeContext } from "../runtime/context.js";
 import {
   entityRefForHandle,
   snapshotForHandle,
   winlinkRefForHandle,
 } from "../runtime/live_handle.js";
-import type { WinlinkRef } from "../graph/refs.js";
 import { acquireServerGraph } from "./acquire.js";
 import { buildSnapshotFromGraph } from "./snapshot.js";
 

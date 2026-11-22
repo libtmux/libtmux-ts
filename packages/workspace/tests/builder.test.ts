@@ -1,10 +1,11 @@
 // The library's real-tmux fixture harness reaches into its internals, so it is
 // unpublished and an in-repo consumer reaches across packages for it by path.
+import { afterEach, describe, expect, test } from "bun:test";
 import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
-
-import { afterEach, describe, expect, test } from "bun:test";
-
+import { flattenInvocation } from "libtmux/engine";
+import type { TmuxCommandResult, TmuxEngine, TmuxInvocationRequest } from "libtmux/engine";
+import { Server } from "libtmux/server";
 import {
   runWithCleanup,
   withOwnedRunRoot,
@@ -12,13 +13,9 @@ import {
   assertOwnedSocketPath,
   makeTestDirectory,
 } from "../../libtmux/src/_internal/test/testkit.js";
-
-import { Server } from "libtmux/server";
-import { flattenInvocation } from "libtmux/engine";
-import type { TmuxCommandResult, TmuxEngine, TmuxInvocationRequest } from "libtmux/engine";
 import { applyWorkspace, planWorkspace, WorkspaceApplyError } from "../src/builder.js";
-import { OWNERSHIP_OPTION } from "../src/ownership.js";
 import { parseWorkspace, parseWorkspaceYaml } from "../src/config.js";
+import { OWNERSHIP_OPTION } from "../src/ownership.js";
 
 function serverFor(fixture: TestServer): Server {
   return new Server({

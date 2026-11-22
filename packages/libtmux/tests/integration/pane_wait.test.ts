@@ -1,9 +1,7 @@
+import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
-
-import { describe, expect, test } from "bun:test";
-
 import {
   prepareRunRoot,
   reapOwnedRunRoot,
@@ -205,7 +203,9 @@ describe("pane waits", () => {
       try {
         const pane = await paneRunning(lone, "only", "sleep 60");
         const gone = { message: `${pane.id}: the pane is gone` };
-        const waiting = pane.waitForText("never", { timeoutMs: 20_000 }).catch((error) => error);
+        const waiting = pane
+          .waitForText("never", { timeoutMs: 20_000 })
+          .catch((error: unknown) => error);
         await new Promise((resolve) => setTimeout(resolve, 300));
         await lone.cmd("kill-pane", ["-t", pane.id]);
         expect(await waiting).toBeInstanceOf(ObjectNotFoundError);

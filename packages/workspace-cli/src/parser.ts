@@ -23,10 +23,11 @@ type Definition = {
   exclusive_groups: string[][];
   required_groups?: string[][];
 };
-const inventory: Definition[] = grammar.map((definition) => ({
-  ...definition,
-  command: definition.command.replace(/^tmuxp ?/, ""),
-}));
+const inventory: Definition[] = grammar.map((definition) =>
+  Object.assign({}, definition, {
+    command: definition.command.replace(/^tmuxp ?/, ""),
+  }),
+);
 inventory.push({
   command: "completion",
   exclusive_groups: [],

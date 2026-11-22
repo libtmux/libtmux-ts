@@ -1,11 +1,10 @@
 import { describe, expect, test } from "bun:test";
-
 import {
   WHERE_FIELDS_V1,
   type WhereField,
   type WhereModel,
 } from "../../src/_generated/where_fields.js";
-import type { ConnectionAlias, DaemonEpoch } from "../../src/common.js";
+import type { ListCommand } from "../../src/_internal/codec/format_types.js";
 import {
   createGraphRecordRef,
   createGraphSourceId,
@@ -17,15 +16,15 @@ import {
   type NormalizedGraph,
 } from "../../src/_internal/graph/model.js";
 import { normalizeGraph } from "../../src/_internal/graph/normalize.js";
-import type { ProjectionDescriptor } from "../../src/_internal/graph/projection_descriptor.js";
 import { SelectionProjectionBuilder } from "../../src/_internal/graph/projection_builder.js";
+import type { ProjectionDescriptor } from "../../src/_internal/graph/projection_descriptor.js";
 import {
   isSelectionProjection,
   selectionProjectionOwnsRecord,
   selectionProjectionRecordForRef,
   type SelectionProjection,
 } from "../../src/_internal/graph/projection_identity.js";
-import type { ListCommand } from "../../src/_internal/codec/format_types.js";
+import type { ConnectionAlias, DaemonEpoch } from "../../src/common.js";
 import { completeFormatRow, type MutableCompleteFormatRow } from "../support/graph_rows.js";
 
 function capture(): GraphCapture {

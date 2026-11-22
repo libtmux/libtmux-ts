@@ -1,7 +1,5 @@
-import { fileURLToPath } from "node:url";
-
 import { describe, expect, test } from "bun:test";
-
+import { fileURLToPath } from "node:url";
 import { decodeBackslashReplace } from "../../src/_internal/codec/backslash_replace.js";
 import {
   adaptRawResult,
@@ -9,11 +7,11 @@ import {
   prepareCommandRequest,
 } from "../../src/_internal/operations/request.js";
 import { TmuxConnection } from "../../src/_internal/runtime/connection.js";
-import { NodeSpawnTransport } from "../../src/_internal/transport/node_spawn_transport.js";
 import {
   flattenInvocation,
   MAX_PACKED_ARGV_BYTES,
 } from "../../src/_internal/transport/invocation.js";
+import { NodeSpawnTransport } from "../../src/_internal/transport/node_spawn_transport.js";
 import type { CommandRequest } from "../../src/_internal/transport/types.js";
 import { TmuxTransportError } from "../../src/errors.js";
 

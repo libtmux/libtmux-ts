@@ -1,14 +1,13 @@
+import { describe, expect, test } from "bun:test";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
-
-import { describe, expect, test } from "bun:test";
-
 import {
   killIfRunning,
   processExists,
   waitForProcessExit,
 } from "../../../packages/libtmux/tests/support/converge.js";
+import { selectDistTag } from "../../release_policy/release_policy.js";
 import {
   RegistryPackageNotFound,
   coordinateRelease,
@@ -19,7 +18,6 @@ import {
   type RegistryVersionState,
   type ReleaseIO,
 } from "../publish-release.js";
-import { selectDistTag } from "../../release_policy/release_policy.js";
 
 const packages = [
   ["libtmux", "libtmux"],

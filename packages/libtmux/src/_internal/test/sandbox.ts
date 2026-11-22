@@ -1,11 +1,11 @@
 import { spawn } from "node:child_process";
 import type { EventEmitter } from "node:events";
 import { accessSync, constants, lstatSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { mkdtemp } from "node:fs/promises";
 import { connect, type Socket } from "node:net";
+import { tmpdir } from "node:os";
 import { basename, isAbsolute, join, relative, sep } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
-
-import { makeTestDirectory } from "./temp_root.js";
 
 /** Names the sandbox directory, so a child process can tell it is already inside one. */
 export const SANDBOX_ENV = "LIBTMUX_TEST_SANDBOX";
@@ -301,7 +301,7 @@ export async function enterSandbox(
     settleMs = 3_000,
     tmux = "tmux",
   } = options;
-  const root = await makeTestDirectory("ltx-sandbox-").catch(() => {
+  const root = await mkdtemp(join(tmpdir(), "ltx-sandbox-")).catch(() => {
     throw new Error("TMPDIR does not name a directory a sandbox can be made in");
   });
   for (const name of AMBIENT_VARIABLES) delete environment[name];

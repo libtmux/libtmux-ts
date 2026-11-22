@@ -1,7 +1,6 @@
+import type { FormatFieldName } from "../../src/_generated/format_field_names.js";
 import { FORMAT_FIELD_TOKENS } from "../../src/_generated/format_fields.js";
 import type { FormatFieldRecord } from "../../src/_internal/codec/format_registry.js";
-import type { FormatFieldName } from "../../src/_generated/format_field_names.js";
-
 import type { Equal, Expect } from "./assert.js";
 
 const validSnapshotDestination: FormatFieldRecord["snapshotDestination"] = "raw-row";

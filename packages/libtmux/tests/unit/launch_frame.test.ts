@@ -1,10 +1,8 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { describe, expect, test } from "bun:test";
 import { openSync, closeSync } from "node:fs";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-
-import { describe, expect, test } from "bun:test";
-
 import { readLaunchFrame } from "../support/launch_frame.js";
 
 /**

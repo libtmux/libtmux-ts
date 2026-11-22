@@ -10,7 +10,6 @@ import {
   resolveWorkspace,
   saveDocument,
 } from "../src/documents.ts";
-
 import { importDocument } from "../src/imports.ts";
 
 let root: string;

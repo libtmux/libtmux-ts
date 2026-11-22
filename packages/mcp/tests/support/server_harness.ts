@@ -1,9 +1,9 @@
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { Server } from "libtmux/server";
 import {
   assertOwnedSocketPath,
   makeTestDirectory,
@@ -11,7 +11,6 @@ import {
   TestServer,
   withOwnedRunRoot,
 } from "../../../libtmux/src/_internal/test/testkit.js";
-import { Server } from "libtmux/server";
 
 export function serverFor(fixture: TestServer): Server {
   return new Server({

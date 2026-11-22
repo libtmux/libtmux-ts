@@ -391,8 +391,8 @@ $ bun add @libtmux/workspace libtmux
 ```
 
 ```ts
-import { Server } from "libtmux";
 import { applyWorkspace } from "@libtmux/workspace";
+import { Server } from "libtmux";
 
 const server = new Server({ socketName: "libtmux-workspace" });
 try {

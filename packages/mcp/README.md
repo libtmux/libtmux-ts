@@ -113,11 +113,10 @@ both ends, link a transport pair instead of spawning anything. The program
 starts a tmux server of its own and stops it on the way out:
 
 ```ts
+import { createTmuxMcpServer } from "@libtmux/mcp";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { Server } from "libtmux";
-
-import { createTmuxMcpServer } from "@libtmux/mcp";
 
 const server = new Server({ socketName: "libtmux-mcp-demo" });
 try {

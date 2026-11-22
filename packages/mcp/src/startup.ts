@@ -8,10 +8,9 @@
  * that into something a person can notice.
  */
 
+import { isAbsolute, join } from "node:path";
 import { TmuxTransportError } from "libtmux/errors";
 import type { Server } from "libtmux/server";
-import { isAbsolute, join } from "node:path";
-
 import type { CallerEnvironment } from "./caller.js";
 import type { Policy } from "./policy.js";
 

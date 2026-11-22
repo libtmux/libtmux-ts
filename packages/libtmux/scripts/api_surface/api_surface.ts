@@ -1,6 +1,5 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-
 import { packageRoot } from "../package_root.js";
 
 /**
@@ -359,7 +358,7 @@ export function classesOf(source: string, file: string): readonly ApiClass[] {
       signature: signatureAt(lines, index),
     });
   }
-  return classes.map((entry) => ({ ...entry, file }));
+  return classes.map((entry) => Object.assign({}, entry, { file }));
 }
 
 /** The whole documented surface, in the order a reader meets it. */
@@ -384,10 +383,11 @@ export async function readRootApiSurface(): Promise<readonly ApiDeclaration[]> {
   const declarations = sources.flatMap((entry) =>
     declarationsOf(entry.source, entry.file, new Set(entry.functions), new Set(entry.types)),
   );
-  const expected = ROOT_SOURCES.flatMap((entry) => [
-    ...entry.functions.map((name) => `function:${name}`),
-    ...entry.types.map((name) => `type:${name}`),
-  ]);
+  const expected = ROOT_SOURCES.flatMap((entry) =>
+    entry.functions
+      .map((name) => `function:${name}`)
+      .concat(entry.types.map((name) => `type:${name}`)),
+  );
   const found = new Set(declarations.map((entry) => `${entry.kind}:${entry.name}`));
   const missing = expected.filter((entry) => !found.has(entry));
   if (missing.length > 0) throw new Error(`root API declarations not found: ${missing.join(", ")}`);

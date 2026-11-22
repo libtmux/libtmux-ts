@@ -1,12 +1,8 @@
+import { describe, expect, test } from "bun:test";
 import { readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
-
-import { describe, expect, test } from "bun:test";
-
-import valueTypeFixture from "../fixtures/tmux-format-value-types.json" with { type: "json" };
-
-import { formatFieldsForListCommand } from "../../src/_internal/codec/format_registry.js";
 import { GENERATED_FORMAT_FIELDS } from "../../src/_generated/format_fields.js";
+import { formatFieldsForListCommand } from "../../src/_internal/codec/format_registry.js";
 import { compareTmuxVersions, parseTmuxVersion } from "../../src/_internal/runtime/tmux_version.js";
 import {
   ControlMode,
@@ -17,8 +13,8 @@ import {
   assertOwnedSocketPath,
   makeTestDirectory,
 } from "../../src/_internal/test/testkit.js";
-
 import { Server } from "../../src/server.js";
+import valueTypeFixture from "../fixtures/tmux-format-value-types.json" with { type: "json" };
 
 const FORMAT_SEPARATOR = "␞";
 

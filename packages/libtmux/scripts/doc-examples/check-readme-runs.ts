@@ -1,6 +1,5 @@
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-
 import {
   enterSandbox,
   prepareRunRoot,
@@ -9,7 +8,6 @@ import {
   runWithCleanup,
   makeTestDirectory,
 } from "../../src/_internal/test/testkit.js";
-
 import { packageRoot } from "../package_root.js";
 import { bindingsFor, fencedBlocks, splitForExecution, type Example } from "./example_harness.js";
 import { sweepStrayTmux } from "./tmux_sweep.js";

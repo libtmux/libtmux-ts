@@ -1,4 +1,5 @@
 import type { FormatFieldName } from "../../_generated/format_field_names.js";
+import { FORMAT_FIELD_TOKENS } from "../../_generated/format_fields.js";
 import type { Client } from "../../client.js";
 import type { LogicalRef } from "../../common.js";
 import { LibTmuxError, TmuxServerRestartedError } from "../../errors.js";
@@ -7,7 +8,6 @@ import type { Server } from "../../server.js";
 import type { Session } from "../../session.js";
 import type { WindowTarget } from "../../types.js";
 import type { Window } from "../../window.js";
-import { FORMAT_FIELD_TOKENS } from "../../_generated/format_fields.js";
 import { decodeFormatValue } from "../codec/format_values.js";
 import type { CompleteFormatRow } from "../codec/schemas.js";
 import {

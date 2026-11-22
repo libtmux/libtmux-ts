@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test";
-
 import { rawAptFailures } from "../ci_apt.js";
 
 const workflow = (run: string, name = "Install shells"): unknown => ({

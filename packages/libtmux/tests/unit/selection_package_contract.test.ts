@@ -1,6 +1,5 @@
-import { readFile } from "node:fs/promises";
-
 import { describe, expect, test } from "bun:test";
+import { readFile } from "node:fs/promises";
 
 interface PackageManifest {
   readonly exports: Readonly<Record<string, unknown>>;

@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test";
-
 import { layoutChecksum, parseClassicLayout } from "../../src/_internal/operations/layout.js";
 
 const dumped = (body: string): string => `${layoutChecksum(body)},${body}`;

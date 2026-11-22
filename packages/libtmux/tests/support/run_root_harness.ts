@@ -1,3 +1,5 @@
+import { readdir, rm } from "node:fs/promises";
+import { join } from "node:path";
 import {
   deadlineMs,
   fixtureReservationPrefix,
@@ -6,8 +8,6 @@ import {
   reapOwnedRunRoot,
   makeTestDirectory,
 } from "../../src/_internal/test/testkit.js";
-import { readdir, rm } from "node:fs/promises";
-import { join } from "node:path";
 
 /** A fixture's socket sits below the root and must stay under 103 bytes, whatever TMPDIR is. */
 function rootName(name: string): string {

@@ -1,6 +1,5 @@
 // Waiting on any pane through tmux's own events: its program's exit, a shell command's end, or text.
 import { randomUUID } from "node:crypto";
-
 import {
   LibTmuxError,
   TmuxObjectNotFoundError,

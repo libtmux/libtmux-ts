@@ -1,29 +1,27 @@
 import { describe, expect, test } from "bun:test";
-
-import type {
-  CommandRequest,
-  CommandTransport,
-  RawCommandResult,
-} from "../../src/_internal/transport/types.js";
-import type { ConnectionAlias, DaemonEpoch } from "../../src/common.js";
-import { TmuxConnection } from "../../src/_internal/runtime/connection.js";
-import { createRuntimeContext } from "../../src/_internal/runtime/context.js";
 import { getEnvironment } from "../../src/_internal/operations/environment.js";
 import { displayMenu } from "../../src/_internal/operations/interactive.js";
 import { newSession, newWindow, splitWindow } from "../../src/_internal/operations/mutations.js";
 import { sendKeys } from "../../src/_internal/operations/pane_io.js";
-import { breakPane } from "../../src/_internal/operations/shell.js";
-import { unzoomTarget, zoomPane } from "../../src/_internal/operations/topology.js";
 import {
   planKillPaneIfUnshared,
   planNewSession,
   planNewWindow,
   planSplitWindow,
 } from "../../src/_internal/operations/plans.js";
-import { splitSize } from "../../src/types.js";
-import { PANE_DIRECTION_FLAG_MAP, PaneDirection } from "../../src/constants.js";
-import { WindowDirection } from "../../src/constants.js";
+import { breakPane } from "../../src/_internal/operations/shell.js";
+import { unzoomTarget, zoomPane } from "../../src/_internal/operations/topology.js";
+import { TmuxConnection } from "../../src/_internal/runtime/connection.js";
+import { createRuntimeContext } from "../../src/_internal/runtime/context.js";
 import { flattenInvocation } from "../../src/_internal/transport/invocation.js";
+import type {
+  CommandRequest,
+  CommandTransport,
+  RawCommandResult,
+} from "../../src/_internal/transport/types.js";
+import type { ConnectionAlias, DaemonEpoch } from "../../src/common.js";
+import { PANE_DIRECTION_FLAG_MAP, PaneDirection, WindowDirection } from "../../src/constants.js";
+import { splitSize } from "../../src/types.js";
 import { answerVersionProbe, probeMarker } from "../support/version_probe.js";
 
 /**

@@ -3,9 +3,9 @@ import { existsSync, readFileSync } from "node:fs";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
+import { writeProbe } from "../../libtmux/tests/support/fake_tmux.js";
 import { completionScript } from "../src/completions.ts";
 import type { CommandCatalog, OptionReference } from "../src/reference.ts";
-import { writeProbe } from "../../libtmux/tests/support/fake_tmux.js";
 import { startPty } from "./pty.ts";
 
 function option(

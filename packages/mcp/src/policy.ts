@@ -111,10 +111,10 @@ export function resolvePolicy(
   environment: Readonly<Record<string, string | undefined>> = process.env,
   defaultToolsets: readonly Toolset[] = CONSERVATIVE_DEFAULT_TOOLSETS,
 ): Policy {
-  if (Object.prototype.hasOwnProperty.call(environment, "LIBTMUX_SAFETY")) {
+  if (Object.hasOwn(environment, "LIBTMUX_SAFETY")) {
     throw new TypeError("LIBTMUX_SAFETY is no longer supported; use LIBTMUX_TOOLSETS");
   }
-  if (Object.prototype.hasOwnProperty.call(environment, "LIBTMUX_MCP_TOOLS")) {
+  if (Object.hasOwn(environment, "LIBTMUX_MCP_TOOLS")) {
     throw new TypeError(
       "LIBTMUX_MCP_TOOLS is no longer supported; use LIBTMUX_TOOLSETS and LIBTMUX_TOOLS",
     );
@@ -194,7 +194,7 @@ export function snapshotPolicy(policy: Policy): Policy {
       });
     } catch (error) {
       if (error instanceof TypeError && error.message.startsWith("policy.")) throw error;
-      throw new TypeError(`policy.${field} must be a Set`);
+      throw new TypeError(`policy.${field} must be a Set`, { cause: error });
     }
     return copy;
   };

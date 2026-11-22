@@ -14,7 +14,6 @@
 
 import { VersionTooLowError, type ConnectedServer, type TmuxEvent } from "libtmux";
 import type { Server } from "libtmux/server";
-
 import { requireActive, waitForAbort } from "./abort.js";
 import { PaneTail, type PaneTailEndReason } from "./pane_tail.js";
 
@@ -124,11 +123,13 @@ export class LiveHub {
     if (opening?.abort.signal.aborted === true) opening = undefined;
     if (opening === undefined) {
       const abort = new AbortController();
-      let tracked!: OpeningLink;
-      const promise = this.#open(sessionId, abort).finally(() => {
-        if (this.#opening.get(sessionId) === tracked) this.#opening.delete(sessionId);
-      });
-      tracked = { abort, promise, waiters: 0 };
+      const tracked: OpeningLink = {
+        abort,
+        promise: this.#open(sessionId, abort).finally(() => {
+          if (this.#opening.get(sessionId) === tracked) this.#opening.delete(sessionId);
+        }),
+        waiters: 0,
+      };
       opening = tracked;
       this.#opening.set(sessionId, opening);
     }

@@ -1,8 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { rm } from "node:fs/promises";
-
-import * as errors from "../../src/errors.js";
 import { makeTestDirectory } from "../../src/_internal/test/testkit.js";
+import * as errors from "../../src/errors.js";
 
 type ErrorClass = (new (...args: never[]) => Error) & { readonly code: string };
 

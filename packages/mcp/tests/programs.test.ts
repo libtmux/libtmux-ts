@@ -1,14 +1,12 @@
+import { expect, test } from "bun:test";
+import { fileURLToPath } from "node:url";
 /* eslint-disable no-await-in-loop -- tests poll and read sequentially */
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import { fileURLToPath } from "node:url";
-
-import { expect, test } from "bun:test";
-
-import { serverFor, structured, withClient, withServer } from "./support/server_harness.js";
 import { tmuxReaches } from "../../libtmux/tests/support/tmux_release.js";
 import { MAX_RESULT_BYTES } from "../src/policy.js";
 import { readable } from "../src/tools/programs.js";
+import { serverFor, structured, withClient, withServer } from "./support/server_harness.js";
 
 interface Started {
   readonly effectiveTimeoutMs: number;

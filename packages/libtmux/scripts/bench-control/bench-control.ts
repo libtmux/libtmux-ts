@@ -10,9 +10,6 @@
  */
 import { cpus } from "node:os";
 import { join } from "node:path";
-
-import { TmuxServerRestartedError } from "../../src/errors.js";
-import { Server, type DaemonIdentity } from "../../src/server.js";
 import { createEventStream } from "../../src/_internal/control/stream.js";
 import { parsePaneId } from "../../src/_internal/runtime/ids.js";
 import {
@@ -22,6 +19,8 @@ import {
   TestServer,
   withOwnedRunRoot,
 } from "../../src/_internal/test/testkit.js";
+import { TmuxServerRestartedError } from "../../src/errors.js";
+import { Server, type DaemonIdentity } from "../../src/server.js";
 
 interface Row {
   readonly outcome: string;

@@ -9,7 +9,6 @@
  */
 
 import { describe, expect, test } from "bun:test";
-
 import { decodeOptionValue, parseNameValueLine } from "../../src/_internal/operations/options.js";
 
 /** value, as tmux printed it. */

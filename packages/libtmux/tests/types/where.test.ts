@@ -1,9 +1,7 @@
+import { WHERE_RELATIONS_V1 } from "../../src/_generated/where_fields.js";
 import { Client } from "../../src/client.js";
 import type { PaneId, PaneIdInput, SafeInteger, SessionId, WindowId } from "../../src/common.js";
-import { WHERE_RELATIONS_V1 } from "../../src/_generated/where_fields.js";
 import { Pane } from "../../src/pane.js";
-import { Session } from "../../src/session.js";
-import { Window } from "../../src/window.js";
 import {
   decodeWhereDocument,
   encodeWhereDocument,
@@ -17,6 +15,8 @@ import {
   type WhereOf,
   type WindowWhere,
 } from "../../src/selection.js";
+import { Session } from "../../src/session.js";
+import { Window } from "../../src/window.js";
 import type { Equal, Expect } from "./assert.js";
 
 type ManyRelation<Where> =

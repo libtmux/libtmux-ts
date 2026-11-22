@@ -80,7 +80,10 @@ export async function narrowsOnKind(): Promise<string> {
       case "exit":
         return event.reason ?? "";
       case "reconnected":
+      case "reconnecting":
         return String(event.attempts);
+      case "subscription-changed":
+        return `${event.sessionId}${event.name}${event.value}`;
       case "unknown":
         return `${event.name}${event.args.join("")}`;
     }
@@ -90,7 +93,7 @@ export async function narrowsOnKind(): Promise<string> {
 
 /** Every member of the union is handled above, so the switch is exhaustive. */
 export function exhaustive(event: TmuxEvent): never | void {
-  if (event.kind === "output") return;
+  void event;
 }
 
 declare const stream: TmuxEventStream;

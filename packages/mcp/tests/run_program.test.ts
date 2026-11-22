@@ -1,11 +1,9 @@
+import { expect, test } from "bun:test";
 import { mkdir, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-
-import { expect, test } from "bun:test";
-
-import { structured, withClient, withServer } from "./support/server_harness.js";
 import { tmuxReaches } from "../../libtmux/tests/support/tmux_release.js";
+import { structured, withClient, withServer } from "./support/server_harness.js";
 
 interface Ran {
   readonly exitStatus: number | null;

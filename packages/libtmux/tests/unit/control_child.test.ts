@@ -1,7 +1,5 @@
-import { EventEmitter } from "node:events";
-
 import { describe, expect, test } from "bun:test";
-
+import { EventEmitter } from "node:events";
 import { type ControlChild, ControlChildLifecycle } from "../../src/_internal/control/child.js";
 
 class FakeChild extends EventEmitter implements ControlChild {

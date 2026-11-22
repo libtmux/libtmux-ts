@@ -1,7 +1,6 @@
 import { readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-
 import { LINUX_HARNESS, NODE22, preflight } from "./preflight.js";
 
 /**

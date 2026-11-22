@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test";
-
 import { compileWhere } from "../../src/_internal/selection/compile.js";
 import { QueryValidationError } from "../../src/errors.js";
 

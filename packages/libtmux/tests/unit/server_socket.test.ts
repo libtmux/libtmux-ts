@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test";
-
 import { socketFromEnvironment } from "../../src/_internal/runtime/connection.js";
 import type { TmuxCommandResult, TmuxInvocationRequest } from "../../src/engine.js";
 import { flattenInvocation } from "../../src/engine.js";

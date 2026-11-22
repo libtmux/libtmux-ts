@@ -6,6 +6,7 @@
  * turn.
  */
 
+import { setTimeout as delay } from "node:timers/promises";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import {
   compileBoundedRegex,
@@ -13,24 +14,22 @@ import {
   TmuxTransportError,
   WaitTimeoutError,
 } from "libtmux";
-import { setTimeout as delay } from "node:timers/promises";
 import { z } from "zod";
-
 import { readServerAuthority } from "../caller.js";
 import { requireLiveCursor, type ToolContext } from "../context.js";
 import { captureGridBounded } from "../grid_capture.js";
 import { liveEcho, withoutEchoes, type PaneServerIdentity } from "../pane_echo.js";
+import type { PaneTailEndReason } from "../pane_tail.js";
 import {
   DEFAULT_BLOCKING_WAIT_MS,
   effectiveResultLines,
   effectiveWaitMs,
   MAX_RESULT_BYTES,
 } from "../policy.js";
-import { type ToolRegistrar } from "../register.js";
+import type { ToolRegistrar } from "../register.js";
 import { boundText, fail, ok, renderBoundedText } from "../results.js";
 import { paneCursorSchema, paneIdSchema, requestTextArray } from "../schemas.js";
 import { isFailure, requirePane, type ReadablePane } from "../target_resolution.js";
-import type { PaneTailEndReason } from "../pane_tail.js";
 
 type WaitOutcome =
   | "cancelled"

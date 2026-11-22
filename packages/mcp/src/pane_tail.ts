@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-
 import { TextFilter } from "./text.js";
 
 /** How much of a pane's output one tail retains. */
@@ -155,11 +154,10 @@ export class PaneTail {
     if (this.#endReason !== undefined) return Promise.resolve("closed");
     return new Promise((resolve) => {
       let settled = false;
-      let timer: ReturnType<typeof setTimeout> | undefined;
       const finish = (change: PaneTailChange): void => {
         if (settled) return;
         settled = true;
-        if (timer !== undefined) clearTimeout(timer);
+        clearTimeout(timer);
         this.#waiters.delete(wake);
         signal?.removeEventListener("abort", cancelled);
         resolve(change);
@@ -170,7 +168,7 @@ export class PaneTail {
       const cancelled = (): void => {
         finish("cancelled");
       };
-      timer = setTimeout(() => finish("timed_out"), timeoutMs);
+      const timer = setTimeout(() => finish("timed_out"), timeoutMs);
       signal?.addEventListener("abort", cancelled, { once: true });
       this.#waiters.add(wake);
     });

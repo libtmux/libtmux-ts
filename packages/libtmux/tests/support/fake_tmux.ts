@@ -7,7 +7,6 @@ import type { ProxyConfig } from "../fixtures/fake_tmux/proxy.js";
 import type { RecordingConfig } from "../fixtures/fake_tmux/recording.js";
 import type { ReportVersionConfig } from "../fixtures/fake_tmux/report_version.js";
 import type { StubConfig } from "../fixtures/fake_tmux/stub.js";
-
 import { writeBunProgram } from "./bun_program.js";
 
 export type { StubConfig };

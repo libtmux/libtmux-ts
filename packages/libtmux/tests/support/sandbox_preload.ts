@@ -1,5 +1,4 @@
 import { afterAll, beforeAll } from "bun:test";
-
 import { enterSandbox, type Sandbox } from "../../src/_internal/test/testkit.js";
 
 // Bun reads bunfig.toml from the directory it starts in and from no other, so

@@ -1,7 +1,6 @@
 import { mkdtemp, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-
 import { assertSandboxed } from "./sandbox.js";
 
 /**

@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test";
-
 import { v, ValidationFailure } from "../../src/_internal/validate.js";
 
 /**

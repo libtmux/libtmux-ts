@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test";
-
 import { Server } from "libtmux/server";
 import {
   applyWorkspace,

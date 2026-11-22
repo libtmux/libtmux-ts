@@ -5,8 +5,8 @@ import type { RuntimeContext } from "../runtime/context.js";
 import { parseTmuxVersion, tmuxVersionAtLeast } from "../runtime/tmux_version.js";
 import { capabilitySince } from "../support/capabilities.js";
 import { checkDaemonVersion } from "../support/versions.js";
-import { connectionArguments } from "./request.js";
 import { executableTmuxVersion, isColdEndpoint } from "./command.js";
+import { connectionArguments } from "./request.js";
 
 const classicNames = [
   "even-horizontal",

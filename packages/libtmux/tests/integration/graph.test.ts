@@ -1,10 +1,7 @@
+import { describe, expect, test } from "bun:test";
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
-
-import { describe, expect, test } from "bun:test";
-
 import { WHERE_FIELDS_V1, type WhereModel } from "../../src/_generated/where_fields.js";
-import type { ConnectionAlias, DaemonEpoch } from "../../src/common.js";
 import { executeGuardedList } from "../../src/_internal/codec/guarded_listing.js";
 import {
   createGraphSourceId,
@@ -26,9 +23,9 @@ import {
   TestServer,
   makeTestDirectory,
 } from "../../src/_internal/test/testkit.js";
-
 import { NodeSpawnTransport } from "../../src/_internal/transport/node_spawn_transport.js";
 import type { CommandTransport } from "../../src/_internal/transport/types.js";
+import type { ConnectionAlias, DaemonEpoch } from "../../src/common.js";
 
 interface QueryHarness {
   readonly capabilities: LazyCapabilityBinding;

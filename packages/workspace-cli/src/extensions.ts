@@ -1,3 +1,7 @@
+import { constants } from "node:fs";
+import { mkdtemp, open, rm, stat } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
 /* eslint-disable no-await-in-loop -- Import roots are validated before any builder runs. */
 import {
   TmuxCommandError,
@@ -7,10 +11,6 @@ import {
   type ServerSnapshot,
   type Session,
 } from "libtmux";
-import { constants } from "node:fs";
-import { mkdtemp, open, rm, stat } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
 import type { CLIContext } from "./app.ts";
 import { privatePath, type Document } from "./documents.ts";
 import { expand, normalize, workspaceName } from "./normalize.ts";

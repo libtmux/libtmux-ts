@@ -1,10 +1,8 @@
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { realpathSync } from "node:fs";
 import { mkdir, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
-
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-
 import {
   assertSandboxed,
   makeTestDirectory,

@@ -1,12 +1,11 @@
-/* eslint-disable no-await-in-loop -- Each launch gets a private tmux directory and finishes before the next starts. */
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { expect, test } from "bun:test";
 import { mkdir, readdir, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
-
+/* eslint-disable no-await-in-loop -- Each launch gets a private tmux directory and finishes before the next starts. */
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { runBoundedCommand } from "../../../scripts/bounded_process/bounded_process.js";
 import { fences, steps, words } from "../../../scripts/readme_blocks.js";
 import {
@@ -113,11 +112,13 @@ function launchesIn(markdown: string, file: string): readonly Launch[] {
       if (command[0] === "claude" && command[1] === "mcp" && command[2] === "add") {
         const separator = command.indexOf("--");
         const options = command.slice(4, separator === -1 ? command.length : separator);
+        const overrides: Record<string, string> = { ...env };
         for (const [index, option] of options.entries()) {
           if (option !== "--env" && option !== "-e") continue;
           const [name, ...value] = (options[index + 1] ?? "").split("=");
-          env = { ...env, [name ?? ""]: value.join("=") };
+          overrides[name ?? ""] = value.join("=");
         }
+        env = overrides;
         command = separator === -1 ? [] : command.slice(separator + 1);
       }
       const launchesServer =

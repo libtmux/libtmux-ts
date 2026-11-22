@@ -1,20 +1,19 @@
 import { describe, expect, test } from "bun:test";
-
 import { GuardCodec } from "../../src/_internal/codec/guard_codec.js";
 import { executeGuardedListGroup } from "../../src/_internal/codec/guarded_listing.js";
 import { ACQUISITION_LISTINGS } from "../../src/_internal/operations/acquire.js";
+import { prepareInvocationRequest } from "../../src/_internal/operations/request.js";
 import { deriveTmuxCapabilities } from "../../src/_internal/runtime/capabilities.js";
 import { TmuxConnection } from "../../src/_internal/runtime/connection.js";
-import { prepareInvocationRequest } from "../../src/_internal/operations/request.js";
 import {
   MAX_PACKED_ARGV_BYTES,
   MAX_PACKED_ARGV_COUNT,
   packedCommandBytes,
   packedCommandCount,
 } from "../../src/_internal/transport/invocation.js";
-import { SUPPORTED_TMUX_VERSIONS } from "../support/tmux_matrix.js";
-import type { ConnectionAlias, DaemonEpoch } from "../../src/common.js";
 import type { CommandRequest } from "../../src/_internal/transport/types.js";
+import type { ConnectionAlias, DaemonEpoch } from "../../src/common.js";
+import { SUPPORTED_TMUX_VERSIONS } from "../support/tmux_matrix.js";
 
 /**
  * Room to grow before tmux refuses the acquisition outright.

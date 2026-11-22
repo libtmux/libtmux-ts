@@ -1,9 +1,8 @@
+import { describe, expect, test } from "bun:test";
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
-
-import { describe, expect, test } from "bun:test";
-
 import { WHERE_FIELDS_V1, type WhereField } from "../../src/_generated/where_fields.js";
+import { compareTmuxVersions, parseTmuxVersion } from "../../src/_internal/runtime/tmux_version.js";
 import {
   prepareRunRoot,
   reapOwnedRunRoot,
@@ -11,8 +10,6 @@ import {
   TestServer,
   makeTestDirectory,
 } from "../../src/_internal/test/testkit.js";
-
-import { compareTmuxVersions, parseTmuxVersion } from "../../src/_internal/runtime/tmux_version.js";
 import { VersionTooLowError } from "../../src/errors.js";
 import { Server } from "../../src/server.js";
 

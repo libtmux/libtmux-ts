@@ -1,12 +1,10 @@
+import { afterEach, describe, expect, test } from "bun:test";
 import { spawn, type ChildProcess } from "node:child_process";
 import { chmodSync, existsSync, rmSync, statSync } from "node:fs";
 import { chmod, mkdir, readdir, readFile, rm, symlink } from "node:fs/promises";
 import { Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
-
-import { afterEach, describe, expect, test } from "bun:test";
-
 import {
   assertOwnedSocketPath,
   assertSandboxed,

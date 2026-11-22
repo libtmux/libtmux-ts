@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test";
-
 import { LineFramer, MAX_CARRY_BYTES } from "../../src/_internal/control/framing.js";
 
 const encoder = new TextEncoder();

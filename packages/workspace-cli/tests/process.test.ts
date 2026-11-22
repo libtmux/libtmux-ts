@@ -1,9 +1,9 @@
 import { expect, test } from "bun:test";
 import { readFile } from "node:fs/promises";
 import { Writable } from "node:stream";
-import { processRun, tokenize } from "../src/process.ts";
-import { write } from "../src/output.ts";
 import { resolveNode22, runWithCleanup } from "../../libtmux/src/_internal/test/testkit.js";
+import { write } from "../src/output.ts";
+import { processRun, tokenize } from "../src/process.ts";
 
 test("process arguments preserve quoted spaces and empty values without a shell", () => {
   expect(tokenize('editor --wait "a b" \'\' x\\ y "$HOME"')).toEqual([
@@ -161,7 +161,7 @@ test.skipIf(process.platform !== "linux").each(["cancel", "exit"] as const)(
         expect(result.code).toBe(mode === "cancel" ? 130 : 0);
         expect(pid).toBeGreaterThan(0);
         const stateOfChild = () =>
-          readFile(`/proc/${pid}/stat`, "utf8").catch((error) => {
+          readFile(`/proc/${pid}/stat`, "utf8").catch((error: unknown) => {
             if ((error as NodeJS.ErrnoException).code === "ENOENT") return "";
             throw error;
           });

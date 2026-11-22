@@ -1,6 +1,5 @@
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import type { Pane } from "libtmux";
-
 import type { PaneInputConflict } from "./command.js";
 import type { PaneInputObservation } from "./context.js";
 import {

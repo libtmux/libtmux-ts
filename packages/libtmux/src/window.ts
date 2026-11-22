@@ -1,32 +1,25 @@
-import type { CmdOptions, PlannedOperation } from "./types.js";
-import { runRawCommand } from "./_internal/operations/raw.js";
-import type { SetHookOptions, SetOptionOptions } from "./types.js";
-import type {
-  MoveWindowOptions,
-  ResizeWindowOptions,
-  RespawnOptions,
-  SplitOptions,
-} from "./types.js";
 import { WINDOW_ALIASES } from "./_generated/field_aliases.js";
-import type { AliasedFields, RowWithIdentities, WindowAliasMap } from "./field_types.js";
-import {
-  linkedSessionsOfWindow,
-  panesOfPlacement,
-  sessionOf,
-} from "./_internal/operations/relations.js";
-import { killTarget, splitWindow } from "./_internal/operations/mutations.js";
-import {
-  planKill,
-  planRemoveWindowPlacement,
-  planSplitWindow,
-} from "./_internal/operations/plans.js";
 import { setHook, showHooks, unsetHook } from "./_internal/operations/hooks.js";
+import { killTarget, splitWindow } from "./_internal/operations/mutations.js";
 import {
   setOption,
   showOptions,
   showResolvedOptions,
   unsetOption,
 } from "./_internal/operations/options.js";
+import {
+  planKill,
+  planRemoveWindowPlacement,
+  planSplitWindow,
+} from "./_internal/operations/plans.js";
+import { runRawCommand } from "./_internal/operations/raw.js";
+import { refreshedHandle } from "./_internal/operations/refreshed.js";
+import {
+  linkedSessionsOfWindow,
+  panesOfPlacement,
+  sessionOf,
+} from "./_internal/operations/relations.js";
+import { respawnWindow } from "./_internal/operations/shell.js";
 import {
   linkWindow,
   cycleLayout,
@@ -41,22 +34,31 @@ import {
   swapWindows,
   unlinkWindow,
 } from "./_internal/operations/topology.js";
-import type { CommandOptions } from "./common.js";
-import { respawnWindow } from "./_internal/operations/shell.js";
-import { refreshedHandle } from "./_internal/operations/refreshed.js";
-import { originGraphForHandle } from "./_internal/runtime/live_handle.js";
-import type { Pane } from "./pane.js";
-import type { Selection } from "./selection.js";
-import type { Session } from "./session.js";
 import {
   installLiveHandlePrototype,
   liveHandlesEqual,
-  requireSameServer,
-  targetOf,
   liveHandlesShareTmuxId,
+  originGraphForHandle,
+  requireSameServer,
   runtimeForHandle,
+  targetOf,
 } from "./_internal/runtime/live_handle.js";
+import type { CommandOptions } from "./common.js";
+import type { AliasedFields, RowWithIdentities, WindowAliasMap } from "./field_types.js";
+import type { Pane } from "./pane.js";
+import type { Selection } from "./selection.js";
 import type { Server } from "./server.js";
+import type { Session } from "./session.js";
+import type {
+  CmdOptions,
+  MoveWindowOptions,
+  PlannedOperation,
+  ResizeWindowOptions,
+  RespawnOptions,
+  SetHookOptions,
+  SetOptionOptions,
+  SplitOptions,
+} from "./types.js";
 
 /** Resolve a destination session to its id, refusing one on another server. */
 function destinationFor(

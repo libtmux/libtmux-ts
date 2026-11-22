@@ -1,9 +1,8 @@
 import { describe, expect, test } from "bun:test";
-
-import { Server } from "../../src/server.js";
 import type { TmuxCommandResult, TmuxInvocationRequest } from "../../src/engine.js";
 import { flattenInvocation } from "../../src/engine.js";
 import { TmuxTransportError, VersionTooLowError } from "../../src/errors.js";
+import { Server } from "../../src/server.js";
 import { checkedEngine, answerVersionProbe } from "../support/version_probe.js";
 
 function success(request: TmuxInvocationRequest): TmuxCommandResult {

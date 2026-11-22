@@ -1,8 +1,6 @@
 import { describe, expect, test } from "bun:test";
-
 import type { ConnectedServer, TmuxEvent, TmuxEventStream } from "libtmux";
 import { Server } from "libtmux/server";
-
 import { LiveHub } from "../src/live.js";
 
 class FakeEventStream {

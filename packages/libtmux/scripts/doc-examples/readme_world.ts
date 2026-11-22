@@ -1,10 +1,9 @@
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-
 import { TestServer } from "../../src/_internal/test/testkit.js";
-import { writeBunProgram } from "../../tests/support/bun_program.js";
 import type { Server as ServerHandle } from "../../src/server.js";
 import { Server } from "../../src/server.js";
+import { writeBunProgram } from "../../tests/support/bun_program.js";
 import type { StubCommand } from "./stub_command.js";
 import { sweepStrayTmux } from "./tmux_sweep.js";
 

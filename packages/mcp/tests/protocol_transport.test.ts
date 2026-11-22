@@ -1,7 +1,6 @@
+import { expect, test } from "bun:test";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { type JSONRPCMessage, JSONRPCMessageSchema } from "@modelcontextprotocol/sdk/types.js";
-import { expect, test } from "bun:test";
-
 import { boundRequestIds, MAX_SERIALIZED_REQUEST_ID_BYTES } from "../src/protocol_transport.js";
 
 test("request IDs that cannot fit a bounded reply fail before dispatch", async () => {

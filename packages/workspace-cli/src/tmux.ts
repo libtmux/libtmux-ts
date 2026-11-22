@@ -1,3 +1,6 @@
+import { stat } from "node:fs/promises";
+import { basename, extname, resolve } from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
 /* eslint-disable no-await-in-loop -- Each mutation and progress record depends on the preceding tmux state. */
 import {
   isTmuxName,
@@ -9,9 +12,6 @@ import {
   type Session,
   type Window,
 } from "libtmux";
-import { stat } from "node:fs/promises";
-import { setTimeout as sleep } from "node:timers/promises";
-import { basename, extname, resolve } from "node:path";
 import type { CLIContext } from "./app.ts";
 import {
   scalarText,
@@ -24,6 +24,7 @@ import {
   type Document,
   type Json,
 } from "./documents.ts";
+import type { BorrowedSession, ExtensionSpec } from "./extensions.ts";
 import { normalize, type PaneSpec, type WorkspaceSpec } from "./normalize.ts";
 import {
   CliError,
@@ -37,7 +38,6 @@ import {
 import type { Request } from "./parser.ts";
 import { openTerminal, processRun } from "./process.ts";
 import type { ProcessResult } from "./process.ts";
-import type { BorrowedSession, ExtensionSpec } from "./extensions.ts";
 
 export type LoadResult = {
   input_index: number;
@@ -1273,13 +1273,16 @@ async function capture(server: Server, request: Request, context: CLIContext): P
   const windows: Document[] = [];
   for (const window of session.windows.toArray()) {
     requireAddressableName("window", window.name);
-    const panes = window.panes.toArray().map((pane) => ({
-      ...(pane.currentCommand !== null && !isDefaultShell(pane.currentCommand)
-        ? { shell_command: [pane.currentCommand] }
-        : {}),
-      start_directory: pane.currentPath ?? context.cwd,
-      ...(pane.active === true ? { focus: true } : {}),
-    }));
+    const panes = window.panes.toArray().map((pane) => {
+      const entry: Document = {
+        start_directory: pane.currentPath ?? context.cwd,
+      };
+      if (pane.currentCommand !== null && !isDefaultShell(pane.currentCommand)) {
+        entry.shell_command = [pane.currentCommand];
+      }
+      if (pane.active === true) entry.focus = true;
+      return entry;
+    });
     // freeze runs after every pane exists, so window options belong under
     // options_after: automatic-rename: off only holds when applied there,
     // and load already accepts both spellings.

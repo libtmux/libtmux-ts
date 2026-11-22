@@ -1,6 +1,9 @@
 import { WHERE_FIELDS_V1, type WhereModel } from "../../src/_generated/where_fields.js";
-import type { ConnectionAlias, DaemonEpoch } from "../../src/common.js";
-import { Client } from "../../src/client.js";
+import type { ListCommand } from "../../src/_internal/codec/format_types.js";
+import {
+  materializeClientRecord,
+  materializeProjectionMembers,
+} from "../../src/_internal/graph/materialize.js";
 import {
   createGraphSourceId,
   type CapturedRowSet,
@@ -11,30 +14,27 @@ import { normalizeGraph } from "../../src/_internal/graph/normalize.js";
 import { SelectionProjectionBuilder } from "../../src/_internal/graph/projection_builder.js";
 import type { ProjectionDescriptor } from "../../src/_internal/graph/projection_descriptor.js";
 import type { SelectionProjection } from "../../src/_internal/graph/projection_identity.js";
-import {
-  materializeClientRecord,
-  materializeProjectionMembers,
-} from "../../src/_internal/graph/materialize.js";
 import { TmuxConnection } from "../../src/_internal/runtime/connection.js";
-import { TEST_HANDLE_PROTOTYPES } from "../../src/_internal/test/testkit.js";
 import {
   createRuntimeContext,
   createServerWithRuntime,
   type RuntimeContext,
 } from "../../src/_internal/runtime/context.js";
+import { TEST_HANDLE_PROTOTYPES } from "../../src/_internal/test/testkit.js";
+import { flattenInvocation } from "../../src/_internal/transport/invocation.js";
 import type {
   CommandRequest,
   CommandTransport,
   RawCommandResult,
 } from "../../src/_internal/transport/types.js";
-import { flattenInvocation } from "../../src/_internal/transport/invocation.js";
-import { answerVersionProbe, probeMarker } from "./version_probe.js";
-import { singleCommandTransport } from "./transport_double.js";
-import type { ListCommand } from "../../src/_internal/codec/format_types.js";
+import { Client } from "../../src/client.js";
+import type { ConnectionAlias, DaemonEpoch } from "../../src/common.js";
 import { Pane } from "../../src/pane.js";
 import { Session } from "../../src/session.js";
 import { Window } from "../../src/window.js";
 import { completeFormatRow, type MutableCompleteFormatRow } from "./graph_rows.js";
+import { singleCommandTransport } from "./transport_double.js";
+import { answerVersionProbe, probeMarker } from "./version_probe.js";
 
 let runtimeOrdinal = 0;
 interface RecordingTransport extends CommandTransport {

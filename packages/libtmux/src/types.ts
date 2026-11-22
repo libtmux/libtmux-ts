@@ -1,9 +1,4 @@
-import type {
-  OptionScope as OptionScopeValue,
-  PaneDirection,
-  ResizeAdjustmentDirection,
-  WindowDirection,
-} from "./constants.js";
+import { isName } from "./_internal/operations/names.js";
 import type { Client } from "./client.js";
 import {
   isSafeInteger,
@@ -13,12 +8,17 @@ import {
   type SessionId,
   type WindowId,
 } from "./common.js";
-import type { DaemonIdentity, Server } from "./server.js";
+import type {
+  OptionScope as OptionScopeValue,
+  PaneDirection,
+  ResizeAdjustmentDirection,
+  WindowDirection,
+} from "./constants.js";
 import type { Pane } from "./pane.js";
 import type { Selection } from "./selection.js";
+import type { DaemonIdentity, Server } from "./server.js";
 import type { Session } from "./session.js";
 import type { Window } from "./window.js";
-import { isName } from "./_internal/operations/names.js";
 
 /**
  * Option shapes for the public operations.

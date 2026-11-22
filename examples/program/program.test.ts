@@ -1,9 +1,7 @@
+import { describe, expect, test } from "bun:test";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-
-import { describe, expect, test } from "bun:test";
-
 import { LibTmuxError, VersionTooLowError } from "../../packages/libtmux/src/errors.js";
 import { Server } from "../../packages/libtmux/src/server.js";
 import { runsPrograms, withServer } from "../test-support/with-server.js";

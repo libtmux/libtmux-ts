@@ -1,5 +1,4 @@
 import { MINIMUM_TMUX } from "libtmux";
-
 import type { CallerEnvironment } from "./caller.js";
 import type { Policy } from "./policy.js";
 

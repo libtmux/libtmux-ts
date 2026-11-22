@@ -70,8 +70,8 @@ already exists. The program starts a tmux server of its own and stops it on the
 way out:
 
 ```ts
-import { Server } from "libtmux";
 import { applyWorkspace } from "@libtmux/workspace";
+import { Server } from "libtmux";
 
 const server = new Server({ socketName: "libtmux-workspace" });
 try {

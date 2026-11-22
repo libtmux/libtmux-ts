@@ -1,4 +1,3 @@
-import type { AbortLike } from "../../src/types.js";
 import type {
   CommandOptions,
   CommandOutcome,
@@ -13,16 +12,13 @@ import type {
   PaneRef,
   SessionId,
   SessionRef,
+  TmuxInvocationObserver,
+  TmuxInvocationReport,
   WindowId,
   WindowRef,
 } from "../../src/common.js";
-import type { TmuxInvocationObserver, TmuxInvocationReport } from "../../src/common.js";
 import { isSafeInteger, safeInteger } from "../../src/common.js";
-import type { LibTmuxErrorCode } from "../../src/errors.js";
-import type { WaitTimeoutError } from "../../src/errors.js";
 import type { DefaultOptionScope } from "../../src/constants.js";
-import * as exception from "../../src/exc.js";
-import { MultipleMatchesError, NoMatchError, QueryValidationError } from "../../src/errors.js";
 import {
   OptionScope,
   DEFAULT_OPTION_SCOPE,
@@ -35,6 +31,9 @@ import {
   WindowDirection,
   WINDOW_DIRECTION_FLAG_MAP,
 } from "../../src/constants.js";
+import type { LibTmuxErrorCode, WaitTimeoutError } from "../../src/errors.js";
+import { MultipleMatchesError, NoMatchError, QueryValidationError } from "../../src/errors.js";
+import * as exception from "../../src/exc.js";
 import {
   isSafeInteger as rootIsSafeInteger,
   isSplitSize as rootIsSplitSize,
@@ -55,13 +54,13 @@ import type {
 } from "../../src/index.js";
 import { isSplitSize, splitSize } from "../../src/types.js";
 import type {
+  AbortLike,
   JoinOptions,
   SetOptionOptions,
   SplitCellSize,
   SplitPercentage,
   SplitSize,
 } from "../../src/types.js";
-
 import type { Equal, Expect } from "./assert.js";
 
 declare const options: CommandOptions;

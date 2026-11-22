@@ -8,7 +8,6 @@
  */
 
 import { describe, expect, test } from "bun:test";
-
 import { BlockTracker } from "../../src/_internal/control/blocks.js";
 import { parseControlLine } from "../../src/_internal/control/events.js";
 import { parseWindowId } from "../../src/_internal/runtime/ids.js";

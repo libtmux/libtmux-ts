@@ -1,9 +1,7 @@
+import { expect, test } from "bun:test";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { expect, test } from "bun:test";
-
 import { MINIMUM_TMUX, Server, VersionTooLowError } from "libtmux";
-
 import { buildInstructions } from "../src/instructions.js";
 import { createTmuxMcpServer } from "../src/server.js";
 import { checkedEngine } from "./support/checked_engine.js";

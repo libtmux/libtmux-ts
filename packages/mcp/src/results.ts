@@ -9,7 +9,6 @@
 
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { VersionTooLowError } from "libtmux";
-
 import { MAX_RESULT_BYTES } from "./policy.js";
 
 /** What a failed call gives back so the next call can be a better one. */

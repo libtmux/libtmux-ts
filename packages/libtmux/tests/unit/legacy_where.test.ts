@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test";
-
-import { MultipleMatchesError, QueryValidationError } from "../../src/errors.js";
 import { createProjectedSelection } from "../../src/_internal/selection/evaluate.js";
+import { MultipleMatchesError, QueryValidationError } from "../../src/errors.js";
 import { parseLegacyWhere } from "../../src/selection.js";
 import { createSessionHarness } from "../support/selection_fixtures.js";
 
@@ -85,6 +84,7 @@ describe("parseLegacyWhere", () => {
       ["session", { name__contains: "x", extra: true }],
       ["session", { name__contains: 1 }],
       ["session", { name__contains: null }],
+      // oxlint-disable-next-line no-new-wrappers -- exercises boxed String rejection.
       ["session", { name__contains: new String("x") }],
       ["session", { name__exact: "x" }],
       ["session", { name__icontains: "x" }],

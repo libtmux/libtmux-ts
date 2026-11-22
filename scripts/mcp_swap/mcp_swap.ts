@@ -1,5 +1,4 @@
-import { homedir } from "node:os";
-import { basename, dirname, isAbsolute, join, resolve } from "node:path";
+import { createHash, randomUUID } from "node:crypto";
 import { closeSync, constants, fchmodSync, fstatSync, lstatSync, openSync } from "node:fs";
 import {
   access,
@@ -18,8 +17,8 @@ import {
   unlink,
   writeFile,
 } from "node:fs/promises";
-import { createHash, randomUUID } from "node:crypto";
-
+import { homedir } from "node:os";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import {
   runBoundedCommand,
   type BoundedCommandResult,
@@ -1118,7 +1117,7 @@ async function acquireSwapLock(): Promise<SwapLockHandle> {
   };
   const acquired = await readMessage();
   if (acquired.kind !== "acquired" || acquired.state === undefined) {
-    child.stdin.end();
+    await child.stdin.end();
     await child.exited;
     throw new Error(`swap lock is unusable: ${acquired.error ?? "invalid worker protocol"}`);
   }
@@ -1130,7 +1129,7 @@ async function acquireSwapLock(): Promise<SwapLockHandle> {
   try {
     await assert();
   } catch (error) {
-    child.stdin.end();
+    await child.stdin.end();
     await child.exited;
     throw error;
   }
@@ -1140,7 +1139,7 @@ async function acquireSwapLock(): Promise<SwapLockHandle> {
     release: async () => {
       if (released) return;
       released = true;
-      child.stdin.end();
+      await child.stdin.end();
       const message = await readMessage();
       const status = await child.exited;
       const diagnostic = (await stderr).trim();
@@ -1167,7 +1166,9 @@ async function withSwapLock<T>(action: (lock: SwapLockHandle) => Promise<T>): Pr
     await lock.release();
   } catch (error) {
     if (failure !== undefined) {
-      throw new AggregateError([failure, error], "transaction and swap lock release both failed");
+      throw new AggregateError([failure, error], "transaction and swap lock release both failed", {
+        cause: error,
+      });
     }
     throw error;
   }
@@ -1312,6 +1313,7 @@ export async function writeAtomic(path: string, data: string, mode?: number): Pr
         throw new AggregateError(
           [error, ...rollbackFailures],
           "atomic write failed and rollback was incomplete",
+          { cause: error },
         );
       }
       throw error;
@@ -2853,6 +2855,7 @@ async function applyNativeOperations(
       throw new AggregateError(
         [error, ...rollbackFailures],
         "native swap failed and exact rollback was incomplete",
+        { cause: error },
       );
     }
     throw error;

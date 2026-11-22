@@ -1,9 +1,8 @@
 import { describe, expect, test } from "bun:test";
-
-import { Server } from "../../src/server.js";
 import type { TmuxInvocationReport } from "../../src/common.js";
 import type { TmuxCommandResult, TmuxInvocationRequest } from "../../src/engine.js";
 import { flattenInvocation } from "../../src/engine.js";
+import { Server } from "../../src/server.js";
 import { checkedEngine } from "../support/version_probe.js";
 
 function result(request: TmuxInvocationRequest, exitCode = 0): TmuxCommandResult {
@@ -129,6 +128,7 @@ describe("invocation observer", () => {
     try {
       const server = new Server({
         engine: checkedEngine((request) => Promise.resolve(result(request))),
+        // oxlint-disable-next-line typescript/no-misused-promises -- deliberately returns a rejected promise from a void observer.
         onInvocation: () => Promise.reject(new Error("observer is broken")),
       });
 

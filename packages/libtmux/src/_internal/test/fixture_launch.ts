@@ -1,10 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { chmod, lstat, mkdir, readFile, readdir, rmdir, unlink } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
-
-import { deadlineMs, FIXTURE_PROBE_DEADLINE_MS } from "./deadlines.js";
 import { tmuxCommand } from "../transport/invocation.js";
 import { NodeSpawnTransport } from "../transport/node_spawn_transport.js";
+import { deadlineMs, FIXTURE_PROBE_DEADLINE_MS } from "./deadlines.js";
 import {
   assertControllerCurrent,
   readDaemonIdentity,
@@ -297,7 +296,7 @@ export async function validateGenerationAuthority(
     beforeMetadata = await lstat(record.socketPath);
   } catch (error) {
     if (isErrno(error, "ENOENT"))
-      throw new Error("fixture socket is missing during generation validation");
+      throw new Error("fixture socket is missing during generation validation", { cause: error });
     throw error;
   }
   const before = socketIdentityFromMetadata(beforeMetadata);

@@ -9,8 +9,8 @@ import {
   TestServer,
   withOwnedRunRoot,
 } from "../../libtmux/src/_internal/test/testkit.js";
-import { processRun } from "../src/process.ts";
 import { writeTmuxProxy } from "../../libtmux/tests/support/fake_tmux.js";
+import { processRun } from "../src/process.ts";
 import { runInPty, type PtyResult } from "./pty.ts";
 
 const runtime = process.env.LIBTMUX_WORKSPACE_CLI_RUNTIME ?? process.execPath;
@@ -245,6 +245,7 @@ test("human load attaches only the final workspace through a separate terminal",
           interrupt();
           throw new Error(
             `${String(error)}: ${JSON.stringify(await result)}; ${await readFile(saved, "utf8")}; ${await readFile(saved + ".err", "utf8")}`,
+            { cause: error },
           );
         }
         const snapshot = await server.snapshot();
@@ -369,7 +370,9 @@ test("human load inside tmux switches the invoking client and returns to its she
         try {
           await until(async () => Bun.file(done).exists());
         } catch (error) {
-          throw new Error(`${String(error)}: ${(await pane.capture()).join("\n")}`);
+          throw new Error(`${String(error)}: ${(await pane.capture()).join("\n")}`, {
+            cause: error,
+          });
         }
         expect(await readFile(done, "utf8")).toBe("0");
         const client = (await server.snapshot()).clients.at(0)!;
@@ -413,7 +416,9 @@ test("inside tmux, without --yes, answering (n) to the new-session prompt builds
         try {
           await until(async () => Bun.file(done).exists());
         } catch (error) {
-          throw new Error(`${String(error)}: ${(await pane.capture()).join("\n")}`);
+          throw new Error(`${String(error)}: ${(await pane.capture()).join("\n")}`, {
+            cause: error,
+          });
         }
         expect(await readFile(done, "utf8")).toBe("0");
         // Declining stayed on "fixture"; the workspace still built, detached.
@@ -460,7 +465,9 @@ test("inside tmux, without --yes, answering (a) to the new-session prompt append
         try {
           await until(async () => Bun.file(done).exists());
         } catch (error) {
-          throw new Error(`${String(error)}: ${(await pane.capture()).join("\n")}`);
+          throw new Error(`${String(error)}: ${(await pane.capture()).join("\n")}`, {
+            cause: error,
+          });
         }
         expect(await readFile(done, "utf8")).toBe("0");
         expect(await server.hasSession("prompted-append")).toBe(false);
@@ -507,7 +514,9 @@ test("inside tmux, without --yes, answering (n) to the already-running prompt le
         try {
           await until(async () => Bun.file(done).exists());
         } catch (error) {
-          throw new Error(`${String(error)}: ${(await pane.capture()).join("\n")}`);
+          throw new Error(`${String(error)}: ${(await pane.capture()).join("\n")}`, {
+            cause: error,
+          });
         }
         expect(await readFile(done, "utf8")).toBe("0");
         const client = (await server.snapshot()).clients.at(0)!;
@@ -550,7 +559,9 @@ test("inside tmux, without --yes, answering (y) to the already-running prompt sw
         try {
           await until(async () => Bun.file(done).exists());
         } catch (error) {
-          throw new Error(`${String(error)}: ${(await pane.capture()).join("\n")}`);
+          throw new Error(`${String(error)}: ${(await pane.capture()).join("\n")}`, {
+            cause: error,
+          });
         }
         expect(await readFile(done, "utf8")).toBe("0");
         const client = (await server.snapshot()).clients.at(0)!;
@@ -599,7 +610,9 @@ test("inside tmux, without --yes, answering (n) to a mismatched already-running 
         try {
           await until(async () => Bun.file(done).exists());
         } catch (error) {
-          throw new Error(`${String(error)}: ${(await pane.capture()).join("\n")}`);
+          throw new Error(`${String(error)}: ${(await pane.capture()).join("\n")}`, {
+            cause: error,
+          });
         }
         // A declined attach never went to reuse this session, so the
         // comparison that would otherwise run against it never happens either:
@@ -658,7 +671,7 @@ test("interrupting attachment detaches the owned client and preserves the worksp
           await until(async () => (await server.snapshot()).clients.length === 1);
         } catch (error) {
           interrupt();
-          throw new Error(`${String(error)}: ${JSON.stringify(await result)}`);
+          throw new Error(`${String(error)}: ${JSON.stringify(await result)}`, { cause: error });
         }
         interrupt();
         expect((await result).code).toBe(130);

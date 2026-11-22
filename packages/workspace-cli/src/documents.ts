@@ -170,8 +170,8 @@ export async function saveDocument(
       }
     }
   } finally {
-    await unlink(temporary).catch((error) => {
-      if (error.code !== "ENOENT") throw error;
+    await unlink(temporary).catch((error: unknown) => {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     });
   }
 }

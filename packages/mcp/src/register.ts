@@ -12,7 +12,6 @@ import {
 } from "@modelcontextprotocol/sdk/server/zod-compat.js";
 import { toJsonSchemaCompat } from "@modelcontextprotocol/sdk/server/zod-json-schema-compat.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
-
 import type { Policy, Toolset } from "./policy.js";
 import { versionFailure } from "./results.js";
 import {

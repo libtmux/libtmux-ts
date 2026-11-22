@@ -1,14 +1,12 @@
 import { types as nodeTypes } from "node:util";
-
+import { WHERE_FIELDS_V1, WHERE_RELATIONS_V1 } from "../../_generated/where_fields.js";
 import type { Client } from "../../client.js";
 import { MultipleMatchesError, NoMatchError, QueryValidationError } from "../../errors.js";
 import type { Pane } from "../../pane.js";
 import type { Selection, WhereOf } from "../../selection.js";
 import type { Session } from "../../session.js";
 import type { Window } from "../../window.js";
-import { WHERE_FIELDS_V1, WHERE_RELATIONS_V1 } from "../../_generated/where_fields.js";
 import { graphRecordRefsEqual, type GraphRecordRef, type NormalizedGraph } from "../graph/model.js";
-import { graphEntityRefsEqual, winlinkRefsEqual } from "../graph/refs.js";
 import {
   corpusForSelectionProjection,
   isSelectionProjection,
@@ -18,7 +16,7 @@ import {
   type ProjectionRecord,
   type SelectionProjection,
 } from "../graph/projection_identity.js";
-import type { ModelForKind } from "../runtime/model_kind.js";
+import { graphEntityRefsEqual, winlinkRefsEqual } from "../graph/refs.js";
 import {
   entityRefForHandle,
   graphRecordRefForHandle,
@@ -27,6 +25,7 @@ import {
   snapshotForHandle,
   winlinkRefForHandle,
 } from "../runtime/live_handle.js";
+import type { ModelForKind } from "../runtime/model_kind.js";
 import { compileWhere, type CompiledWhere } from "./compile.js";
 import { refuseFieldsNewerThanServer } from "./version_gate.js";
 

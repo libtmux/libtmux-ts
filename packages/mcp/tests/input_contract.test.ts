@@ -1,12 +1,10 @@
-import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { expect, test } from "bun:test";
 import { link, mkdtemp, readdir, rm, stat, symlink, unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-
-import type { TestServer } from "../../libtmux/src/_internal/test/testkit.js";
+import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { Server } from "libtmux/server";
-
+import type { TestServer } from "../../libtmux/src/_internal/test/testkit.js";
 import { readCallerEnvironment } from "../src/caller.js";
 import { isPaneInputConflict, reserveFramedCommand } from "../src/command.js";
 import { createContext } from "../src/context.js";

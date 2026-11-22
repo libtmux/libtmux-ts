@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test";
-
 import { createEventStream } from "../../src/_internal/control/stream.js";
 import { parsePaneId } from "../../src/_internal/runtime/ids.js";
 import type { TmuxEvent } from "../../src/types.js";

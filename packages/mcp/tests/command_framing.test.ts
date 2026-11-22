@@ -1,13 +1,10 @@
+import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { existsSync, rmSync, writeFileSync } from "node:fs";
 import { mkdir, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-
-import { afterEach, describe, expect, spyOn, test } from "bun:test";
-
 import { TmuxTransportError, type Pane, type ServerSnapshot } from "libtmux";
-
 import { isPaneInputConflict, reserveFramedCommand, runFramedCommand } from "../src/command.js";
 import {
   frame,
@@ -913,7 +910,14 @@ describe("command framing", () => {
         checks += 1;
         if (checks > 1) return { panes: { first: () => pane } };
         return new Promise((_resolve, reject) => {
-          signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+          signal.addEventListener(
+            "abort",
+            () => {
+              const reason: unknown = signal.reason;
+              reject(reason instanceof Error ? reason : new Error("aborted", { cause: reason }));
+            },
+            { once: true },
+          );
           setTimeout(() => {
             cancelledAt = performance.now();
             controller.abort();

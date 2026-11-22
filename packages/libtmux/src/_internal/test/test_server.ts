@@ -1,15 +1,23 @@
+import { randomUUID } from "node:crypto";
+import { adaptRawResult } from "../operations/request.js";
+import { flattenInvocation, tmuxCommand } from "../transport/invocation.js";
+import { NodeSpawnTransport } from "../transport/node_spawn_transport.js";
+import { TmuxTransportError, type RawCommandResult } from "../transport/types.js";
+import { reportSecondaryCleanupFailure, runWithCleanup } from "./cleanup.js";
 import {
   FIXTURE_BOOTSTRAP_DEADLINE_MS,
   READINESS_DEADLINE_MS,
   READINESS_POLL_INTERVAL_MS,
   deadlineMs,
 } from "./deadlines.js";
-import { randomUUID } from "node:crypto";
-
-import { adaptRawResult } from "../operations/request.js";
-import { NodeSpawnTransport } from "../transport/node_spawn_transport.js";
-import { flattenInvocation, tmuxCommand } from "../transport/invocation.js";
-import { TmuxTransportError, type RawCommandResult } from "../transport/types.js";
+import {
+  beginFixtureLaunch,
+  promoteFixtureLaunch,
+  reserveFixture,
+  rollbackFixtureLaunchNotStarted,
+  type FixtureControllerRequest,
+  type ReservationCapability,
+} from "./fixture_launch.js";
 import {
   assertControllerCurrent as assertPersistedControllerCurrent,
   readDaemonIdentity,
@@ -17,16 +25,6 @@ import {
   type ControllerIdentity,
   type DaemonIdentity,
 } from "./process_identity.js";
-import { reportSecondaryCleanupFailure, runWithCleanup } from "./cleanup.js";
-import {
-  beginFixtureLaunch,
-  promoteFixtureLaunch,
-  reserveFixture,
-  rollbackFixtureLaunchNotStarted,
-  type FixtureControllerRequest,
-  type LaunchAttemptCapability,
-  type ReservationCapability,
-} from "./fixture_launch.js";
 import { reapFixture, retireFixtureGeneration, sweepStaleRunRoots } from "./reaper.js";
 import { readFixtureRecord, type FixtureRecord, type LaunchGeneration } from "./records.js";
 import { assertSandboxed } from "./sandbox.js";
@@ -241,7 +239,6 @@ async function launchFixtureGeneration(options: {
     ...entry.environment,
     [generation.name]: generation.value,
   });
-  let attempt: LaunchAttemptCapability | undefined;
 
   const executeController = async (
     args: readonly string[],
@@ -264,8 +261,8 @@ async function launchFixtureGeneration(options: {
     });
   };
 
+  const attempt = await beginFixtureLaunch(capability, { bootstrapArgv, generation });
   const promote = async (daemonPid: number): Promise<void> => {
-    if (attempt === undefined) throw new Error("fixture launch attempt is missing");
     record = await promoteFixtureLaunch(attempt, daemonPid, {
       ...(entry.faultInjection === "partial-identity-record-write"
         ? { faultInjection: "partial-write" as const }
@@ -276,7 +273,6 @@ async function launchFixtureGeneration(options: {
     });
   };
 
-  attempt = await beginFixtureLaunch(capability, { bootstrapArgv, generation });
   record = await readFixtureRecord(capability.reservationPath);
   const bootstrapRequest = observeRequest(entry.requestObserver, {
     args: bootstrapArgs,
@@ -519,8 +515,7 @@ export class TestServer {
     if (this.#replacementPromise !== undefined) {
       return Promise.reject(new Error("fixture replacement is already running"));
     }
-    let tracked!: Promise<void>;
-    tracked = this.#replaceGeneration(sessionName).finally(() => {
+    const tracked: Promise<void> = this.#replaceGeneration(sessionName).finally(() => {
       if (this.#replacementPromise === tracked) this.#replacementPromise = undefined;
     });
     this.#replacementPromise = tracked;

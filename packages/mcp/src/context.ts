@@ -6,9 +6,9 @@
  * mutable state.
  */
 
+import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import type { ServerSnapshot } from "libtmux";
 import type { Server } from "libtmux/server";
-
 import {
   readCallerEnvironment,
   readServerAuthority,
@@ -22,7 +22,6 @@ import type { PaneTail } from "./pane_tail.js";
 import type { Policy } from "./policy.js";
 import { fail } from "./results.js";
 import { pinTmuxRoute, type PinnedTmuxRoute } from "./route.js";
-import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
 export interface ToolContext {
   readonly hub: LiveHub;

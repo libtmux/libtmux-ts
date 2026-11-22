@@ -1,9 +1,7 @@
+import { describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
-
-import { describe, expect, test } from "bun:test";
-
 import {
   deadlineMs,
   enterSandbox,

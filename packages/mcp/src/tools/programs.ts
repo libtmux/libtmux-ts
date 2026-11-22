@@ -4,7 +4,6 @@
  */
 
 import { randomUUID } from "node:crypto";
-
 import {
   ProgramStartError,
   ServerNotLocalError,
@@ -14,10 +13,9 @@ import {
   type ProgramExit,
 } from "libtmux";
 import { z } from "zod";
-
 import type { ToolContext } from "../context.js";
 import { DEFAULT_BLOCKING_WAIT_MS, effectiveWaitMs, INLINE_RESULT_CHARS } from "../policy.js";
-import { type ToolRegistrar } from "../register.js";
+import type { ToolRegistrar } from "../register.js";
 import { fail, ok } from "../results.js";
 import { inlineRequestText, paneIdSchema } from "../schemas.js";
 import { isFailure } from "../target_resolution.js";

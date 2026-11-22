@@ -1,18 +1,17 @@
 import { describe, expect, test } from "bun:test";
-
-import type { ConnectionAlias, DaemonEpoch } from "../../src/common.js";
-import { LibTmuxError, TmuxTransportError, VersionTooLowError } from "../../src/errors.js";
-import { TmuxConnection } from "../../src/_internal/runtime/connection.js";
 import {
   deriveTmuxCapabilities,
   LazyCapabilityBinding,
 } from "../../src/_internal/runtime/capabilities.js";
+import { TmuxConnection } from "../../src/_internal/runtime/connection.js";
+import { flattenInvocation } from "../../src/_internal/transport/invocation.js";
 import type {
   CommandRequest,
   CommandTransport,
   RawCommandResult,
 } from "../../src/_internal/transport/types.js";
-import { flattenInvocation } from "../../src/_internal/transport/invocation.js";
+import type { ConnectionAlias, DaemonEpoch } from "../../src/common.js";
+import { LibTmuxError, TmuxTransportError, VersionTooLowError } from "../../src/errors.js";
 import { singleCommandTransport } from "../support/transport_double.js";
 import { answerVersionProbe, probeMarker } from "../support/version_probe.js";
 

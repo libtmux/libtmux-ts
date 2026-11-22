@@ -1,5 +1,3 @@
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { expect, test } from "bun:test";
 import { spawn } from "node:child_process";
 import { rm } from "node:fs/promises";
@@ -7,7 +5,8 @@ import { constants as osConstants } from "node:os";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
-
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {
   deadlineMs,
   makeTestDirectory,
@@ -16,8 +15,8 @@ import {
   runWithCleanup,
   type TestServer,
 } from "../../libtmux/src/_internal/test/testkit.js";
-import { structured, withServer } from "./support/server_harness.js";
 import { testControl, tmuxReaches } from "../../libtmux/tests/support/tmux_release.js";
+import { structured, withServer } from "./support/server_harness.js";
 
 // start_program needs tmux 3.8.
 const testProgram = tmuxReaches("3.8") ? test : test.skip;

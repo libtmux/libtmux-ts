@@ -1,9 +1,7 @@
+import { describe, expect, test } from "bun:test";
 import { readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-
-import { describe, expect, test } from "bun:test";
-
 import {
   prepareRunRoot,
   reapOwnedRunRoot,
@@ -11,9 +9,8 @@ import {
   TestServer,
   makeTestDirectory,
 } from "../../src/_internal/test/testkit.js";
-
-import { Server } from "../../src/server.js";
 import type { Pane } from "../../src/pane.js";
+import { Server } from "../../src/server.js";
 import type { Session } from "../../src/session.js";
 import type { Window } from "../../src/window.js";
 

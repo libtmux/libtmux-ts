@@ -1,8 +1,6 @@
+import { describe, expect, test } from "bun:test";
 import { constants } from "node:os";
 import { fileURLToPath } from "node:url";
-
-import { describe, expect, test } from "bun:test";
-
 import { lastPayload } from "../../src/_internal/operations/pane_wait.js";
 import { signalName } from "../../src/_internal/operations/program.js";
 import { MarkFilter, markSequences } from "../../src/_internal/operations/program_stream.js";

@@ -1,12 +1,10 @@
+import { afterEach, describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
-
-import { afterEach, describe, expect, test } from "bun:test";
-
-import { VersionTooLowError } from "../../src/errors.js";
 import { makeTestDirectory } from "../../src/_internal/test/testkit.js";
+import { VersionTooLowError } from "../../src/errors.js";
 import { Server } from "../../src/server.js";
 import { testControl } from "../support/tmux_release.js";
 

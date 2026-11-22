@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test";
-
-import { observerBoundTransport } from "../../src/_internal/control/observer_transport.js";
 import type { ControlObserverBinding } from "../../src/_internal/control/connection.js";
+import { observerBoundTransport } from "../../src/_internal/control/observer_transport.js";
 import { TmuxConnection } from "../../src/_internal/runtime/connection.js";
 import type { CommandRequest, RawCommandResult } from "../../src/_internal/transport/types.js";
 import { TmuxServerRestartedError, TmuxTransportError } from "../../src/errors.js";

@@ -1,7 +1,6 @@
+import { createTmuxMcpServer } from "@libtmux/mcp";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-
-import { createTmuxMcpServer } from "@libtmux/mcp";
 import type { Server } from "libtmux/server";
 
 /** The typed half of a tool result, which is what a program reads. */

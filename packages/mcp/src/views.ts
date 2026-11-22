@@ -7,10 +7,8 @@
  * query away.
  */
 
-import { z } from "zod";
-
 import { safeInteger, type Client, type Session, type Window } from "libtmux";
-
+import { z } from "zod";
 import { isAttended, isCallerPane, type CallerIdentity } from "./caller.js";
 import { MAX_RESULT_BYTES } from "./policy.js";
 import { boundText, renderBoundedText, tailBytes, type BoundedText } from "./results.js";

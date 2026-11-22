@@ -3,10 +3,8 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-
 import type { Pane, ServerSnapshot } from "libtmux";
 import { Server } from "libtmux/server";
-
 import {
   readCallerEnvironment,
   readServerAuthority,

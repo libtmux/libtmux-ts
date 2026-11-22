@@ -2,10 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-
 import { TmuxTransportError, type Pane } from "libtmux";
-
-import { sameInputAuthority, type InputAuthority, type ToolContext } from "./context.js";
 import {
   frame,
   parseFramedOutput,
@@ -14,6 +11,7 @@ import {
   sourcingDispatch,
   withoutForeignFraming,
 } from "./command_frame.js";
+import { sameInputAuthority, type InputAuthority, type ToolContext } from "./context.js";
 import { captureGridBounded } from "./grid_capture.js";
 import { dispatchPaneKeys } from "./pane_input.js";
 import { effectiveWaitMs, MAX_RESULT_BYTES } from "./policy.js";

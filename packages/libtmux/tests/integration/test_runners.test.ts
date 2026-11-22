@@ -1,18 +1,15 @@
+import { describe, expect, test } from "bun:test";
 import { spawn } from "node:child_process";
 import { readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-
-import { describe, expect, test } from "bun:test";
-
-import { waitForPathAbsent, waitForProcessExit } from "../support/converge.js";
-import { closeChild } from "../support/owned_child.js";
-
 import {
   resolveNode22,
   reapStaleRunRoot,
   makeTestDirectory,
 } from "../../src/_internal/test/testkit.js";
+import { waitForPathAbsent, waitForProcessExit } from "../support/converge.js";
+import { closeChild } from "../support/owned_child.js";
 
 const tsRoot = fileURLToPath(new URL("../..", import.meta.url));
 const nodeRunnerPath = fileURLToPath(new URL("../../scripts/test-node.ts", import.meta.url));

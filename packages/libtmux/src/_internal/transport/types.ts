@@ -5,13 +5,14 @@ import type {
   TmuxEngine,
   TmuxInvocationRequest,
 } from "../../engine.js";
+import type { TmuxTransportError as TmuxTransportErrorType } from "../../errors.js";
 import { timerDuration } from "../timing.js";
+import { validateInvocation } from "./invocation.js";
+
 // One transport error type, and it is the public one: a caller deciding
 // whether a timed-out mutation is safe to retry needs `delivery`, and an
 // internal-only class would mean re-deriving it at the package boundary.
 export { TmuxTransportError } from "../../errors.js";
-import type { TmuxTransportError as TmuxTransportErrorType } from "../../errors.js";
-import { validateInvocation } from "./invocation.js";
 
 export type CommandRequest = TmuxInvocationRequest;
 export type RawCommandResult = TmuxCommandResult;

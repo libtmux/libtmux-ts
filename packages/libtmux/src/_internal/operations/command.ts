@@ -1,14 +1,14 @@
-import { LibTmuxError, TmuxCommandError, TmuxServerRestartedError } from "../../errors.js";
 import type { CommandOptions, CommandResult } from "../../common.js";
 import type { DaemonGuard } from "../../engine.js";
+import { LibTmuxError, TmuxCommandError, TmuxServerRestartedError } from "../../errors.js";
+import type { TmuxVersion } from "../../types.js";
 import { invalidateRuntimeEpoch, lastObservedDaemon } from "../runtime/context.js";
 import type { RuntimeContext } from "../runtime/context.js";
+import { parseTmuxVersion } from "../runtime/tmux_version.js";
+import { executableProbe, executableVersion, requireCoreVersion } from "../support/versions.js";
 import { reachesUnboundedCommand } from "../transport/bounded_transport.js";
 import { carriesTmuxId } from "../transport/daemon_guard.js";
 import type { RawCommandResult } from "../transport/types.js";
-import type { TmuxVersion } from "../../types.js";
-import { parseTmuxVersion } from "../runtime/tmux_version.js";
-import { executableProbe, executableVersion, requireCoreVersion } from "../support/versions.js";
 import { adaptRawResult, prepareCommandRequest, prepareInvocationRequest } from "./request.js";
 
 /**

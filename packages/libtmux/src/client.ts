@@ -1,19 +1,19 @@
 import { CLIENT_ALIASES } from "./_generated/field_aliases.js";
-import type { AliasedFields, ClientAliasMap, RowWithIdentities } from "./field_types.js";
-import { paneOfPlacement, sessionOf, windowOfPlacement } from "./_internal/operations/relations.js";
 import { refreshedHandle } from "./_internal/operations/refreshed.js";
+import { paneOfPlacement, sessionOf, windowOfPlacement } from "./_internal/operations/relations.js";
 import { detachClient, switchClient } from "./_internal/operations/shell.js";
-import { originGraphForHandle } from "./_internal/runtime/live_handle.js";
-import type { Pane } from "./pane.js";
-import type { Session } from "./session.js";
-import type { Window } from "./window.js";
 import {
   installLiveHandlePrototype,
-  requireSameServer,
   liveHandlesEqual,
+  originGraphForHandle,
+  requireSameServer,
   runtimeForHandle,
 } from "./_internal/runtime/live_handle.js";
+import type { AliasedFields, ClientAliasMap, RowWithIdentities } from "./field_types.js";
+import type { Pane } from "./pane.js";
 import type { Server } from "./server.js";
+import type { Session } from "./session.js";
+import type { Window } from "./window.js";
 
 /**
  * One client attached to a tmux server, as a handle rather than a copy of it.

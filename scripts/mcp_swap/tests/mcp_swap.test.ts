@@ -1,3 +1,5 @@
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { createHash } from "node:crypto";
 import {
   chmod,
   link,
@@ -13,16 +15,11 @@ import {
   unlink,
   writeFile,
 } from "node:fs/promises";
-import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-
+import { makeTestDirectory } from "../../../packages/libtmux/src/_internal/test/testkit.js";
 import { writeBunProgram } from "../../../packages/libtmux/tests/support/bun_program.js";
-import type { TouchConfig } from "./fixtures/touch.js";
-
 import {
   backupPath,
   BUILD_ENTRY,
@@ -47,8 +44,7 @@ import {
   xdgConfigHome,
   type CliInfo,
 } from "../mcp_swap.js";
-
-import { makeTestDirectory } from "../../../packages/libtmux/src/_internal/test/testkit.js";
+import type { TouchConfig } from "./fixtures/touch.js";
 
 const TOUCH_PROGRAM = new URL("./fixtures/touch.ts", import.meta.url);
 

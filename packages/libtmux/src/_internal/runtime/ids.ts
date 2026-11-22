@@ -1,5 +1,3 @@
-import { v, ValidationFailure, type Validator } from "../validate.js";
-
 import type {
   PaneId,
   PaneIdInput,
@@ -9,6 +7,7 @@ import type {
   WindowIdInput,
 } from "../../common.js";
 import { QueryValidationError } from "../../errors.js";
+import { v, ValidationFailure, type Validator } from "../validate.js";
 
 const sessionIdPattern = /^\$\d+$/u;
 const windowIdPattern = /^@\d+$/u;

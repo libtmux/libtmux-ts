@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test";
-
 import {
   HOOK_SCOPE_FLAG_MAP,
   OptionScope,

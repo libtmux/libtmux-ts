@@ -1,8 +1,6 @@
+import { describe, expect, test } from "bun:test";
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
-
-import { describe, expect, test } from "bun:test";
-
 import {
   prepareRunRoot,
   reapOwnedRunRoot,
@@ -10,7 +8,6 @@ import {
   TestServer,
   makeTestDirectory,
 } from "../../src/_internal/test/testkit.js";
-
 import type { TmuxEngine } from "../../src/engine.js";
 import { flattenInvocation } from "../../src/engine.js";
 import { TmuxServerRestartedError, TmuxTransportError } from "../../src/errors.js";

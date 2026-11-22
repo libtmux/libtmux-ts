@@ -1,10 +1,8 @@
+import { expect, test } from "bun:test";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-
-import { expect, test } from "bun:test";
-
-import { npmPack } from "../npm_pack.js";
 import { makeTestDirectory } from "../../../packages/libtmux/src/_internal/test/testkit.js";
+import { npmPack } from "../npm_pack.js";
 
 test("packs the exact npm artifact and reports its entries", async () => {
   const root = await makeTestDirectory("ltx-npm-pack-");

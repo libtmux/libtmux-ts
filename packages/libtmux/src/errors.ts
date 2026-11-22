@@ -1,5 +1,4 @@
 import { types as nodeTypes } from "node:util";
-
 import type { DeliveryStatus } from "./common.js";
 
 /**

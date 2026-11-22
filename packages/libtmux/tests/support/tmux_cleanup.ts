@@ -4,7 +4,6 @@ import { randomUUID } from "node:crypto";
 import { link, lstat, readFile, unlink } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
-
 import { readDaemonIdentity, resolveControllerIdentity } from "../../src/_internal/test/testkit.js";
 import { closeChildWithin, waitForProcessExit } from "./converge.js";
 import { closeChild } from "./owned_child.js";
@@ -130,12 +129,10 @@ async function killExactTmux(socketPath: string, pid: number): Promise<void> {
   const recoverySocket = join(dirname(socketPath), `r-${randomUUID().slice(0, 8)}`);
   const captured = await captureTmuxCleanup(pid, socketPath, recoverySocket);
   await terminateCapturedTmux(captured);
-  const original = await lstat(socketPath, { bigint: true }).catch(
-    (error: NodeJS.ErrnoException) => {
-      if (error.code === "ENOENT") return undefined;
-      throw error;
-    },
-  );
+  const original = await lstat(socketPath, { bigint: true }).catch((error: unknown) => {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw error;
+  });
   if (original !== undefined) {
     deepStrictEqual({ device: original.dev, inode: original.ino }, captured.socketIdentity);
     await unlink(socketPath);

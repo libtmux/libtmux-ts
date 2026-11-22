@@ -4,19 +4,17 @@ import type {
   ServerNotification,
   ServerRequest,
 } from "@modelcontextprotocol/sdk/types.js";
-import { z } from "zod";
-
 import type { ServerSnapshot } from "libtmux";
-
-import type { ToolContext } from "../context.js";
+import { z } from "zod";
 import { isPaneInputConflict, reservePaneInput } from "../command.js";
+import type { ToolContext } from "../context.js";
+import { busyPane, dispatchPaneKeys, paneInputChanged, planPaneInput } from "../pane_input.js";
 import {
   effectiveResultLines,
   effectiveWaitMs,
   MAX_REQUEST_ITEMS,
   MAX_RESULT_BYTES,
 } from "../policy.js";
-import { busyPane, dispatchPaneKeys, paneInputChanged, planPaneInput } from "../pane_input.js";
 import { READ_BATCH_TOOLS, type ToolRegistry } from "../register.js";
 import { boundText, fail, ok, renderBoundedText } from "../results.js";
 import {
@@ -48,13 +46,11 @@ import {
 } from "../views.js";
 
 const CORNERS = ["top-left", "top-right", "bottom-left", "bottom-right"] as const;
-const nestedToolResultSchema = z
-  .object({
-    content: z.array(z.unknown()),
-    isError: z.boolean().optional(),
-    structuredContent: z.record(z.string(), z.unknown()).optional(),
-  })
-  .passthrough();
+const nestedToolResultSchema = z.looseObject({
+  content: z.array(z.unknown()),
+  isError: z.boolean().optional(),
+  structuredContent: z.record(z.string(), z.unknown()).optional(),
+});
 
 interface ReadBatchResult {
   readonly error: string | null;

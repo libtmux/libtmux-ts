@@ -3,7 +3,6 @@ import { constants as fsConstants } from "node:fs";
 import { lstat, open, realpath, rename, unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, parse, resolve } from "node:path";
-
 import {
   assertControllerIdentity,
   assertDaemonIdentity,

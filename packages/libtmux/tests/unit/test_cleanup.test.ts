@@ -1,7 +1,5 @@
-import { channel } from "node:diagnostics_channel";
-
 import { describe, expect, test } from "bun:test";
-
+import { channel } from "node:diagnostics_channel";
 import { runWithCleanup } from "../../src/_internal/test/testkit.js";
 
 describe("runWithCleanup", () => {

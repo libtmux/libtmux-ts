@@ -1,11 +1,8 @@
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
-
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-
-import { runTypeScriptApi } from "../support/typescript_api.js";
-
 import { makeTestDirectory } from "../../src/_internal/test/testkit.js";
+import { runTypeScriptApi } from "../support/typescript_api.js";
 
 /**
  * The retry that keeps a cancelled Go process from failing an unrelated gate.

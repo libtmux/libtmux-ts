@@ -1,3 +1,4 @@
+import { isTmuxName } from "libtmux";
 /**
  * The zod schemas behind `./config`.
  *
@@ -7,9 +8,7 @@
  * asserts the two never drift.
  */
 import { z } from "zod";
-
 import { OWNERSHIP_OPTION } from "./ownership.js";
-import { isTmuxName } from "libtmux";
 
 // The library refuses a name tmux would not store unchanged. Asking it here
 // names the offending field instead of surfacing a TypeError from the call.
@@ -32,7 +31,7 @@ export const paneSchema = z.union([
   }),
 ]);
 
-export const optionValueSchema = z.union([z.string(), z.number().finite(), z.boolean()]);
+export const optionValueSchema = z.union([z.string(), z.number(), z.boolean()]);
 
 export const workspaceOptionsSchema = z
   .record(z.string(), optionValueSchema)

@@ -1,9 +1,10 @@
+import { basename, dirname, extname, join, resolve } from "node:path";
 /* eslint-disable no-await-in-loop -- Output follows record order and awaits stream backpressure. */
 import type { Readable, Writable } from "node:stream";
-import { basename, dirname, extname, join, resolve } from "node:path";
 import { CommanderError } from "commander";
 import { VersionTooLowError } from "libtmux";
-import { createParser } from "./parser.ts";
+import { debugInfo, edit, shell } from "./commands.ts";
+import { Diagnostics } from "./diagnostics.ts";
 import {
   scalarText,
   discover,
@@ -16,11 +17,10 @@ import {
   type Document,
   type FileContext,
 } from "./documents.ts";
-import { CliError, colorEnabled, emitJson, styled, write, type MachineCode } from "./output.ts";
 import { importDocument } from "./imports.ts";
+import { CliError, colorEnabled, emitJson, styled, write, type MachineCode } from "./output.ts";
+import { createParser } from "./parser.ts";
 import { search } from "./search.ts";
-import { debugInfo, edit, shell } from "./commands.ts";
-import { Diagnostics } from "./diagnostics.ts";
 
 export type CLIContext = FileContext & {
   stdout: Writable;

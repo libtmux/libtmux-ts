@@ -1,5 +1,4 @@
 import { z } from "zod";
-
 import { PANE_CURSOR_PATTERN } from "./pane_tail.js";
 import {
   MAX_FRAMED_COMMAND_BYTES,

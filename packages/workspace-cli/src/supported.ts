@@ -1,5 +1,4 @@
 import { assertSupportedTmux, TmuxCommandError, type Server } from "libtmux";
-
 import type { CLIContext } from "./app.ts";
 import { CliError } from "./output.ts";
 import { processRun } from "./process.ts";

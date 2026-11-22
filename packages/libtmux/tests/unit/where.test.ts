@@ -1,10 +1,9 @@
 import { describe, expect, test } from "bun:test";
-
-import { NoMatchError, QueryValidationError } from "../../src/exc.js";
-import { safeInteger } from "../../src/common.js";
 import { compileWhere } from "../../src/_internal/selection/compile.js";
 import { createProjectedSelection } from "../../src/_internal/selection/evaluate.js";
 import { foldCase } from "../../src/_internal/selection/scalar.js";
+import { safeInteger } from "../../src/common.js";
+import { NoMatchError, QueryValidationError } from "../../src/exc.js";
 import {
   compileBoundedRegex,
   decodeWhereDocument,

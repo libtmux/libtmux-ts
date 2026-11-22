@@ -13,7 +13,7 @@ interface Entry {
 function entries(catalog: CommandCatalog): Entry[] {
   return catalog.commands.flatMap((command, node) => {
     const flags = (option: OptionReference) =>
-      [option.short, option.long].filter((flag): flag is string => !!flag);
+      [option.short, option.long].filter((flag): flag is string => Boolean(flag));
     return [
       ...command.options.map((option) => ({
         keys: flags(option).map((flag) => `${node}:${flag}`),

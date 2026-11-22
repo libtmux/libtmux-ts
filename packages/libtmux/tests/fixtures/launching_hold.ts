@@ -1,6 +1,5 @@
-import { fsyncSync, openSync, writeSync } from "node:fs";
-
 import { dlopen, FFIType } from "bun:ffi";
+import { fsyncSync, openSync, writeSync } from "node:fs";
 
 export interface LaunchingHoldConfig {
   /** Receives `<pid>\n<stdout>` once tmux has run. */

@@ -1,10 +1,7 @@
+import { describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
-
-import { describe, expect, test } from "bun:test";
-import { testControl, tmuxAtLeast } from "../support/tmux_release.js";
-
 import {
   prepareRunRoot,
   reapOwnedRunRoot,
@@ -12,11 +9,11 @@ import {
   TestServer,
   makeTestDirectory,
 } from "../../src/_internal/test/testkit.js";
-
 import { safeInteger } from "../../src/common.js";
 import { TmuxCommandError, TmuxTransportError, VersionTooLowError } from "../../src/errors.js";
 import { Server } from "../../src/server.js";
 import { Session } from "../../src/session.js";
+import { testControl, tmuxAtLeast } from "../support/tmux_release.js";
 
 function serverFor(fixture: TestServer): Server {
   return new Server({

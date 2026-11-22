@@ -10,7 +10,6 @@ import { randomUUID } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-
 import {
   ProgramStartError,
   ServerNotLocalError,
@@ -19,7 +18,6 @@ import {
   type Pane,
 } from "libtmux";
 import { z } from "zod";
-
 import {
   isPaneInputConflict,
   reserveFramedCommand,
@@ -43,7 +41,7 @@ import {
   effectiveWaitMs,
   MAX_RESULT_BYTES,
 } from "../policy.js";
-import { type ToolRegistrar } from "../register.js";
+import type { ToolRegistrar } from "../register.js";
 import { boundText, fail, ok, renderBoundedText } from "../results.js";
 import {
   fitsInlineRequest,

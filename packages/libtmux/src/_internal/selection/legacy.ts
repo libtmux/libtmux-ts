@@ -1,5 +1,4 @@
 import { types as nodeTypes } from "node:util";
-
 import { QueryValidationError } from "../../errors.js";
 import type { WhereDocumentV1 } from "../../selection.js";
 

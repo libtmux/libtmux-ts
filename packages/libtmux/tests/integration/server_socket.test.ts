@@ -1,8 +1,6 @@
+import { describe, expect, test } from "bun:test";
 import { mkdir, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
-
-import { describe, expect, test } from "bun:test";
-
 import {
   makeTestDirectory,
   prepareRunRoot,
@@ -10,7 +8,6 @@ import {
   runWithCleanup,
   TestServer,
 } from "../../src/_internal/test/testkit.js";
-
 import { Server } from "../../src/server.js";
 
 /**

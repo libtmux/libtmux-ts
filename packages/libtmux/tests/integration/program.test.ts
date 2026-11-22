@@ -1,15 +1,9 @@
+import { describe, expect, test } from "bun:test";
 import { spawn, spawnSync } from "node:child_process";
 import { access, mkdir, readdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-
-import { describe, expect, test } from "bun:test";
-import { processExists } from "../support/converge.js";
-import { writeElsewhere } from "../support/fake_tmux.js";
-import { tmuxReaches } from "../support/tmux_release.js";
-
 import { leaseTimer } from "../../src/_internal/operations/program_lease.js";
-
 import {
   prepareRunRoot,
   reapOwnedRunRoot,
@@ -17,7 +11,6 @@ import {
   TestServer,
   makeTestDirectory,
 } from "../../src/_internal/test/testkit.js";
-
 import {
   LibTmuxError,
   ObjectNotFoundError,
@@ -31,6 +24,9 @@ import {
 } from "../../src/errors.js";
 import { Server } from "../../src/server.js";
 import type { SpawnOptions } from "../../src/types.js";
+import { processExists } from "../support/converge.js";
+import { writeElsewhere } from "../support/fake_tmux.js";
+import { tmuxReaches } from "../support/tmux_release.js";
 
 function serverFor(fixture: TestServer): Server {
   return new Server({

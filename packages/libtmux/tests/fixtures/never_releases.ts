@@ -1,5 +1,4 @@
 import { spawn } from "node:child_process";
-
 import { enterSandbox } from "../../src/_internal/test/testkit.js";
 
 /** Run a command to its end, collecting what it prints. */

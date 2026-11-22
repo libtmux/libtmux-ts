@@ -1,10 +1,9 @@
 import { compileBoundedRegex, TmuxCommandError } from "libtmux";
 import { z } from "zod";
-
 import type { ToolContext } from "../context.js";
 import { boundedCaptureRange, captureRowLimit } from "../grid_capture.js";
 import { effectiveResultLines, MAX_RESULT_BYTES } from "../policy.js";
-import { type ToolRegistrar } from "../register.js";
+import type { ToolRegistrar } from "../register.js";
 import { fail, mapConcurrent, ok } from "../results.js";
 import { paneIdSchema, requestText } from "../schemas.js";
 import { isFailure, paneEntities, panePlacements, requireSession } from "../target_resolution.js";

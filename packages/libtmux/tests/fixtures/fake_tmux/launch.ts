@@ -1,5 +1,4 @@
 import { renameSync, writeFileSync } from "node:fs";
-
 import { execProgram } from "../../support/bun_program.js";
 
 export type LaunchConfig =

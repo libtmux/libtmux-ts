@@ -1,7 +1,5 @@
-import { spawnSync } from "node:child_process";
-
 import { describe, test } from "bun:test";
-
+import { spawnSync } from "node:child_process";
 import { releaseAtLeast } from "../../src/_internal/runtime/tmux_version.js";
 
 /** The release of the `tmux` on PATH, as `tmux -V` writes it (`tmux 3.3a`, or `tmux-3.3a 3.3a`). */

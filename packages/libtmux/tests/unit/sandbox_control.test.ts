@@ -1,11 +1,9 @@
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { existsSync, readdirSync } from "node:fs";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-
 import { makeTestDirectory, resolveNode22 } from "../../src/_internal/test/testkit.js";
 import { parseCalls, writeRecordingTmux } from "../support/recording_tmux.js";
 

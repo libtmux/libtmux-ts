@@ -1,22 +1,21 @@
-import * as clientModule from "../../src/client.js";
 import type { CompleteFormatRow } from "../../src/_internal/codec/schemas.js";
-import type { TmuxInvocationObserver } from "../../src/common.js";
-import type { TmuxEngine } from "../../src/engine.js";
-import type { RowWithIdentities } from "../../src/field_types.js";
-import type {
-  GraphEntityRef,
-  GraphRecordRef,
-  NormalizedGraph,
-} from "../../src/_internal/graph/model.js";
 import {
   materializeClientRecord,
   materializeProjectionMembers,
   materializeProjectionRecord,
 } from "../../src/_internal/graph/materialize.js";
 import type {
+  GraphEntityRef,
+  GraphRecordRef,
+  NormalizedGraph,
+} from "../../src/_internal/graph/model.js";
+import type {
   ProjectionRecord,
   SelectionProjection,
 } from "../../src/_internal/graph/projection_identity.js";
+import type { LazyCapabilityBinding } from "../../src/_internal/runtime/capabilities.js";
+import type { TmuxConnection } from "../../src/_internal/runtime/connection.js";
+import type { RuntimeConstructors } from "../../src/_internal/runtime/constructors.js";
 import {
   bindLogicalRef,
   createRuntimeContext,
@@ -26,9 +25,6 @@ import {
   type RuntimeContext,
   type RuntimeContextOptions,
 } from "../../src/_internal/runtime/context.js";
-import type { LazyCapabilityBinding } from "../../src/_internal/runtime/capabilities.js";
-import type { TmuxConnection } from "../../src/_internal/runtime/connection.js";
-import type { RuntimeConstructors } from "../../src/_internal/runtime/constructors.js";
 import {
   entityRefForHandle,
   logicalRefForHandle,
@@ -40,10 +36,9 @@ import type {
   ModelKind,
   NominalModel,
 } from "../../src/_internal/runtime/model_kind.js";
-import * as paneModule from "../../src/pane.js";
-import * as serverModule from "../../src/server.js";
-import * as sessionModule from "../../src/session.js";
-import * as windowModule from "../../src/window.js";
+import type { CommandTransport } from "../../src/_internal/transport/types.js";
+import * as clientModule from "../../src/client.js";
+import { Client } from "../../src/client.js";
 import type {
   ConnectionAlias,
   DaemonEpoch,
@@ -51,11 +46,18 @@ import type {
   PaneId,
   SafeInteger,
   SessionId,
+  TmuxInvocationObserver,
   WindowId,
 } from "../../src/common.js";
-import { Client } from "../../src/client.js";
+import type { TmuxEngine } from "../../src/engine.js";
+import type { RowWithIdentities } from "../../src/field_types.js";
+import * as paneModule from "../../src/pane.js";
 import { Pane } from "../../src/pane.js";
+import type { Selection } from "../../src/selection.js";
+import * as serverModule from "../../src/server.js";
 import { Server, type ServerOptions } from "../../src/server.js";
+import * as sessionModule from "../../src/session.js";
+import { Session } from "../../src/session.js";
 import {
   isSplitSize,
   splitSize,
@@ -64,10 +66,8 @@ import {
   type SplitPercentage,
   type SplitSize,
 } from "../../src/types.js";
-import { Session } from "../../src/session.js";
+import * as windowModule from "../../src/window.js";
 import { Window } from "../../src/window.js";
-import type { CommandTransport } from "../../src/_internal/transport/types.js";
-import type { Selection } from "../../src/selection.js";
 import type { Equal, Expect } from "./assert.js";
 
 type ExpectedServerOptions = {

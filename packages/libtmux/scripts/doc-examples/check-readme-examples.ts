@@ -1,5 +1,4 @@
 import { join } from "node:path";
-
 import { packageRoot } from "../package_root.js";
 import { fencedBlocks, typecheckExamples } from "./example_harness.js";
 
