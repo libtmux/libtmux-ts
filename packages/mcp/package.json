@@ -10,7 +10,7 @@
     "terminal",
     "tmux"
   ],
-  "homepage": "https://github.com/libtmux/libtmux-ts/tree/master/packages/mcp#readme",
+  "homepage": "https://libtmux.org/en/ts/latest/mcp/",
   "bugs": {
     "url": "https://github.com/libtmux/libtmux-ts/issues"
   },

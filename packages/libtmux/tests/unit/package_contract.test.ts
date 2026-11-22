@@ -10,6 +10,7 @@ interface PackageManifest {
   bugs: Record<string, string>;
   dependencies: Record<string, string>;
   description: string;
+  homepage: string;
   keywords: string[];
   license: string;
   repository: Record<string, string>;
@@ -224,20 +225,29 @@ describe("package contract", () => {
     expect(isSemVer(packageManifest.version)).toBe(true);
     // Every package in the workspace ships together under one version, so a
     // tag names a state of the whole repository rather than of one package.
-    const siblings = await Promise.all(
-      ["mcp", "workspace"].map(async (sibling) =>
+    const [mcpManifest, workspaceManifest, cliManifest] = (await Promise.all(
+      ["mcp", "workspace", "workspace-cli"].map(async (sibling) =>
         JSON.parse(
           await readFile(new URL(`../../../${sibling}/package.json`, import.meta.url), "utf8"),
         ),
       ),
-    );
-    for (const sibling of siblings as Array<{ version: string }>) {
+    )) as [
+      { homepage: string; version: string },
+      { homepage: string; version: string },
+      { homepage: string; version: string },
+    ];
+    for (const sibling of [mcpManifest, workspaceManifest, cliManifest]) {
       expect(sibling.version).toBe(packageManifest.version);
     }
     // Published: `files` and `exports` below are what a consumer receives.
     expect(packageManifest.private).toBeUndefined();
     expect(packageManifest.license).toBe("MIT");
     expect(packageManifest.description).toContain("tmux");
+    expect(packageManifest.description).toContain("Node.js");
+    expect(packageManifest.homepage).toBe("https://libtmux.org/en/ts/latest/core/");
+    expect(mcpManifest.homepage).toBe("https://libtmux.org/en/ts/latest/mcp/");
+    expect(workspaceManifest.homepage).toBe("https://libtmux.org/en/ts/latest/workspace/");
+    expect(cliManifest.homepage).toBe("https://libtmux.org/en/ts/latest/workspace/");
     expect(packageManifest.repository).toEqual({
       type: "git",
       url: "git+https://github.com/libtmux/libtmux-ts.git",
@@ -247,7 +257,9 @@ describe("package contract", () => {
       url: "https://github.com/libtmux/libtmux-ts/issues",
     });
     expect(packageManifest.author).toBe("Tony Narlock <tony@git-pull.com>");
-    expect(packageManifest.keywords).toContain("tmux");
+    expect(packageManifest.keywords).toEqual(
+      expect.arrayContaining(["bun", "nodejs", "tmux", "typescript"]),
+    );
     expect(packageManifest.type).toBe("module");
     expect(packageManifest.main).toBe("./dist/index.js");
     expect(packageManifest.types).toBe("./dist/index.d.ts");

@@ -11,14 +11,15 @@
 
 # libtmux
 
-Typed, Bun-first TypeScript control of [tmux](https://github.com/tmux/tmux).
+Typed control of [tmux](https://github.com/tmux/tmux) for Node.js, Bun, and
+TypeScript.
 
 [![libtmux](https://img.shields.io/npm/v/libtmux?label=libtmux)](https://www.npmjs.com/package/libtmux)
 [![typescript](https://github.com/libtmux/libtmux-ts/actions/workflows/typescript.yml/badge.svg)](https://github.com/libtmux/libtmux-ts/actions/workflows/typescript.yml)
 [![tmux](https://img.shields.io/badge/tmux-3.3a%E2%80%933.8-1bb91f)](../../.github/workflows/typescript.yml)
 [![dependencies](https://img.shields.io/badge/dependencies-0-1bb91f)](tests/unit/package_contract.test.ts)
 [![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
-[![libtmux.org](https://img.shields.io/badge/docs-libtmux.org-0b7285)](https://libtmux.org/en/ts/)
+[![libtmux.org](https://img.shields.io/badge/docs-libtmux.org-0b7285)](https://libtmux.org/en/ts/latest/core/)
 
 </div>
 
@@ -28,18 +29,37 @@ Read a server once into an [immutable snapshot][ref-server-snapshot],
 [hear changes][ref-server-watch] as tmux makes them. For agents, launchers, test
 harnesses and dashboards.
 
-Part of [libtmux for Bun and TypeScript](https://github.com/libtmux/libtmux-ts#readme).
+Part of [libtmux for TypeScript](https://github.com/libtmux/libtmux-ts#readme).
 An MCP server, a workspace builder and a workspace command build on this
 package: see [Packages](#packages).
 
-Add it to your project:
+With npm:
+
+```console
+$ npm install libtmux
+```
+
+With pnpm:
+
+```console
+$ pnpm add libtmux
+```
+
+With Yarn:
+
+```console
+$ yarn add libtmux
+```
+
+With Bun:
 
 ```console
 $ bun add libtmux
 ```
 
-Needs tmux 3.3a or newer, Node 22 or newer or Bun 1.3.14 or newer, and
-TypeScript 5.7 or newer.
+Needs tmux 3.3a or newer, [Node.js](https://nodejs.org) 22 or newer or
+[Bun](https://bun.sh) 1.3.14 or newer, and TypeScript 5.7+ or plain ESM
+JavaScript.
 
 Runs on Linux, including WSL. macOS is supported on a best-effort basis,
 and CI coverage for it is highly limited.
@@ -2112,6 +2132,26 @@ Describes a session as tmuxp-shaped data and applies it.
 [API reference][wsref-reference] ·
 [npm](https://www.npmjs.com/package/@libtmux/workspace)
 
+With npm:
+
+```console
+$ npm install @libtmux/workspace libtmux
+```
+
+With pnpm:
+
+```console
+$ pnpm add @libtmux/workspace libtmux
+```
+
+With Yarn:
+
+```console
+$ yarn add @libtmux/workspace libtmux
+```
+
+With Bun:
+
 ```console
 $ bun add @libtmux/workspace libtmux
 ```
@@ -2185,7 +2225,8 @@ constant surface. Each model is also its own subpath:
   else.
 - **tmux 3.3a or newer**, checked against the running daemon: see
   [tmux versions](#tmux-versions).
-- **Node 22 or newer, or Bun 1.3.14 or newer**, and TypeScript 5.7 or newer.
+- **Node.js 22 or newer, or Bun 1.3.14 or newer**, in TypeScript 5.7+ or plain
+  ESM JavaScript.
 - **Linux**, including WSL. CI runs the real-tmux test suites there only.
 
 ## Documentation

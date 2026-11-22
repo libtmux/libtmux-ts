@@ -24,7 +24,7 @@ Bun 1.3.14 or newer.
 
 </div>
 
-Part of [libtmux for Bun and TypeScript](https://github.com/libtmux/libtmux-ts#readme).
+Part of [libtmux for TypeScript](https://github.com/libtmux/libtmux-ts#readme).
 Built on [`libtmux`](https://github.com/libtmux/libtmux-ts/tree/master/packages/libtmux).
 
 ## Quick start

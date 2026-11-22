@@ -5,7 +5,7 @@ Drive tmux the way an agent does: act, then wait for the result.
 Reach for this when you are running something in a pane and need to know when
 it finished — a build, a test run, a long command — without polling the screen.
 
-Part of [libtmux for Bun and TypeScript](../../README.md).
+Part of [libtmux for TypeScript](../../README.md).
 
 ## Run it
 
