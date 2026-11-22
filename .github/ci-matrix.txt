@@ -29,7 +29,6 @@ preview release_3.8a
 development master
 
 bun 1.3.14
-bun 1.4.0
-bun 1.4.2
+bun 1.4.5
 
-lane-bun 1.4.0
+lane-bun 1.4.5

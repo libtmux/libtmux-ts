@@ -47,6 +47,12 @@ changelog has the documentation, CI and release tooling entries up to 0.1.2.
 
 ## Unreleased
 
+### Development
+
+- Development, release workflows, and the tmux CI lanes run Bun 1.4.5, and the
+  `Gates` matrix runs Bun 1.3.14 and 1.4.5 instead of keeping intermediate
+  `1.4.x` legs. The published `engines.bun` floor stays `>=1.3.14`.
+
 ## 0.1.3 (2026-11-22)
 
 Versions: `libtmux` 0.1.3, `@libtmux/mcp` 0.1.3, `@libtmux/workspace` 0.1.3 and

@@ -24,7 +24,9 @@ export type OutputFormatField = Readonly<{ token: FormatFieldName }>;
  */
 // eslint-disable-next-line typescript/no-unsafe-declaration-merging -- The merged interface exposes the frozen scalar row on the nominal class.
 export class ParsedFormatRow {
-  private constructor() {}
+  private constructor() {
+    throw new Error("ParsedFormatRow cannot be constructed directly");
+  }
 }
 
 export interface ParsedFormatRow extends Readonly<Record<FormatFieldName, string | null>> {}

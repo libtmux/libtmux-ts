@@ -44,8 +44,8 @@ fixture with that exact compiler, pinned as the `typescript-floor` alias, as
 well as with the newest — the declarations being built by the newest says
 nothing about whether an older one can read them.
 
-Development uses the exact Bun 1.4.2 `packageManager` pin; CI also runs the
-supported 1.3.14 floor and the 1.4.0 mid-range version.
+Development uses the exact Bun 1.4.5 `packageManager` pin; CI runs both that pin
+and the supported 1.3.14 floor.
 
 ```console
 $ bun install
@@ -389,7 +389,7 @@ $ gh workflow run typescript.yml \
     --ref my-branch \
     -f scope=custom \
     -f tmux-ref=a1b2c3d4e5f60718293a4b5c6d7e8f9012345678 \
-    -f bun=1.4.0 \
+    -f bun=1.4.5 \
     -f tmate=on-failure
 ```
 
