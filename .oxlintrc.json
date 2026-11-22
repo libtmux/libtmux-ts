@@ -12,12 +12,51 @@
     "denyWarnings": true,
     "reportUnusedDisableDirectives": "error"
   },
-  "rules": {},
+  "rules": {
+    "typescript/consistent-type-exports": "error",
+    "typescript/no-misused-promises": [
+      "error",
+      {
+        "checksConditionals": {
+          "flagUnions": "strict"
+        }
+      }
+    ],
+    "typescript/no-mixed-enums": "error",
+    "typescript/no-unsafe-enum-assignment": "error",
+    "typescript/no-unsafe-enum-comparison": "error",
+    "typescript/prefer-promise-reject-errors": [
+      "error",
+      {
+        "allowThrowingUnknown": true
+      }
+    ],
+    "typescript/related-getter-setter-pairs": "error",
+    "typescript/return-await": ["error", "error-handling-correctness-only"],
+    "typescript/switch-exhaustiveness-check": [
+      "error",
+      {
+        "considerDefaultExhaustiveForUnions": true
+      }
+    ],
+    "typescript/use-unknown-in-catch-callback-variable": "error"
+  },
   "overrides": [
     {
       "files": ["**/*.test.ts"],
       "rules": {
         "typescript/await-thenable": "off"
+      }
+    },
+    {
+      "files": [
+        "packages/mcp/src/**",
+        "packages/workspace/src/**",
+        "packages/workspace-cli/src/**",
+        "examples/**"
+      ],
+      "rules": {
+        "typescript/no-deprecated": "error"
       }
     }
   ]

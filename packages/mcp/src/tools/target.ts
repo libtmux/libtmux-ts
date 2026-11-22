@@ -48,13 +48,11 @@ import {
 } from "../views.js";
 
 const CORNERS = ["top-left", "top-right", "bottom-left", "bottom-right"] as const;
-const nestedToolResultSchema = z
-  .object({
-    content: z.array(z.unknown()),
-    isError: z.boolean().optional(),
-    structuredContent: z.record(z.string(), z.unknown()).optional(),
-  })
-  .passthrough();
+const nestedToolResultSchema = z.looseObject({
+  content: z.array(z.unknown()),
+  isError: z.boolean().optional(),
+  structuredContent: z.record(z.string(), z.unknown()).optional(),
+});
 
 interface ReadBatchResult {
   readonly error: string | null;

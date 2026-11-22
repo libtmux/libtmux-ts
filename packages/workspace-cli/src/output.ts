@@ -40,6 +40,8 @@ export async function write(stream: Writable, text: string, signal?: AbortSignal
     throw stream.errored ?? new OutputClosedError("Output stream closed");
   await new Promise<void>((resolve, reject) => {
     let settled = false;
+    const toError = (reason: unknown, fallback: string): Error =>
+      reason instanceof Error ? reason : new Error(fallback, { cause: reason });
     const finish = (error?: unknown) => {
       stream.off("close", closed);
       signal?.removeEventListener("abort", aborted);
@@ -52,7 +54,7 @@ export async function write(stream: Writable, text: string, signal?: AbortSignal
       }
       if (settled) return;
       settled = true;
-      if (error) reject(error);
+      if (error !== undefined && error !== null) reject(toError(error, "Output write failed"));
       else resolve();
     };
     const failed = (error: Error) => {
@@ -66,7 +68,7 @@ export async function write(stream: Writable, text: string, signal?: AbortSignal
       settled = true;
       signal?.removeEventListener("abort", aborted);
       // The caller owns the stream; retain its error guard until the pending write settles.
-      reject(signal?.reason);
+      reject(toError(signal?.reason, "Output write aborted"));
     };
     stream.once("error", failed);
     stream.once("close", closed);

@@ -32,7 +32,7 @@ export const paneSchema = z.union([
   }),
 ]);
 
-export const optionValueSchema = z.union([z.string(), z.number().finite(), z.boolean()]);
+export const optionValueSchema = z.union([z.string(), z.number(), z.boolean()]);
 
 export const workspaceOptionsSchema = z
   .record(z.string(), optionValueSchema)

@@ -161,7 +161,7 @@ test.skipIf(process.platform !== "linux").each(["cancel", "exit"] as const)(
         expect(result.code).toBe(mode === "cancel" ? 130 : 0);
         expect(pid).toBeGreaterThan(0);
         const stateOfChild = () =>
-          readFile(`/proc/${pid}/stat`, "utf8").catch((error) => {
+          readFile(`/proc/${pid}/stat`, "utf8").catch((error: unknown) => {
             if ((error as NodeJS.ErrnoException).code === "ENOENT") return "";
             throw error;
           });

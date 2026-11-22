@@ -129,6 +129,7 @@ describe("invocation observer", () => {
     try {
       const server = new Server({
         engine: checkedEngine((request) => Promise.resolve(result(request))),
+        // oxlint-disable-next-line typescript/no-misused-promises -- deliberately returns a rejected promise from a void observer.
         onInvocation: () => Promise.reject(new Error("observer is broken")),
       });
 

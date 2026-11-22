@@ -31,8 +31,8 @@ for (const [name, source] of files) {
   }
   const path = fileURLToPath(new URL(`../docs/${name}`, import.meta.url));
   if (check) {
-    const actual = await readFile(path, "utf8").catch((error: NodeJS.ErrnoException) => {
-      if (error.code === "ENOENT") return undefined;
+    const actual = await readFile(path, "utf8").catch((error: unknown) => {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
       throw error;
     });
     if (actual !== text) {

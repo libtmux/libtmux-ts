@@ -913,7 +913,14 @@ describe("command framing", () => {
         checks += 1;
         if (checks > 1) return { panes: { first: () => pane } };
         return new Promise((_resolve, reject) => {
-          signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+          signal.addEventListener(
+            "abort",
+            () => {
+              const reason: unknown = signal.reason;
+              reject(reason instanceof Error ? reason : new Error("aborted", { cause: reason }));
+            },
+            { once: true },
+          );
           setTimeout(() => {
             cancelledAt = performance.now();
             controller.abort();

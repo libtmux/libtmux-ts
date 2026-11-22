@@ -913,7 +913,7 @@ describeControl("Server.watch", () => {
             .cmd("display-message", ["-p", "DURING"], { target: null, timeoutMs: 10_000 })
             .then(
               () => undefined,
-              (error: Error) => error,
+              (error: unknown) => (error instanceof Error ? error : undefined),
             );
           if (outcome?.message.includes("reconnecting") === true) refusedIn = Date.now() - started;
         }

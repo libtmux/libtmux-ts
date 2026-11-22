@@ -166,7 +166,7 @@ export async function runSupervisor(options: SupervisorOptions): Promise<number>
       process.stderr.write("test child close exceeded hard deadline after SIGKILL\n");
     }
 
-    if (requestedSignal !== undefined) return terminateSupervisor(requestedSignal);
+    if (requestedSignal !== undefined) return await terminateSupervisor(requestedSignal);
 
     const childStatus = closed.code ?? (closed.signal === null ? 1 : signalExitCode(closed.signal));
     return childStatus === 0 && cleanupFailed ? 1 : childStatus;

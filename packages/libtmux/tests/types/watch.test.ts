@@ -80,7 +80,10 @@ export async function narrowsOnKind(): Promise<string> {
       case "exit":
         return event.reason ?? "";
       case "reconnected":
+      case "reconnecting":
         return String(event.attempts);
+      case "subscription-changed":
+        return `${event.sessionId}${event.name}${event.value}`;
       case "unknown":
         return `${event.name}${event.args.join("")}`;
     }
