@@ -1,8 +1,8 @@
 name: typescript
 
-# A push or pull request runs the oldest and the newest released tmux. A call
-# from the publish workflow, and a dispatch with scope=full, run the whole
-# table. scripts/ci_plan/plan-ci.ts decides, from .github/ci-matrix.txt, and every tmux
+# A push, pull request, or publish call runs the oldest and the newest released
+# tmux. A dispatch with scope=full runs the whole table.
+# scripts/ci_plan/plan-ci.ts decides, from .github/ci-matrix.txt, and every tmux
 # lane below takes its matrix from that plan.
 on:
   push:
@@ -10,12 +10,12 @@ on:
   pull_request:
   workflow_call:
     inputs:
-      # A release proves every lane, so the publish workflow asks for them all
-      # and never inherits the edges.
+      # Publish runs the boundary releases by default; a caller may still ask
+      # for scope=full to exercise the whole table.
       scope:
         description: edges runs the oldest and newest tmux, full the whole table
         type: string
-        default: full
+        default: edges
   workflow_dispatch:
     inputs:
       scope:
@@ -361,7 +361,8 @@ jobs:
   # Every tmux release the package claims to support is proven before it ships:
   # "3.3a or newer" is a claim about 3.5 and 3.6 as much as about the ends, and
   # 3.7 already turned out to be the one release that accepts `break-pane -n`
-  # and ignores it. A push runs the two ends; a release runs every one.
+  # and ignores it. Pushes, pull requests, and releases run the two ends; a
+  # dispatch with scope=full runs every one.
   #
   # The CLI also exercises version-sensitive loading, capture and terminal handoff.
   tmux:

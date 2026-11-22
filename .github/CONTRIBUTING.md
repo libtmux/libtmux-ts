@@ -373,9 +373,10 @@ and tmux rejects the command.
 
 ### Running CI against any tmux
 
-A push or pull request runs the `tmux` job on the oldest and the newest
-released tmux, 3.3a and 3.8. Every release, the `release_3.8a` branch and tmux
-master run for a release and for a dispatch with `scope=full`.
+Pushes, pull requests, and tag releases run the `tmux` job on the oldest and the
+newest released tmux, 3.3a and 3.8. Every release in the table, the
+`release_3.8a` branch, and tmux master run when `typescript.yml` is dispatched
+with `scope=full`.
 `.github/ci-matrix.txt` lists the releases and Bun versions, and
 `scripts/ci_plan/plan-ci.ts` turns it into the workflow's matrices. The `required` job
 is the one check that passes only when every planned job did.
@@ -443,10 +444,10 @@ each tagged `v0.1.N` and published to `latest`. No release carries an `-alpha`
 or other prerelease tag unless the maintainer asks for one. A prerelease
 requested that way uses `latest` until a version without a prerelease
 identifier has held that tag; later prereleases use their first identifier, such as `rc` in
-`0.1.5-rc.1`. The credentialed workflow accepts only `v*` tag
-pushes and waits for that commit to pass the full Bun, Node, tmux, and package
-matrix, which it asks for with `scope: full`. Set `GITHUB_EVENT_NAME=workflow_dispatch` when running the coordinator
-locally to use its dry-run mode without an npm identity.
+`0.1.5-rc.1`. The credentialed workflow accepts only `v*` tag pushes and waits
+for that commit to pass the supported Bun, Node, package, and boundary tmux
+(`scope: edges`) gates. Set `GITHUB_EVENT_NAME=workflow_dispatch` when running
+the coordinator locally to use its dry-run mode without an npm identity.
 
 The release coordinator first requires every package version and internal
 `libtmux` dependency to agree. It then builds every npm tarball and reads

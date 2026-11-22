@@ -43,8 +43,12 @@ const refusal = (run: () => unknown): string => {
 };
 
 describe("the events", () => {
-  test("a push to a branch and a pull request run only the first and last release", () => {
-    for (const input of [push, { event: "pull_request", ref: "refs/pull/7/merge" }]) {
+  test("a branch push, a tag push, and a pull request run only the first and last release", () => {
+    for (const input of [
+      push,
+      { event: "push", ref: "refs/tags/v0.1.3" },
+      { event: "pull_request", ref: "refs/pull/7/merge" },
+    ]) {
       const plan = planCi(matrix, input);
       expect(plan.lanes.map((lane) => lane["tmux-version"])).toEqual(["3.3a", "3.8"]);
       expect(plan.scope).toBe("edges");
@@ -54,12 +58,11 @@ describe("the events", () => {
     }
   });
 
-  test("a tag push and scope full run the whole table, the preview and master", () => {
+  test("scope full runs the whole table, the preview and master", () => {
     for (const input of [
-      { event: "push", ref: "refs/tags/v0.1.1" },
       dispatch({ scope: "full" }),
-      // The publish workflow calls this one on a tag push with scope full.
       { ...push, scope: "full" },
+      { event: "push", ref: "refs/tags/v0.1.3", scope: "full" },
       { event: "pull_request", scope: "full" },
     ]) {
       const plan = planCi(matrix, input);

@@ -3,11 +3,11 @@
 #
 # One entry per line: a kind, then a value. Releases run oldest first.
 #
-#   supported    a released tmux in the support table. A push or pull request
-#                runs the first and the last.
+#   supported    a released tmux in the support table. Pushes, pull requests,
+#                and releases run the first and the last; scope=full runs all.
 #   preview      a branch that becomes a release. It has no tag yet, so it
-#                runs with the whole table and is not in the support claim.
-#   development  unreleased tmux. It runs with the whole table and may fail.
+#                runs under scope=full and is not in the support claim.
+#   development  unreleased tmux. It runs under scope=full and may fail.
 #   bun          a Bun version the gates job runs
 #   lane-bun     the Bun version the tmux lanes run, one of the above
 

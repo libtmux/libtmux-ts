@@ -1,15 +1,14 @@
 /**
  * Which tmux lanes the typescript workflow runs.
  *
- * `.github/ci-matrix.txt` lists the releases and Bun versions once. A push or
- * pull request runs the first and last supported release. The whole table and
- * the preview and development lanes run for a release (the publish workflow
- * calls this one with `scope: full`) and for a dispatch with `scope: full`. A dispatch with `scope: custom` runs the tmux versions,
- * tags, branches or commits it names.
+ * `.github/ci-matrix.txt` lists the releases and Bun versions once. Pushes,
+ * pull requests, and publish calls run the first and last supported release.
+ * The whole table and the preview and development lanes run when a caller or
+ * `workflow_dispatch` asks for `scope: full`. A dispatch with `scope: custom`
+ * runs the tmux versions, tags, branches or commits it names.
  *
  * Inputs arrive through the environment, never inline in a script. A push or
- * pull request ignores every input but a scope of `full`, which is how the
- * publish workflow asks for the whole table.
+ * pull request ignores every input except an explicit `scope: full`.
  */
 
 import { TMUX_REF, fail, validRef, validToolchain, type CiMatrix } from "../ci_matrix/ci_matrix.js";
@@ -84,8 +83,6 @@ export function planCi(matrix: CiMatrix, input: PlanInput): CiPlan {
   let scope: Scope = "edges";
   switch (input.event) {
     case "push":
-      if (input.ref?.startsWith("refs/tags/") === true) scope = "full";
-      break;
     case "pull_request":
       break;
     case "workflow_dispatch":
