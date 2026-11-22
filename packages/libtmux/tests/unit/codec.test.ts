@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { FORMAT_FIELD_TOKENS } from "../../src/_generated/format_fields.js";
+import { ParsedFormatRow } from "../../src/_internal/codec/format_types.js";
 import {
   FormatProtocolError,
   GuardCodec,
@@ -521,5 +522,11 @@ describe("guarded format codec", () => {
       expect((error as Error).name).toBe("FormatProtocolError");
       expect((error as Error).constructor.name).not.toBe("ZodError");
     }
+  });
+
+  test("refuses direct construction of ParsedFormatRow", () => {
+    expect(() => Reflect.construct(ParsedFormatRow, [])).toThrow(
+      "ParsedFormatRow cannot be constructed directly",
+    );
   });
 });
