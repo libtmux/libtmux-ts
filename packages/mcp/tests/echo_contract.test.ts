@@ -8,11 +8,10 @@
  * their own fast, tmux-free coverage in `pane_echo.test.ts`.
  */
 import { expect, test } from "bun:test";
-
-import { structured, withClient, withServer } from "./support/server_harness.js";
-import { testControl } from "../../libtmux/tests/support/tmux_release.js";
-import type { TestServer } from "../../libtmux/src/_internal/test/testkit.js";
 import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import type { TestServer } from "../../libtmux/src/_internal/test/testkit.js";
+import { testControl } from "../../libtmux/tests/support/tmux_release.js";
+import { structured, withClient, withServer } from "./support/server_harness.js";
 
 interface Created {
   readonly paneId: string;

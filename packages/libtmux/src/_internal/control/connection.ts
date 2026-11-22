@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
-
 import type { PaneId } from "../../common.js";
+import type { DaemonGuard } from "../../engine.js";
+import { LibTmuxError, VersionTooLowError } from "../../errors.js";
 import type {
   AbortLike,
   ConnectionOptions,
@@ -13,16 +14,14 @@ import { assertSubscriptionFormat, assertSubscriptionName } from "../operations/
 import { connectionArguments } from "../operations/request.js";
 import type { TmuxConnection } from "../runtime/connection.js";
 import { isSessionId } from "../runtime/ids.js";
+import { MAX_TIMER_DELAY_MS, timerDelay } from "../timing.js";
 import type { CommandTransport } from "../transport/types.js";
-import type { DaemonGuard } from "../../engine.js";
-import { LibTmuxError, VersionTooLowError } from "../../errors.js";
 import { TmuxTransportError } from "../transport/types.js";
 import { BlockTracker } from "./blocks.js";
 import { ControlChildLifecycle, type ControlChild } from "./child.js";
 import { completeUtf8Length, parseControlLine } from "./events.js";
 import { LineFramer, MAX_CARRY_BYTES } from "./framing.js";
 import { createEventStream, DEFAULT_BUFFER_SIZE, type EventSink } from "./stream.js";
-import { MAX_TIMER_DELAY_MS, timerDelay } from "../timing.js";
 
 /**
  * Bounds on what one connection may hold in memory.

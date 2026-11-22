@@ -1,13 +1,11 @@
+import { describe, expect, test } from "bun:test";
 import { mkdir, readFile, readdir, rm } from "node:fs/promises";
 import { delimiter, join } from "node:path";
 import { fileURLToPath } from "node:url";
-
-import { describe, expect, test } from "bun:test";
-
+import { makeTestDirectory } from "../../../packages/libtmux/src/_internal/test/testkit.js";
 import { writeBunProgram } from "../../../packages/libtmux/tests/support/bun_program.js";
 import { killIfRunning, processExists } from "../../../packages/libtmux/tests/support/converge.js";
 import { runBoundedCommand } from "../bounded_process.js";
-import { makeTestDirectory } from "../../../packages/libtmux/src/_internal/test/testkit.js";
 
 const repositoryRoot = fileURLToPath(new URL("../../..", import.meta.url));
 const boundedProcessUrl = new URL("../bounded_process.ts", import.meta.url).href;

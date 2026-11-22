@@ -1,8 +1,6 @@
+import { describe, expect, test } from "bun:test";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-
-import { describe, expect, test } from "bun:test";
-
 import { scanSource } from "../../../../scripts/sandbox_entry/sandbox_entry.js";
 
 /**

@@ -1,8 +1,7 @@
 import { mkdir, rm, writeFile } from "node:fs/promises";
-import { fileURLToPath } from "node:url";
-
-import { packageRoot } from "../package_root.js";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { packageRoot } from "../package_root.js";
 
 /**
  * Compile documentation examples against the package's own API.

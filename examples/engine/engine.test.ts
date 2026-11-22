@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test";
-
 import { Server } from "../../packages/libtmux/src/server.js";
 import { withServer } from "../test-support/with-server.js";
 import { throughACustomEngine } from "./engine.js";

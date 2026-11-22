@@ -6,12 +6,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable, Writable } from "node:stream";
 import { Server } from "libtmux";
-import { run as runCli } from "../src/app.ts";
-import { clientQueryArguments, handoffArguments } from "../src/tmux.ts";
-import manifest from "../package.json" with { type: "json" };
-import type { OldTmuxConfig } from "./fixtures/old_tmux.ts";
 import { writeBunProgram } from "../../libtmux/tests/support/bun_program.js";
 import { writeProbe } from "../../libtmux/tests/support/fake_tmux.js";
+import manifest from "../package.json" with { type: "json" };
+import { run as runCli } from "../src/app.ts";
+import { clientQueryArguments, handoffArguments } from "../src/tmux.ts";
+import type { OldTmuxConfig } from "./fixtures/old_tmux.ts";
 
 let root: string;
 beforeEach(async () => {

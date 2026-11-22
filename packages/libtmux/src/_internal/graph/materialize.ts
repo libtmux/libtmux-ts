@@ -4,8 +4,8 @@ import type { Pane } from "../../pane.js";
 import type { Server } from "../../server.js";
 import type { Session } from "../../session.js";
 import type { Window } from "../../window.js";
-import { runtimeForServer, type RuntimeContext } from "../runtime/context.js";
 import { runtimePrototype } from "../runtime/constructors.js";
+import { runtimeForServer, type RuntimeContext } from "../runtime/context.js";
 import { initializeLiveHandle } from "../runtime/live_handle.js";
 import {
   graphRecordForRef,

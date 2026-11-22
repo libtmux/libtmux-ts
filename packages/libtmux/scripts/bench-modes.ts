@@ -13,18 +13,17 @@ import { randomUUID } from "node:crypto";
 import { rm } from "node:fs/promises";
 import { cpus } from "node:os";
 import { join } from "node:path";
-
 import { TmuxConnection } from "../src/_internal/runtime/connection.js";
 import { createRuntimeContext, createServerWithRuntime } from "../src/_internal/runtime/context.js";
-import type { ConnectionAlias, DaemonEpoch } from "../src/common.js";
+import { TEST_HANDLE_PROTOTYPES, makeTestDirectory } from "../src/_internal/test/testkit.js";
 import { NodeSpawnTransport } from "../src/_internal/transport/node_spawn_transport.js";
 import type {
   CommandRequest,
   CommandTransport,
   RawCommandResult,
 } from "../src/_internal/transport/types.js";
+import type { ConnectionAlias, DaemonEpoch } from "../src/common.js";
 import type { Server } from "../src/server.js";
-import { TEST_HANDLE_PROTOTYPES, makeTestDirectory } from "../src/_internal/test/testkit.js";
 
 /** Counts what crosses the transport, which is what each mode is trying to change. */
 class CountingTransport implements CommandTransport {

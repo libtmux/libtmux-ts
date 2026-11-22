@@ -1,23 +1,15 @@
+import { randomUUID } from "node:crypto";
+import { adaptRawResult } from "../operations/request.js";
+import { flattenInvocation, tmuxCommand } from "../transport/invocation.js";
+import { NodeSpawnTransport } from "../transport/node_spawn_transport.js";
+import { TmuxTransportError, type RawCommandResult } from "../transport/types.js";
+import { reportSecondaryCleanupFailure, runWithCleanup } from "./cleanup.js";
 import {
   FIXTURE_BOOTSTRAP_DEADLINE_MS,
   READINESS_DEADLINE_MS,
   READINESS_POLL_INTERVAL_MS,
   deadlineMs,
 } from "./deadlines.js";
-import { randomUUID } from "node:crypto";
-
-import { adaptRawResult } from "../operations/request.js";
-import { NodeSpawnTransport } from "../transport/node_spawn_transport.js";
-import { flattenInvocation, tmuxCommand } from "../transport/invocation.js";
-import { TmuxTransportError, type RawCommandResult } from "../transport/types.js";
-import {
-  assertControllerCurrent as assertPersistedControllerCurrent,
-  readDaemonIdentity,
-  resolveControllerIdentity,
-  type ControllerIdentity,
-  type DaemonIdentity,
-} from "./process_identity.js";
-import { reportSecondaryCleanupFailure, runWithCleanup } from "./cleanup.js";
 import {
   beginFixtureLaunch,
   promoteFixtureLaunch,
@@ -26,6 +18,13 @@ import {
   type FixtureControllerRequest,
   type ReservationCapability,
 } from "./fixture_launch.js";
+import {
+  assertControllerCurrent as assertPersistedControllerCurrent,
+  readDaemonIdentity,
+  resolveControllerIdentity,
+  type ControllerIdentity,
+  type DaemonIdentity,
+} from "./process_identity.js";
 import { reapFixture, retireFixtureGeneration, sweepStaleRunRoots } from "./reaper.js";
 import { readFixtureRecord, type FixtureRecord, type LaunchGeneration } from "./records.js";
 import { assertSandboxed } from "./sandbox.js";

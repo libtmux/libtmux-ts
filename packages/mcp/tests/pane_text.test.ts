@@ -1,7 +1,5 @@
-import { getEventListeners } from "node:events";
-
 import { describe, expect, test } from "bun:test";
-
+import { getEventListeners } from "node:events";
 import { PaneTail } from "../src/pane_tail.js";
 import { TextFilter } from "../src/text.js";
 

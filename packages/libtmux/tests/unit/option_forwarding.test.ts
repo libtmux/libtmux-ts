@@ -1,10 +1,8 @@
-import { readFile, readdir } from "node:fs/promises";
-
 import { describe, expect, test } from "bun:test";
-
-import { Server } from "../../src/server.js";
+import { readFile, readdir } from "node:fs/promises";
 import type { TmuxCommandResult, TmuxInvocationRequest } from "../../src/engine.js";
 import { flattenInvocation } from "../../src/engine.js";
+import { Server } from "../../src/server.js";
 import { checkedEngine } from "../support/version_probe.js";
 
 function success(request: TmuxInvocationRequest): TmuxCommandResult {

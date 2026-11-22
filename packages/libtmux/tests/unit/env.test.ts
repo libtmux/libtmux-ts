@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test";
-
 import { readTmuxEnvironment } from "../../src/_internal/operations/env.js";
 
 describe("tmux environment parsing", () => {

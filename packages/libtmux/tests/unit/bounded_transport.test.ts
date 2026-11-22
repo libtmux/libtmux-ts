@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test";
-
 import { BoundedTransport } from "../../src/_internal/transport/bounded_transport.js";
 import type {
   CommandRequest,

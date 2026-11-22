@@ -18,10 +18,7 @@ import type {
   WindowRef,
 } from "../../src/common.js";
 import { isSafeInteger, safeInteger } from "../../src/common.js";
-import type { LibTmuxErrorCode, WaitTimeoutError } from "../../src/errors.js";
 import type { DefaultOptionScope } from "../../src/constants.js";
-import * as exception from "../../src/exc.js";
-import { MultipleMatchesError, NoMatchError, QueryValidationError } from "../../src/errors.js";
 import {
   OptionScope,
   DEFAULT_OPTION_SCOPE,
@@ -34,6 +31,9 @@ import {
   WindowDirection,
   WINDOW_DIRECTION_FLAG_MAP,
 } from "../../src/constants.js";
+import type { LibTmuxErrorCode, WaitTimeoutError } from "../../src/errors.js";
+import { MultipleMatchesError, NoMatchError, QueryValidationError } from "../../src/errors.js";
+import * as exception from "../../src/exc.js";
 import {
   isSafeInteger as rootIsSafeInteger,
   isSplitSize as rootIsSplitSize,
@@ -61,7 +61,6 @@ import type {
   SplitPercentage,
   SplitSize,
 } from "../../src/types.js";
-
 import type { Equal, Expect } from "./assert.js";
 
 declare const options: CommandOptions;

@@ -1,9 +1,9 @@
 import { parseLegacyWhere as lowerLegacyWhere } from "./_internal/selection/legacy.js";
+import { compileBoundedRegex as compileRegex } from "./_internal/selection/regex.js";
 import {
   decodeWhereDocument as decodeDocument,
   encodeWhereDocument as encodeDocument,
 } from "./_internal/selection/serialization.js";
-import { compileBoundedRegex as compileRegex } from "./_internal/selection/regex.js";
 import type { Client } from "./client.js";
 import type { PaneIdInput, SessionIdInput, WindowIdInput } from "./common.js";
 import type { Pane } from "./pane.js";

@@ -1,9 +1,7 @@
+import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
-
-import { describe, expect, test } from "bun:test";
-
 import {
   prepareRunRoot,
   reapOwnedRunRoot,

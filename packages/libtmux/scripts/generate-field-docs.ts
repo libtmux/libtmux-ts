@@ -1,6 +1,5 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-
 import {
   WHERE_FIELDS_V1,
   WHERE_RELATIONS_V1,

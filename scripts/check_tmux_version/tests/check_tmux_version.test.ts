@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
-
 import { makeTestDirectory } from "../../../packages/libtmux/src/_internal/test/testkit.js";
 import { writeBunProgram } from "../../../packages/libtmux/tests/support/bun_program.js";
 import { matchesGlob, versionMismatch } from "../check_tmux_version.js";

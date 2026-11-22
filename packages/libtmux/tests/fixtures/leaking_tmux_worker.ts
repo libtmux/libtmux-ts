@@ -1,6 +1,5 @@
 import { spawn } from "node:child_process";
 import { chmod, readFile, stat, unlink, writeFile } from "node:fs/promises";
-
 import { OWNER_RECORD_NAME, RUN_ROOT_ENV, TestServer } from "../../src/_internal/test/testkit.js";
 
 interface Arguments {

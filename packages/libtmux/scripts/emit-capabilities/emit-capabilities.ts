@@ -1,6 +1,5 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-
 import { renderCapabilityManifest } from "../../src/_internal/support/capabilities.js";
 
 /** The manifest the docs read, committed at the repository root. */

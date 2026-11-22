@@ -1,6 +1,5 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-
 import { parseCiMatrix } from "../../../../scripts/ci_matrix/ci_matrix.js";
 
 /**

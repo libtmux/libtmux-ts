@@ -1,3 +1,6 @@
+import { stat } from "node:fs/promises";
+import { basename, extname, resolve } from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
 /* eslint-disable no-await-in-loop -- Each mutation and progress record depends on the preceding tmux state. */
 import {
   isTmuxName,
@@ -9,9 +12,6 @@ import {
   type Session,
   type Window,
 } from "libtmux";
-import { stat } from "node:fs/promises";
-import { setTimeout as sleep } from "node:timers/promises";
-import { basename, extname, resolve } from "node:path";
 import type { CLIContext } from "./app.ts";
 import {
   scalarText,
@@ -24,6 +24,7 @@ import {
   type Document,
   type Json,
 } from "./documents.ts";
+import type { BorrowedSession, ExtensionSpec } from "./extensions.ts";
 import { normalize, type PaneSpec, type WorkspaceSpec } from "./normalize.ts";
 import {
   CliError,
@@ -37,7 +38,6 @@ import {
 import type { Request } from "./parser.ts";
 import { openTerminal, processRun } from "./process.ts";
 import type { ProcessResult } from "./process.ts";
-import type { BorrowedSession, ExtensionSpec } from "./extensions.ts";
 
 export type LoadResult = {
   input_index: number;

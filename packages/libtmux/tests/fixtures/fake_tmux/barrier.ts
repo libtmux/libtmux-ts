@@ -1,5 +1,4 @@
 import { closeSync, openSync, readSync, writeFileSync } from "node:fs";
-
 import { execProgram } from "../../support/bun_program.js";
 
 export interface BarrierConfig {

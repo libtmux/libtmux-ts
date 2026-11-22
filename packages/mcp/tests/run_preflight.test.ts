@@ -1,10 +1,7 @@
+import { afterEach, expect, test } from "bun:test";
 import { rm } from "node:fs/promises";
 import { dirname } from "node:path";
-
-import { afterEach, expect, test } from "bun:test";
-
 import type { Pane, ServerSnapshot } from "libtmux";
-
 import type { CallerIdentity } from "../src/caller.js";
 import { activeFramedCommand, isPaneInputConflict, reserveFramedCommand } from "../src/command.js";
 import type { InputAuthority, ToolContext } from "../src/context.js";

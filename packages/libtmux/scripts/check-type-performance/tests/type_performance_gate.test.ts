@@ -1,3 +1,4 @@
+import { describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import {
   chmod,
@@ -15,9 +16,6 @@ import {
 } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-
-import { describe, expect, test } from "bun:test";
-
 import { makeTestDirectory } from "../../../src/_internal/test/testkit.js";
 
 /**

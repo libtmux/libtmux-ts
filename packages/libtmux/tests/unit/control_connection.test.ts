@@ -1,19 +1,17 @@
+import { describe, expect, test } from "bun:test";
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
-
-import { describe, expect, test } from "bun:test";
-
 import type { ControlChild } from "../../src/_internal/control/child.js";
 import { ControlConnection } from "../../src/_internal/control/connection.js";
 import { TmuxConnection } from "../../src/_internal/runtime/connection.js";
 import { parsePaneId } from "../../src/_internal/runtime/ids.js";
-import { TmuxTransportError } from "../../src/errors.js";
+import { flattenInvocation } from "../../src/_internal/transport/invocation.js";
 import type {
   CommandRequest,
   CommandTransport,
   RawCommandResult,
 } from "../../src/_internal/transport/types.js";
-import { flattenInvocation } from "../../src/_internal/transport/invocation.js";
+import { TmuxTransportError } from "../../src/errors.js";
 
 class FakeChild extends EventEmitter implements ControlChild {
   readonly stdin = new PassThrough();

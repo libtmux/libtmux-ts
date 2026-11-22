@@ -1,10 +1,14 @@
+import { describe, expect, test } from "bun:test";
 import { spawn } from "node:child_process";
 import { chmod, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-
-import { describe, expect, test } from "bun:test";
-
+import {
+  OWNER_RECORD_NAME,
+  reapStaleRunRoot,
+  runSupervisor,
+  makeTestDirectory,
+} from "../../src/_internal/test/testkit.js";
 import {
   killIfRunning,
   processExists,
@@ -17,13 +21,6 @@ import {
   readJsonMarker,
   type ClosedChild,
 } from "../support/owned_child.js";
-
-import {
-  OWNER_RECORD_NAME,
-  reapStaleRunRoot,
-  runSupervisor,
-  makeTestDirectory,
-} from "../../src/_internal/test/testkit.js";
 
 const tsRoot = fileURLToPath(new URL("../..", import.meta.url));
 const workerPath = fileURLToPath(new URL("../fixtures/leaking_tmux_worker.ts", import.meta.url));

@@ -4,7 +4,6 @@ import { randomUUID } from "node:crypto";
 import { link, lstat, readFile, unlink } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
-
 import { readDaemonIdentity, resolveControllerIdentity } from "../../src/_internal/test/testkit.js";
 import { closeChildWithin, waitForProcessExit } from "./converge.js";
 import { closeChild } from "./owned_child.js";

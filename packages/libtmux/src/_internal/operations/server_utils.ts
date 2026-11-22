@@ -2,13 +2,12 @@ import { constants } from "node:fs";
 import { open, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { isAbsolute } from "node:path";
-
-import { adaptRawResult, prepareCommandRequest } from "./request.js";
-import { isColdEndpoint, runCommand, runCommandBytes } from "./command.js";
-import { literalFormat } from "./options.js";
 import { TmuxCommandError, TmuxTransportError } from "../../errors.js";
 import type { SaveBufferOptions } from "../../types.js";
 import type { RuntimeContext } from "../runtime/context.js";
+import { isColdEndpoint, runCommand, runCommandBytes } from "./command.js";
+import { literalFormat } from "./options.js";
+import { adaptRawResult, prepareCommandRequest } from "./request.js";
 
 /**
  * Ask tmux whether a session exists.

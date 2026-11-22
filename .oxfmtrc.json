@@ -5,5 +5,9 @@
     "**/CHANGELOG.md",
     "packages/libtmux/docs/api.md",
     "packages/libtmux/docs/criteria.md"
-  ]
+  ],
+  "sortImports": {
+    "newlinesBetween": false,
+    "partitionByComment": true
+  }
 }

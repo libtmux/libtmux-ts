@@ -1,6 +1,5 @@
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import type { Pane, ServerSnapshot, Session, Window } from "libtmux";
-
 import { isAttended, isCallerPane, type CallerIdentity } from "./caller.js";
 import { MAX_RESULT_BYTES } from "./policy.js";
 import { fail } from "./results.js";

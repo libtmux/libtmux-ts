@@ -1,5 +1,4 @@
 import type { EventEmitter } from "node:events";
-
 import { timerDelay } from "../timing.js";
 
 type ControlChildEventChannel = Pick<EventEmitter, "off" | "on">;

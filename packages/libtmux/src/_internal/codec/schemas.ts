@@ -1,9 +1,8 @@
-import { v, type Validator } from "../validate.js";
-
 import { FORMAT_IDENTITY_FIELDS } from "../../_generated/field_types.js";
 import { FORMAT_FIELD_TOKENS } from "../../_generated/format_fields.js";
 import type { FormatFieldName, RawFormatValue } from "../../field_types.js";
 import { parsePaneId, parseSessionId, parseWindowId } from "../runtime/ids.js";
+import { v, type Validator } from "../validate.js";
 import type { ListCommand } from "./format_types.js";
 
 export type RawCompleteFormatRow = Readonly<Record<FormatFieldName, string | null>>;

@@ -1,20 +1,19 @@
 import { existsSync, lstatSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-
+import { slugify } from "../packages/libtmux/scripts/markdown_anchors.js";
 import {
   bunFromPackageManager,
   checkBunVersionAgreement,
   extractVersionLiterals,
 } from "./bun_version_pins/bun_version_pins.js";
-import { slugify } from "../packages/libtmux/scripts/markdown_anchors.js";
+import { parseCiMatrix } from "./ci_matrix/ci_matrix.js";
 import {
   changelogFailures,
   readPackageChangelogs,
   readRootChangelog,
   rootChangelogFailures,
 } from "./release_policy/changelog_policy.js";
-import { parseCiMatrix } from "./ci_matrix/ci_matrix.js";
 
 /**
  * Hold the shell blocks and version claims in the docs to what the repository

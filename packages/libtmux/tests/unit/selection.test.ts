@@ -1,14 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import { types as nodeTypes } from "node:util";
-
-import { Client } from "../../src/client.js";
-import { MultipleMatchesError, NoMatchError, QueryValidationError } from "../../src/errors.js";
-import { createProjectedSelection } from "../../src/_internal/selection/evaluate.js";
 import {
   entityRefForHandle,
   snapshotForHandle,
   winlinkRefForHandle,
 } from "../../src/_internal/runtime/live_handle.js";
+import { createProjectedSelection } from "../../src/_internal/selection/evaluate.js";
+import { Client } from "../../src/client.js";
+import { MultipleMatchesError, NoMatchError, QueryValidationError } from "../../src/errors.js";
 import * as selectionModule from "../../src/selection.js";
 import type { Selection } from "../../src/selection.js";
 import { Session } from "../../src/session.js";

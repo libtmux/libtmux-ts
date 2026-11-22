@@ -4,8 +4,6 @@ import { join } from "node:path";
 import { Readable, Writable } from "node:stream";
 import { setTimeout as sleep } from "node:timers/promises";
 import { Server } from "libtmux";
-import { run as runCli } from "../src/app.ts";
-import { processRun } from "../src/process.ts";
 import {
   assertOwnedSocketPath,
   makeTestDirectory,
@@ -15,6 +13,8 @@ import {
   withOwnedRunRoot,
 } from "../../libtmux/src/_internal/test/testkit.js";
 import { writeTmuxProxy } from "../../libtmux/tests/support/fake_tmux.js";
+import { run as runCli } from "../src/app.ts";
+import { processRun } from "../src/process.ts";
 
 async function fixture(
   body: (

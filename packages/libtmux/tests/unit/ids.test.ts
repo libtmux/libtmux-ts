@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test";
-
 import { parsePaneId, parseSessionId, parseWindowId } from "../../src/_internal/runtime/ids.js";
 import { QueryValidationError } from "../../src/errors.js";
 

@@ -1,14 +1,12 @@
+import { describe, expect, test } from "bun:test";
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
-
-import { describe, expect, test } from "bun:test";
-
 import { executeGuardedListGroup } from "../../src/_internal/codec/guarded_listing.js";
 import { acquireServerGraph, daemonIdentityOf } from "../../src/_internal/operations/acquire.js";
 import { prepareInvocationRequest } from "../../src/_internal/operations/request.js";
+import { TmuxConnection } from "../../src/_internal/runtime/connection.js";
 import { createRuntimeContext, lastObservedDaemon } from "../../src/_internal/runtime/context.js";
 import type { RuntimeContext } from "../../src/_internal/runtime/context.js";
-import { TmuxConnection } from "../../src/_internal/runtime/connection.js";
 import { parseSessionId, parseWindowId } from "../../src/_internal/runtime/ids.js";
 import {
   prepareRunRoot,
@@ -17,11 +15,9 @@ import {
   TestServer,
   makeTestDirectory,
 } from "../../src/_internal/test/testkit.js";
-
 import { NodeSpawnTransport } from "../../src/_internal/transport/node_spawn_transport.js";
 import type { CommandRequest, CommandTransport } from "../../src/_internal/transport/types.js";
 import type { ConnectionAlias, DaemonEpoch, WindowId } from "../../src/common.js";
-
 import { Server } from "../../src/server.js";
 
 function deferred(): { readonly promise: Promise<void>; readonly resolve: () => void } {

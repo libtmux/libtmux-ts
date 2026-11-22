@@ -1,10 +1,18 @@
+import { describe, expect, test } from "bun:test";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { lstat, readFile, rmdir, stat, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-
-import { describe, expect, test } from "bun:test";
-
+import {
+  parseProcStatStartTime,
+  procStatExited,
+  readDaemonIdentity,
+  readProcessIdentity,
+  reapOwnedRunRoot,
+  validateOwnedRecordMetadata,
+  type FixtureRecord,
+  TestServer,
+} from "../../src/_internal/test/testkit.js";
 import {
   killIfRunning,
   processExists,
@@ -18,17 +26,6 @@ import {
   terminateCapturedTmux,
   type CapturedTmuxCleanup,
 } from "../support/tmux_cleanup.js";
-
-import {
-  parseProcStatStartTime,
-  procStatExited,
-  readDaemonIdentity,
-  readProcessIdentity,
-  reapOwnedRunRoot,
-  validateOwnedRecordMetadata,
-  type FixtureRecord,
-  TestServer,
-} from "../../src/_internal/test/testkit.js";
 
 describe("process identity", () => {
   test("parses field 22 after the final parenthesis without numeric coercion", () => {

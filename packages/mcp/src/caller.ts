@@ -9,10 +9,8 @@
 
 import { stat } from "node:fs/promises";
 import { isAbsolute, normalize } from "node:path";
-
 import type { ServerSnapshot } from "libtmux";
 import type { Server } from "libtmux/server";
-
 import { assertSafeRouteValue } from "./route.js";
 
 /**

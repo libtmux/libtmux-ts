@@ -1,11 +1,6 @@
+import { describe, expect, test } from "bun:test";
 import { chmod, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-
-import { describe, expect, test } from "bun:test";
-import { testControl, tmuxAtLeast } from "../support/tmux_release.js";
-
-import { waitForProcessExit } from "../support/converge.js";
-
 import {
   prepareRunRoot,
   reapOwnedRunRoot,
@@ -13,9 +8,10 @@ import {
   TestServer,
   makeTestDirectory,
 } from "../../src/_internal/test/testkit.js";
-
 import { TmuxCommandError, VersionTooLowError } from "../../src/errors.js";
 import { Server } from "../../src/server.js";
+import { waitForProcessExit } from "../support/converge.js";
+import { testControl, tmuxAtLeast } from "../support/tmux_release.js";
 
 function serverFor(fixture: TestServer): Server {
   return new Server({

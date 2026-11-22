@@ -1,5 +1,7 @@
 import { PANE_DIRECTION_FLAG_MAP, WINDOW_DIRECTION_FLAG_MAP } from "../../constants.js";
 import { LibTmuxError } from "../../errors.js";
+import type { Pane } from "../../pane.js";
+import type { Session } from "../../session.js";
 import {
   splitSize as authenticateSplitSize,
   type NewSessionOptions,
@@ -7,8 +9,6 @@ import {
   type PlannedOperation,
   type SplitOptions,
 } from "../../types.js";
-import type { Pane } from "../../pane.js";
-import type { Session } from "../../session.js";
 import type { Window } from "../../window.js";
 import { quoteCommand } from "../transport/lexer.js";
 import { uniqueUnknownCommand } from "../transport/refusal.js";

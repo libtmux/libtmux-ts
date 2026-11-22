@@ -1,5 +1,4 @@
 import { basename } from "node:path";
-
 import type { DaemonGuard } from "../../engine.js";
 import {
   TmuxServerRestartedError,

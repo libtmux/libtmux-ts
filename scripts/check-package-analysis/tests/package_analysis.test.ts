@@ -1,15 +1,13 @@
+import { expect, test } from "bun:test";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-
-import { expect, test } from "bun:test";
-
+import { makeTestDirectory } from "../../../packages/libtmux/src/_internal/test/testkit.js";
 import {
   killIfRunning,
   processExists,
   waitForProcessExit,
 } from "../../../packages/libtmux/tests/support/converge.js";
-import { makeTestDirectory } from "../../../packages/libtmux/src/_internal/test/testkit.js";
 
 const checker = fileURLToPath(new URL("../check-package-analysis.ts", import.meta.url));
 

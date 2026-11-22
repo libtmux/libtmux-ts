@@ -6,7 +6,6 @@
  */
 import { expect, test } from "bun:test";
 import type { Pane } from "libtmux";
-
 import {
   liveEcho,
   noteKeyDispatch,

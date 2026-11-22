@@ -1,12 +1,11 @@
 import { describe, expect, test } from "bun:test";
-
+import { FORMAT_VALUE_TYPES, formatValueType } from "../../src/_generated/field_types.js";
+import { WHERE_FIELDS_V1 } from "../../src/_generated/where_fields.js";
 import {
   decodeFormatValue,
   encodeFormatValue,
   isFormatCriterionValue,
 } from "../../src/_internal/codec/format_values.js";
-import { FORMAT_VALUE_TYPES, formatValueType } from "../../src/_generated/field_types.js";
-import { WHERE_FIELDS_V1 } from "../../src/_generated/where_fields.js";
 import { isSafeInteger, safeInteger } from "../../src/common.js";
 
 describe("safe integer proof", () => {

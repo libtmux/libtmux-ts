@@ -1,33 +1,22 @@
 #!/usr/bin/env node
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { realpathSync } from "node:fs";
 import { constants as osConstants } from "node:os";
 import { isAbsolute } from "node:path";
 import { pathToFileURL } from "node:url";
-
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { TmuxTransportError } from "libtmux/errors";
 import { Server } from "libtmux/server";
-
+import manifest from "../package.json" with { type: "json" };
 import { readCallerEnvironment } from "./caller.js";
 import { createContext } from "./context.js";
 import { buildInstructions } from "./instructions.js";
 import { resolvePolicy, snapshotPolicy, type Policy } from "./policy.js";
 import { boundRequestIds } from "./protocol_transport.js";
 import { assertKnownPolicyTools, ToolRegistry } from "./register.js";
-import { assertSafeRouteValue } from "./route.js";
-import { registerCapture } from "./tools/capture.js";
-import { registerDiscovery } from "./tools/discovery.js";
-import { registerInput } from "./tools/input.js";
-import { registerPrograms } from "./tools/programs.js";
-import { registerLayout } from "./tools/layout.js";
-import { registerLifecycle } from "./tools/lifecycle.js";
-import { registerSearch } from "./tools/search.js";
-import { registerSettings } from "./tools/settings.js";
-import { registerWait } from "./tools/wait.js";
-import { registerTargetTools } from "./tools/target.js";
 import { registerResources } from "./resources.js";
+import { assertSafeRouteValue } from "./route.js";
 import {
   attachCommand,
   describeStartup,
@@ -36,8 +25,16 @@ import {
   startRequestedSession,
   type ServerStartup,
 } from "./startup.js";
-
-import manifest from "../package.json" with { type: "json" };
+import { registerCapture } from "./tools/capture.js";
+import { registerDiscovery } from "./tools/discovery.js";
+import { registerInput } from "./tools/input.js";
+import { registerLayout } from "./tools/layout.js";
+import { registerLifecycle } from "./tools/lifecycle.js";
+import { registerPrograms } from "./tools/programs.js";
+import { registerSearch } from "./tools/search.js";
+import { registerSettings } from "./tools/settings.js";
+import { registerTargetTools } from "./tools/target.js";
+import { registerWait } from "./tools/wait.js";
 
 export type { Policy, Toolset } from "./policy.js";
 

@@ -1,18 +1,16 @@
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
-
-import { Server } from "libtmux/server";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { TmuxEngine } from "libtmux/engine";
-import { checkedEngine } from "./support/checked_engine.js";
-
+import { Server } from "libtmux/server";
 import { MAX_RESULT_BYTES, resolvePolicy } from "../src/policy.js";
 import { createTmuxMcpServer, serverFromEnvironment } from "../src/server.js";
 import { inspectServerStartup } from "../src/startup.js";
 import { isFailure, resolvedPaneInputTargetIds } from "../src/target_resolution.js";
 import { SearchMatchBudget } from "../src/tools/search.js";
 import { ReadBatchAccumulator, readBatchWireBytes } from "../src/tools/target.js";
+import { checkedEngine } from "./support/checked_engine.js";
 
 const TOOLS_BY_TOOLSET = {
   inspect: [

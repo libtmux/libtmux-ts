@@ -1,11 +1,8 @@
+import { expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import type { EventEmitter } from "node:events";
 import { rm, stat } from "node:fs/promises";
 import { join } from "node:path";
-
-import { expect, test } from "bun:test";
-import { describeControl } from "../support/tmux_release.js";
-
 import { TmuxConnection } from "../../src/_internal/runtime/connection.js";
 import {
   createRuntimeContext,
@@ -19,7 +16,6 @@ import {
   TEST_HANDLE_PROTOTYPES,
   makeTestDirectory,
 } from "../../src/_internal/test/testkit.js";
-
 import { NodeSpawnTransport } from "../../src/_internal/transport/node_spawn_transport.js";
 import type {
   CommandRequest,
@@ -30,6 +26,7 @@ import type { ConnectionAlias, DaemonEpoch } from "../../src/common.js";
 import { LibTmuxError, WaitTimeoutError } from "../../src/errors.js";
 import { Server } from "../../src/server.js";
 import type { TmuxEvent, TmuxEventStream } from "../../src/types.js";
+import { describeControl } from "../support/tmux_release.js";
 
 function serverFor(fixture: TestServer): Server {
   return new Server({

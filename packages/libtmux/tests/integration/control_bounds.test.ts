@@ -1,9 +1,6 @@
+import { expect, test } from "bun:test";
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
-
-import { expect, test } from "bun:test";
-import { describeControl } from "../support/tmux_release.js";
-
 import {
   prepareRunRoot,
   reapOwnedRunRoot,
@@ -12,9 +9,9 @@ import {
   assertOwnedSocketPath,
   makeTestDirectory,
 } from "../../src/_internal/test/testkit.js";
-
-import { Server } from "../../src/server.js";
 import { LibTmuxError, TmuxTransportError } from "../../src/errors.js";
+import { Server } from "../../src/server.js";
+import { describeControl } from "../support/tmux_release.js";
 
 function serverFor(fixture: TestServer): Server {
   return new Server({

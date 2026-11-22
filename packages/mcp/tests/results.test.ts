@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test";
-
 import { MAX_RESULT_BYTES } from "../src/policy.js";
 import { fail, ok, renderOutput, tailLines } from "../src/results.js";
 

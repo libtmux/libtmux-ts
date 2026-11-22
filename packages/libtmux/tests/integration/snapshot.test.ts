@@ -1,8 +1,7 @@
+import { describe, expect, test } from "bun:test";
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
-
-import { describe, expect, test } from "bun:test";
-
+import { parseSessionId, parseWindowId } from "../../src/_internal/runtime/ids.js";
 import {
   prepareRunRoot,
   reapOwnedRunRoot,
@@ -11,8 +10,6 @@ import {
   ControlMode,
   makeTestDirectory,
 } from "../../src/_internal/test/testkit.js";
-import { parseSessionId, parseWindowId } from "../../src/_internal/runtime/ids.js";
-
 import { Server } from "../../src/server.js";
 
 function serverFor(fixture: TestServer): Server {

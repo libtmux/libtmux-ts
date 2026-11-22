@@ -1,6 +1,5 @@
 // A program's stream: the copy pipe-pane writes, read as text with the run's end mark taken out.
 import { open } from "node:fs/promises";
-
 import { LibTmuxError, OutputLostError, StreamLimitError } from "../../errors.js";
 import type { Program } from "../../program.js";
 import type { AbortLike } from "../../types.js";

@@ -1,5 +1,4 @@
 import { createHash } from "node:crypto";
-
 import type { ConnectionAlias, DaemonEpoch } from "../../common.js";
 import type { DaemonGuard } from "../../engine.js";
 import { LibTmuxError, TmuxTransportError } from "../../errors.js";

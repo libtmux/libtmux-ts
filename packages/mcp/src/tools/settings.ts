@@ -8,7 +8,6 @@
  */
 
 import { z } from "zod";
-
 import type { ToolContext } from "../context.js";
 import { effectiveResultLines } from "../policy.js";
 import type { ToolRegistrar } from "../register.js";

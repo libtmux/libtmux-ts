@@ -1,17 +1,19 @@
 import { describe, expect, test } from "bun:test";
-
-import { FORMAT_FIELD_TOKENS } from "../../src/_generated/format_fields.js";
-import type { ConnectionAlias, DaemonEpoch, LogicalRef } from "../../src/common.js";
-import { safeInteger } from "../../src/common.js";
-import { LibTmuxError, QueryValidationError } from "../../src/errors.js";
 import {
   CLIENT_ALIASES,
   PANE_ALIASES,
   SESSION_ALIASES,
   WINDOW_ALIASES,
 } from "../../src/_generated/field_aliases.js";
-import { Client } from "../../src/client.js";
+import { FORMAT_FIELD_TOKENS } from "../../src/_generated/format_fields.js";
+import { WHERE_FIELDS_V1, type WhereModel } from "../../src/_generated/where_fields.js";
+import type { ListCommand } from "../../src/_internal/codec/format_types.js";
 import type { RawCompleteFormatRow } from "../../src/_internal/codec/schemas.js";
+import {
+  materializeClientRecord,
+  materializeProjectionMembers,
+  materializeProjectionRecord,
+} from "../../src/_internal/graph/materialize.js";
 import {
   createGraphRecordRef,
   createGraphSourceId,
@@ -27,12 +29,9 @@ import type {
   ProjectionRecord,
   SelectionProjection,
 } from "../../src/_internal/graph/projection_identity.js";
-import {
-  materializeClientRecord,
-  materializeProjectionMembers,
-  materializeProjectionRecord,
-} from "../../src/_internal/graph/materialize.js";
 import { decodeLogicalRef } from "../../src/_internal/graph/refs.js";
+import { deriveTmuxCapabilities } from "../../src/_internal/runtime/capabilities.js";
+import { TmuxConnection } from "../../src/_internal/runtime/connection.js";
 import {
   bindLogicalRef,
   createRuntimeContext,
@@ -41,26 +40,26 @@ import {
   runtimeForServer,
   type RuntimeContext,
 } from "../../src/_internal/runtime/context.js";
-import { deriveTmuxCapabilities } from "../../src/_internal/runtime/capabilities.js";
-import { TmuxConnection } from "../../src/_internal/runtime/connection.js";
-import { TEST_HANDLE_PROTOTYPES } from "../../src/_internal/test/testkit.js";
 import {
   entityRefForHandle,
   logicalRefForHandle,
   snapshotForHandle,
   winlinkRefForHandle,
 } from "../../src/_internal/runtime/live_handle.js";
+import { TEST_HANDLE_PROTOTYPES } from "../../src/_internal/test/testkit.js";
+import { flattenInvocation } from "../../src/_internal/transport/invocation.js";
 import type {
   CommandRequest,
   CommandTransport,
   RawCommandResult,
 } from "../../src/_internal/transport/types.js";
-import { flattenInvocation } from "../../src/_internal/transport/invocation.js";
-import { WHERE_FIELDS_V1, type WhereModel } from "../../src/_generated/where_fields.js";
+import { Client } from "../../src/client.js";
+import type { ConnectionAlias, DaemonEpoch, LogicalRef } from "../../src/common.js";
+import { safeInteger } from "../../src/common.js";
+import { LibTmuxError, QueryValidationError } from "../../src/errors.js";
 import { Pane } from "../../src/pane.js";
 import { Server, type ServerOptions } from "../../src/server.js";
 import { Session } from "../../src/session.js";
-import type { ListCommand } from "../../src/_internal/codec/format_types.js";
 import { Window } from "../../src/window.js";
 import { completeFormatRow, type MutableCompleteFormatRow } from "../support/graph_rows.js";
 import { singleCommandTransport } from "../support/transport_double.js";

@@ -1,5 +1,4 @@
 import { expect, test } from "bun:test";
-
 import { OUTPUT_MARKER, OutputMarkerTracker } from "../bench-control.js";
 
 test.each([

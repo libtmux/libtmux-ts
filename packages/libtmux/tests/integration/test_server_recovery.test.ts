@@ -1,15 +1,7 @@
+import { describe, expect, test } from "bun:test";
 import { spawn } from "node:child_process";
 import { lstat, readFile, readdir, rm, stat, unlink } from "node:fs/promises";
 import { join } from "node:path";
-
-import { describe, expect, test } from "bun:test";
-
-import { processExists, waitForPathAbsent, waitForProcessExit } from "../support/converge.js";
-import { writeLaunch } from "../support/fake_tmux.js";
-import { createRegisteredTestServer } from "../support/fixture_registry.js";
-import { waitForOwnReservations, withTemporaryRunRoot } from "../support/run_root_harness.js";
-import { reapRedLaunch } from "../support/tmux_cleanup.js";
-
 import {
   prepareRunRoot,
   readFixtureRecord,
@@ -19,6 +11,11 @@ import {
   TestServer,
   makeTestDirectory,
 } from "../../src/_internal/test/testkit.js";
+import { processExists, waitForPathAbsent, waitForProcessExit } from "../support/converge.js";
+import { writeLaunch } from "../support/fake_tmux.js";
+import { createRegisteredTestServer } from "../support/fixture_registry.js";
+import { waitForOwnReservations, withTemporaryRunRoot } from "../support/run_root_harness.js";
+import { reapRedLaunch } from "../support/tmux_cleanup.js";
 
 async function writeLaunchWrapper(
   parent: string,

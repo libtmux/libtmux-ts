@@ -1,5 +1,5 @@
-import type { Server } from "libtmux/server";
 import type { TmuxEvent } from "libtmux";
+import type { Server } from "libtmux/server";
 
 /**
  * React to tmux as it changes, rather than polling for what changed.

@@ -1,7 +1,6 @@
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-
 import type { DeliveryStatus } from "../../common.js";
 import type { DaemonGuard, TmuxCommand } from "../../engine.js";
 import { TmuxServerRestartedError, TmuxTransportError } from "../../errors.js";

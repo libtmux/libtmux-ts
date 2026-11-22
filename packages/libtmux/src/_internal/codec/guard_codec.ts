@@ -1,12 +1,11 @@
 import { randomUUID } from "node:crypto";
-
+import type { FormatFieldName } from "../../_generated/format_field_names.js";
 import { FORMAT_FIELD_TOKENS } from "../../_generated/format_fields.js";
 import { LibTmuxError, type LibTmuxErrorCode } from "../../errors.js";
-import type { FormatFieldName } from "../../_generated/format_field_names.js";
-import { ParsedFormatRow, type ListCommand, type OutputFormatField } from "./format_types.js";
 import type { TmuxVersion } from "../runtime/tmux_version.js";
 import { decodeBackslashReplace } from "./backslash_replace.js";
 import { formatFieldsForListCommand } from "./format_registry.js";
+import { ParsedFormatRow, type ListCommand, type OutputFormatField } from "./format_types.js";
 import {
   parseCompleteFormatRow,
   type CompleteFormatRow,

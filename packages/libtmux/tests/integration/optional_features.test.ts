@@ -1,11 +1,9 @@
+import { afterEach, describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
-
-import { afterEach, describe, expect, test } from "bun:test";
-
-import { TmuxCommandError, TmuxTransportError, VersionTooLowError } from "../../src/errors.js";
 import { makeTestDirectory, resolveControllerIdentity } from "../../src/_internal/test/testkit.js";
+import { TmuxCommandError, TmuxTransportError, VersionTooLowError } from "../../src/errors.js";
 import { Server } from "../../src/server.js";
 import { writeReportVersion } from "../support/fake_tmux.js";
 import { controlSupported, tmuxAtLeast, tmuxRelease } from "../support/tmux_release.js";

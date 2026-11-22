@@ -1,9 +1,9 @@
 import { expect, test } from "bun:test";
 import { readFile } from "node:fs/promises";
 import { Writable } from "node:stream";
-import { processRun, tokenize } from "../src/process.ts";
-import { write } from "../src/output.ts";
 import { resolveNode22, runWithCleanup } from "../../libtmux/src/_internal/test/testkit.js";
+import { write } from "../src/output.ts";
+import { processRun, tokenize } from "../src/process.ts";
 
 test("process arguments preserve quoted spaces and empty values without a shell", () => {
   expect(tokenize('editor --wait "a b" \'\' x\\ y "$HOME"')).toEqual([

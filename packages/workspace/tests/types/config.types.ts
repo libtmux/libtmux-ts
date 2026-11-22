@@ -8,6 +8,7 @@
 // that is not mirrored in `src/config.ts` fails this file, and the build.
 //
 // Not named `*.test.ts`: it asserts at compile time and has no cases to run.
+import type { z } from "zod";
 import type {
   Workspace,
   WorkspaceInput,
@@ -22,7 +23,6 @@ import type {
   windowSchema,
   workspaceSchema,
 } from "../../src/schema.js";
-import type { z } from "zod";
 
 type Equal<Actual, Expected> =
   (<Type>() => Type extends Actual ? 1 : 2) extends <Type>() => Type extends Expected ? 1 : 2

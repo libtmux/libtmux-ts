@@ -1,7 +1,7 @@
-import { fileURLToPath } from "node:url";
-
 import { describe, expect, test } from "bun:test";
-
+import { fileURLToPath } from "node:url";
+import * as index from "../../../src/index.js";
+import { runTypeScriptApi } from "../../../tests/support/typescript_api.js";
 import {
   classesOf,
   requireRootExamples,
@@ -11,8 +11,6 @@ import {
   type ApiDeclaration,
   type PublicMember,
 } from "../api_surface.js";
-import * as index from "../../../src/index.js";
-import { runTypeScriptApi } from "../../../tests/support/typescript_api.js";
 
 /**
  * The API surface reader sees every handle the package exports.

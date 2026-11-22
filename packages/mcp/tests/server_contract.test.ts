@@ -3,12 +3,11 @@ import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-
+import { testControl } from "../../libtmux/tests/support/tmux_release.js";
 import { buildInstructions } from "../src/instructions.js";
 import { describeStartupFailure } from "../src/server.js";
 import { describeStartup } from "../src/startup.js";
 import { serverFor, structured, withClient, withServer } from "./support/server_harness.js";
-import { testControl } from "../../libtmux/tests/support/tmux_release.js";
 
 testControl(
   "the stdio server executes the retained capability surface end to end",

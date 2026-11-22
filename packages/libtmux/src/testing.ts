@@ -32,11 +32,11 @@
  * `cmd` — and never the event stream.
  */
 
-import { NodeSpawnTransport } from "./_internal/transport/node_spawn_transport.js";
 import { isVersionFence } from "./_internal/transport/invocation.js";
+import { NodeSpawnTransport } from "./_internal/transport/node_spawn_transport.js";
+import type { DeliveryStatus } from "./common.js";
 import type { TmuxCommand, TmuxCommandResult, TmuxEngine } from "./engine.js";
 import { flattenInvocation } from "./engine.js";
-import type { DeliveryStatus } from "./common.js";
 import type { LibTmuxErrorCode, TmuxTransportErrorKind } from "./errors.js";
 import { TmuxServerRestartedError, TmuxTransportError } from "./errors.js";
 

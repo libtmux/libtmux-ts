@@ -1,7 +1,5 @@
-import { readFileSync, realpathSync } from "node:fs";
-
 import { dlopen, FFIType, read } from "bun:ffi";
-
+import { readFileSync, realpathSync } from "node:fs";
 import {
   reapByPidfd,
   type PidfdOps,

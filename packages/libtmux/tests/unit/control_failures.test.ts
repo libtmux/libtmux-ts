@@ -8,7 +8,6 @@
  */
 
 import { describe, expect, test } from "bun:test";
-
 import { transportFailure } from "../../src/_internal/control/connection.js";
 import { LibTmuxError, TmuxTransportError } from "../../src/errors.js";
 

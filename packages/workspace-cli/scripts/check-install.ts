@@ -1,12 +1,12 @@
 /* eslint-disable no-await-in-loop -- Installed CLI cases share a private server and run sequentially. */
 import assert from "node:assert/strict";
-import { Server } from "libtmux";
 import { mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { join, sep } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
-import { npmPack } from "../../../scripts/npm_pack/npm_pack.js";
+import { Server } from "libtmux";
 import { runBoundedCommand } from "../../../scripts/bounded_process/bounded_process.js";
+import { npmPack } from "../../../scripts/npm_pack/npm_pack.js";
 import {
   assertOwnedSocketPath,
   enterSandbox,

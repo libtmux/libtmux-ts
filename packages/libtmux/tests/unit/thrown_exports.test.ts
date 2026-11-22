@@ -1,9 +1,7 @@
-import { readFile } from "node:fs/promises";
-import { fileURLToPath } from "node:url";
-import { join } from "node:path";
-
 import { describe, expect, test } from "bun:test";
-
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import * as index from "../../src/index.js";
 
 /**

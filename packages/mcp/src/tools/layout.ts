@@ -6,11 +6,9 @@
  * reporting a bare success.
  */
 
-import { z } from "zod";
-
 import type { Pane, ServerSnapshot } from "libtmux";
 import { ResizeAdjustmentDirection } from "libtmux/constants";
-
+import { z } from "zod";
 import type { CallerIdentity } from "../caller.js";
 import type { ToolContext } from "../context.js";
 import { effectiveResultLines } from "../policy.js";

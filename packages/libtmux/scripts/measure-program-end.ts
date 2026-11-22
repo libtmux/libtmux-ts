@@ -11,7 +11,6 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-
 import { MARK, RUN } from "../src/_internal/operations/program_start.js";
 
 const LINGER = "sleep 0.05 2>/dev/null || sleep 1; ";

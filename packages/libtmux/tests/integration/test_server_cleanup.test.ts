@@ -1,13 +1,6 @@
+import { describe, expect, test } from "bun:test";
 import { access, readFile, readdir, rename, rm, stat, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-
-import { describe, expect, test } from "bun:test";
-
-import { waitForProcessExit } from "../support/converge.js";
-import { waitForOwnReservations, withTemporaryRunRoot } from "../support/run_root_harness.js";
-import { writeProbe, writeTmuxProxy } from "../support/fake_tmux.js";
-import { reapRedLaunch } from "../support/tmux_cleanup.js";
-
 import {
   prepareRunRoot,
   readFixtureRecord,
@@ -16,6 +9,10 @@ import {
   TestServer,
   makeTestDirectory,
 } from "../../src/_internal/test/testkit.js";
+import { waitForProcessExit } from "../support/converge.js";
+import { writeProbe, writeTmuxProxy } from "../support/fake_tmux.js";
+import { waitForOwnReservations, withTemporaryRunRoot } from "../support/run_root_harness.js";
+import { reapRedLaunch } from "../support/tmux_cleanup.js";
 
 async function writeExitStatusWrapper(parent: string, status: number): Promise<string> {
   return writeProbe(join(parent, `tmux-exit-${String(status)}`), { exit: status });

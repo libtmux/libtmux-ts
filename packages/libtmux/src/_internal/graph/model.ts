@@ -8,8 +8,8 @@ import type {
 } from "../../common.js";
 import { QueryValidationError } from "../../errors.js";
 import type { ListCommand } from "../codec/format_types.js";
-import type { DaemonIdentity } from "../runtime/context.js";
 import type { CompleteFormatRow, RawCompleteFormatRow } from "../codec/schemas.js";
+import type { DaemonIdentity } from "../runtime/context.js";
 import type { WinlinkRef } from "./refs.js";
 
 declare const graphSourceIdBrand: unique symbol;

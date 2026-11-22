@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test";
-
 import { carriesTmuxId, daemonCondition } from "../../src/_internal/transport/daemon_guard.js";
 // Through the public entry an engine author imports, not the internal path,
 // so this fails if the export is dropped from `libtmux/engine`.

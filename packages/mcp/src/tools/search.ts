@@ -1,6 +1,5 @@
 import { compileBoundedRegex, TmuxCommandError } from "libtmux";
 import { z } from "zod";
-
 import type { ToolContext } from "../context.js";
 import { boundedCaptureRange, captureRowLimit } from "../grid_capture.js";
 import { effectiveResultLines, MAX_RESULT_BYTES } from "../policy.js";

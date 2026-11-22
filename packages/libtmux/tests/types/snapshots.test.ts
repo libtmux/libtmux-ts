@@ -1,19 +1,3 @@
-import type {
-  ConnectionAlias,
-  DaemonEpoch,
-  PaneId,
-  PaneRef,
-  SessionId,
-  SessionRef,
-  WindowId,
-  WindowRef,
-} from "../../src/common.js";
-import {
-  createLogicalRef,
-  createWinlinkRef,
-  type SerializedLogicalRef,
-  type WinlinkRef,
-} from "../../src/_internal/graph/refs.js";
 import {
   createGraphRecordRef,
   createGraphSourceId,
@@ -26,7 +10,22 @@ import type {
   ProjectionAdjacency,
   SelectionProjection,
 } from "../../src/_internal/graph/projection_identity.js";
-
+import {
+  createLogicalRef,
+  createWinlinkRef,
+  type SerializedLogicalRef,
+  type WinlinkRef,
+} from "../../src/_internal/graph/refs.js";
+import type {
+  ConnectionAlias,
+  DaemonEpoch,
+  PaneId,
+  PaneRef,
+  SessionId,
+  SessionRef,
+  WindowId,
+  WindowRef,
+} from "../../src/common.js";
 import type { Equal, Expect } from "./assert.js";
 
 declare const connection: ConnectionAlias;

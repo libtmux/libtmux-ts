@@ -1,6 +1,5 @@
-import { readFile } from "node:fs/promises";
-
 import { describe, expect, test } from "bun:test";
+import { readFile } from "node:fs/promises";
 
 /**
  * The README is the package's documentation, so it is gated like the rest of

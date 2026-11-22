@@ -1,10 +1,10 @@
-import { fencedBlocks, typecheckExamples, type Example } from "./example_harness.js";
 import {
   readApiSurface,
   readRootApiSurface,
   requireRootExamples,
   requireSymbolExamples,
 } from "../api_surface/api_surface.js";
+import { fencedBlocks, typecheckExamples, type Example } from "./example_harness.js";
 
 /**
  * Require a working example on every public method and getter, and compile it.

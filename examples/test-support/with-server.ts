@@ -2,14 +2,13 @@
 // In-repo consumers use it directly; external ones have no need for it.
 
 import { spawnSync } from "node:child_process";
-
+import { releaseAtLeast } from "../../packages/libtmux/src/_internal/runtime/tmux_version.js";
 import {
   runWithCleanup,
   withOwnedRunRoot,
   TestServer,
   assertOwnedSocketPath,
 } from "../../packages/libtmux/src/_internal/test/testkit.js";
-import { releaseAtLeast } from "../../packages/libtmux/src/_internal/runtime/tmux_version.js";
 
 /**
  * Hand a test an isolated, real tmux server and reap it afterwards.

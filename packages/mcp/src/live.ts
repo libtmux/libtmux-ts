@@ -14,7 +14,6 @@
 
 import { VersionTooLowError, type ConnectedServer, type TmuxEvent } from "libtmux";
 import type { Server } from "libtmux/server";
-
 import { requireActive, waitForAbort } from "./abort.js";
 import { PaneTail, type PaneTailEndReason } from "./pane_tail.js";
 

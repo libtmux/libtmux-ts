@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test";
-
 import { completeUtf8Length } from "../../src/_internal/control/events.js";
 
 /**

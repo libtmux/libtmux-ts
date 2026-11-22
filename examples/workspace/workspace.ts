@@ -1,7 +1,7 @@
-import type { Server } from "libtmux/server";
-import type { Session } from "libtmux/session";
 import { applyWorkspace } from "@libtmux/workspace";
 import type { WorkspaceInput } from "@libtmux/workspace/config";
+import type { Server } from "libtmux/server";
+import type { Session } from "libtmux/session";
 
 /**
  * Build the shape most people reach for tmux to get: one session, a window

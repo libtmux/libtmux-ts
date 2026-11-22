@@ -1,3 +1,4 @@
+import type { FormatFieldName } from "../../_generated/format_field_names.js";
 import { FORMAT_FIELD_TOKENS } from "../../_generated/format_fields.js";
 import type {
   ConnectionAlias,
@@ -10,19 +11,19 @@ import type {
   WindowRef,
 } from "../../common.js";
 import { QueryValidationError } from "../../errors.js";
-import type { DaemonIdentity } from "../runtime/context.js";
-import type { FormatFieldName } from "../../_generated/format_field_names.js";
 import { ParsedFormatRow, type ListCommand } from "../codec/format_types.js";
 import {
   validatePopulatedFormatIdentities,
   type CompleteFormatRow,
   type RawCompleteFormatRow,
 } from "../codec/schemas.js";
+import type { DaemonIdentity } from "../runtime/context.js";
 import {
   parsePaneId as authenticatePaneId,
   parseSessionId as authenticateSessionId,
   parseWindowId as authenticateWindowId,
 } from "../runtime/ids.js";
+import { snapshotOwnDataArray } from "./data_snapshot.js";
 import {
   createGraphRecordRef,
   createGraphSourceId,
@@ -39,7 +40,6 @@ import {
   type NormalizedGraph,
   type WinlinkEntity,
 } from "./model.js";
-import { snapshotOwnDataArray } from "./data_snapshot.js";
 import { createLogicalRef, createWinlinkRef, type WinlinkRef } from "./refs.js";
 
 export interface NormalizeGraphInput {

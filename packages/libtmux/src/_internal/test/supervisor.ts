@@ -3,7 +3,6 @@ import type { EventEmitter } from "node:events";
 import { chmod, mkdtemp, rm } from "node:fs/promises";
 import { constants as osConstants, tmpdir } from "node:os";
 import { join } from "node:path";
-
 import { reportSecondaryCleanupFailure, runWithCleanup } from "./cleanup.js";
 import { resolveControllerIdentity } from "./process_identity.js";
 import { prepareRunRoot, reapOwnedRunRoot } from "./reaper.js";

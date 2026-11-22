@@ -1,15 +1,11 @@
+import { describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { lstat, readFile, readdir, readlink, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-
-import { describe, expect, test } from "bun:test";
-
-import { runTypeScriptApi } from "../../../tests/support/typescript_api.js";
-
-import { generateFormats } from "../generate-formats.js";
-
 import { makeTestDirectory } from "../../../src/_internal/test/testkit.js";
+import { runTypeScriptApi } from "../../../tests/support/typescript_api.js";
+import { generateFormats } from "../generate-formats.js";
 
 const markerStart = "// <libtmux-generated-where-types>";
 const markerEnd = "// </libtmux-generated-where-types>";

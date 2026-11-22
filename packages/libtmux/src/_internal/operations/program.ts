@@ -2,7 +2,8 @@
 import { access, readFile, rm } from "node:fs/promises";
 import { constants as osConstants } from "node:os";
 import { setTimeout as delay } from "node:timers/promises";
-
+import type { DeliveryStatus } from "../../common.js";
+import type { DaemonGuard } from "../../engine.js";
 import {
   ProgramStartError,
   TmuxObjectNotFoundError,
@@ -10,8 +11,6 @@ import {
   WaitTimeoutError,
   type ProgramStartFailure,
 } from "../../errors.js";
-import type { DeliveryStatus } from "../../common.js";
-import type { DaemonGuard } from "../../engine.js";
 import type { Program } from "../../program.js";
 import type { AbortLike, ProgramExit, ProgramWaitOptions } from "../../types.js";
 import type { RuntimeContext } from "../runtime/context.js";

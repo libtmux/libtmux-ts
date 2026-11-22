@@ -1,9 +1,7 @@
+import { describe, expect, test } from "bun:test";
 import { spawn } from "node:child_process";
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
-
-import { describe, expect, test } from "bun:test";
-
 import {
   prepareRunRoot,
   reapOwnedRunRoot,
@@ -11,16 +9,15 @@ import {
   TestServer,
   makeTestDirectory,
 } from "../../src/_internal/test/testkit.js";
-
-import { Server } from "../../src/server.js";
 import { flattenInvocation, guardRequest, MAX_PACKED_ARGV_BYTES } from "../../src/engine.js";
-import { TmuxServerRestartedError } from "../../src/errors.js";
 import type {
   DaemonGuard,
   TmuxCommandResult,
   TmuxEngine,
   TmuxInvocationRequest,
 } from "../../src/engine.js";
+import { TmuxServerRestartedError } from "../../src/errors.js";
+import { Server } from "../../src/server.js";
 
 /**
  * An engine that reaches tmux the long way round.

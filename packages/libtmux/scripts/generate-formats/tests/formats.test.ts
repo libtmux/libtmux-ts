@@ -1,13 +1,8 @@
+import { describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-
-import { describe, expect, test } from "bun:test";
-
-import { generateFormats } from "../generate-formats.js";
-import { releaseAtLeast } from "../../../src/_internal/runtime/tmux_version.js";
-import { MINIMUM_TMUX } from "../../../src/_internal/support/versions.js";
 import type { FormatFieldName, FormatScope } from "../../../src/_generated/format_field_names.js";
 import { FORMAT_FIELD_TOKENS } from "../../../src/_generated/format_fields.js";
 import { WHERE_ALIASES_V1, WHERE_FIELDS_V1 } from "../../../src/_generated/where_fields.js";
@@ -18,8 +13,10 @@ import {
   renderGeneratedFormatSources,
   validateWhereSchemaHistory,
 } from "../../../src/_internal/codec/format_registry.js";
-
+import { releaseAtLeast } from "../../../src/_internal/runtime/tmux_version.js";
+import { MINIMUM_TMUX } from "../../../src/_internal/support/versions.js";
 import { makeTestDirectory } from "../../../src/_internal/test/testkit.js";
+import { generateFormats } from "../generate-formats.js";
 
 interface FormatFixture {
   fields: Array<{ scope: FormatScope; since: string; token: FormatFieldName }>;

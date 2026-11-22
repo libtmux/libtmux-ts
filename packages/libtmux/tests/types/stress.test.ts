@@ -1,6 +1,4 @@
 import type { Pane } from "../../src/pane.js";
-import type { Session } from "../../src/session.js";
-import type { Window } from "../../src/window.js";
 import type {
   PaneWhere,
   Selection,
@@ -8,6 +6,8 @@ import type {
   WhereOf,
   WindowWhere,
 } from "../../src/selection.js";
+import type { Session } from "../../src/session.js";
+import type { Window } from "../../src/window.js";
 
 declare const panes: Selection<Pane>;
 declare const sessions: Selection<Session>;

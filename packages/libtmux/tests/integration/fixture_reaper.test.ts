@@ -1,3 +1,4 @@
+import { describe, expect, test } from "bun:test";
 import { spawn } from "node:child_process";
 import {
   access,
@@ -15,9 +16,23 @@ import {
 } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-
-import { describe, expect, test } from "bun:test";
-
+import {
+  beginFixtureLaunch,
+  OWNER_RECORD_NAME,
+  prepareRunRoot,
+  promoteFixtureLaunch,
+  readFixtureRecord,
+  reapFixture,
+  reapOwnedRunRoot,
+  reapStaleRunRoot,
+  reserveFixture,
+  rollbackFixtureLaunchNotStarted,
+  readDaemonIdentity,
+  readProcessIdentity,
+  resolveControllerIdentity,
+  TestServer,
+  makeTestDirectory,
+} from "../../src/_internal/test/testkit.js";
 import type { LaunchingHoldConfig } from "../fixtures/launching_hold.js";
 import { writeBunProgram } from "../support/bun_program.js";
 import { processExists, waitForPathPresent, waitForProcessExit } from "../support/converge.js";
@@ -44,24 +59,6 @@ import {
   terminateCapturedTmux,
   type CapturedTmuxCleanup,
 } from "../support/tmux_cleanup.js";
-
-import {
-  beginFixtureLaunch,
-  OWNER_RECORD_NAME,
-  prepareRunRoot,
-  promoteFixtureLaunch,
-  readFixtureRecord,
-  reapFixture,
-  reapOwnedRunRoot,
-  reapStaleRunRoot,
-  reserveFixture,
-  rollbackFixtureLaunchNotStarted,
-  readDaemonIdentity,
-  readProcessIdentity,
-  resolveControllerIdentity,
-  TestServer,
-  makeTestDirectory,
-} from "../../src/_internal/test/testkit.js";
 
 const tsRoot = fileURLToPath(new URL("../..", import.meta.url));
 const reaperPath = fileURLToPath(new URL("../../scripts/reap-test-run.ts", import.meta.url));

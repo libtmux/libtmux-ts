@@ -1,5 +1,5 @@
-import { isTmuxName } from "libtmux";
 import { dirname, isAbsolute, resolve } from "node:path";
+import { isTmuxName } from "libtmux";
 import {
   expandPath,
   mapping,

@@ -1,3 +1,8 @@
+import { describe, expect, test } from "bun:test";
+import { ChildProcess, spawn } from "node:child_process";
+import { access, readFile, rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   CONTROL_REGISTRATION_DEADLINE_MS,
   deadlineMs,
@@ -6,19 +11,11 @@ import {
   TestServer,
   makeTestDirectory,
 } from "../../src/_internal/test/testkit.js";
-import { ChildProcess, spawn } from "node:child_process";
-import { access, readFile, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
-
-import { describe, expect, test } from "bun:test";
-
 import { closeChildWithin, waitForPathPresent } from "../support/converge.js";
 import { writeIgnoreTerm } from "../support/fake_tmux.js";
+import { createRegisteredTestServer } from "../support/fixture_registry.js";
 import { parseNullFrames } from "../support/launch_frame.js";
 import { withTemporaryRunRoot } from "../support/run_root_harness.js";
-
-import { createRegisteredTestServer } from "../support/fixture_registry.js";
 
 async function writeControlTimerProbe(
   parent: string,

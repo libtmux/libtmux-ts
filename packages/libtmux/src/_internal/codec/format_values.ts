@@ -1,7 +1,6 @@
 import { types as nodeTypes } from "node:util";
-
-import { isSafeInteger, safeInteger, type SafeInteger } from "../../common.js";
 import { formatValueType } from "../../_generated/field_types.js";
+import { isSafeInteger, safeInteger, type SafeInteger } from "../../common.js";
 import { isPaneId, isSessionId, isWindowId } from "../runtime/ids.js";
 
 /**

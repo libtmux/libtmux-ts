@@ -1,16 +1,15 @@
 import { describe, expect, test } from "bun:test";
 import { FORMAT_FIELD_TOKENS } from "../../src/_generated/format_fields.js";
-
-import {
-  executeGuardedList,
-  executeGuardedListGroup,
-} from "../../src/_internal/codec/guarded_listing.js";
 import {
   FormatProtocolError,
   GuardCodec,
   type FormatGuards,
   type GuardedFormatRequest,
 } from "../../src/_internal/codec/guard_codec.js";
+import {
+  executeGuardedList,
+  executeGuardedListGroup,
+} from "../../src/_internal/codec/guarded_listing.js";
 import { deriveTmuxCapabilities } from "../../src/_internal/runtime/capabilities.js";
 import { TmuxConnection } from "../../src/_internal/runtime/connection.js";
 import { parseTmuxVersion } from "../../src/_internal/runtime/tmux_version.js";

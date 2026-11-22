@@ -1,9 +1,9 @@
-import type { IfShellOptions, JoinOptions, RespawnOptions, RunShellOptions } from "../../types.js";
 import { PANE_DIRECTION_FLAG_MAP } from "../../constants.js";
 import { TmuxCommandError, VersionTooLowError } from "../../errors.js";
+import type { IfShellOptions, JoinOptions, RespawnOptions, RunShellOptions } from "../../types.js";
+import type { RuntimeContext } from "../runtime/context.js";
 import { workaroundApplies, workaroundFixedIn } from "../support/capabilities.js";
 import { runCommand } from "./command.js";
-import type { RuntimeContext } from "../runtime/context.js";
 import { assertName } from "./names.js";
 
 /** Run a shell command through tmux and return whatever it printed. */

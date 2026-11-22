@@ -1,3 +1,4 @@
+import { describe, expect, test } from "bun:test";
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { linkSync, lstatSync, readFileSync, renameSync, statSync } from "node:fs";
@@ -14,9 +15,6 @@ import {
   unlink,
 } from "node:fs/promises";
 import { dirname, join } from "node:path";
-
-import { describe, expect, test } from "bun:test";
-
 import {
   ControlMode,
   readProcessIdentity,
@@ -27,7 +25,6 @@ import {
   TestServer,
   makeTestDirectory,
 } from "../../src/_internal/test/testkit.js";
-
 import { closeChildWithin, waitForProcessExit } from "../support/converge.js";
 import { writeProbe } from "../support/fake_tmux.js";
 import type { CapturedTmuxCleanup } from "../support/tmux_cleanup.js";

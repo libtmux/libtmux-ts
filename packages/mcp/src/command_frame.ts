@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-
 import { shellQuote } from "./startup.js";
 
 const INHERITED_TRAP_LIMIT = 64 * 1024;

@@ -1,15 +1,15 @@
 import type { CommandOptions } from "../../common.js";
 import { RESIZE_ADJUSTMENT_DIRECTION_FLAG_MAP } from "../../constants.js";
-import type { MoveWindowOptions, ResizeOptions, ResizeWindowOptions } from "../../types.js";
 import { VersionTooLowError } from "../../errors.js";
+import type { MoveWindowOptions, ResizeOptions, ResizeWindowOptions } from "../../types.js";
 import type { RuntimeContext } from "../runtime/context.js";
 import { tmuxVersionAtLeast } from "../runtime/tmux_version.js";
 import { capabilitySince } from "../support/capabilities.js";
 import { quoteCommand } from "../transport/lexer.js";
 import { runCommand, runCommands } from "./command.js";
 import { parseClassicLayout, type ClassicLayoutParse, type LayoutRejection } from "./layout.js";
-import { planRemoveWindowPlacement } from "./plans.js";
 import { assertName } from "./names.js";
+import { planRemoveWindowPlacement } from "./plans.js";
 
 function destination(options: MoveWindowOptions): readonly string[] {
   if (options.session === undefined && options.index === undefined) return [];

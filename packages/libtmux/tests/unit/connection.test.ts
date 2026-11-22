@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test";
-
 import { TmuxConnection } from "../../src/_internal/runtime/connection.js";
 
 describe("TmuxConnection", () => {

@@ -1,7 +1,7 @@
+import { describe, expect, test } from "bun:test";
 import { spawn } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { once } from "node:events";
-import { tmpdir } from "node:os";
 import {
   chmod,
   copyFile,
@@ -17,21 +17,9 @@ import {
   unlink,
   writeFile,
 } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
-
-import { describe, expect, test } from "bun:test";
-
-import { processExists, waitForPathAbsent, waitForProcessExit } from "../support/converge.js";
-import { journalIdentity } from "../support/fixture_evidence.js";
-import { createIsolatedRunRoot, removeIsolatedRunRoot } from "../support/run_root_harness.js";
-import {
-  captureTmuxCleanup,
-  launchExactTmux,
-  terminateCapturedTmux,
-  type CapturedTmuxCleanup,
-} from "../support/tmux_cleanup.js";
-
 import {
   OWNER_RECORD_NAME,
   prepareRunRoot,
@@ -44,6 +32,15 @@ import {
   TestServer,
   makeTestDirectory,
 } from "../../src/_internal/test/testkit.js";
+import { processExists, waitForPathAbsent, waitForProcessExit } from "../support/converge.js";
+import { journalIdentity } from "../support/fixture_evidence.js";
+import { createIsolatedRunRoot, removeIsolatedRunRoot } from "../support/run_root_harness.js";
+import {
+  captureTmuxCleanup,
+  launchExactTmux,
+  terminateCapturedTmux,
+  type CapturedTmuxCleanup,
+} from "../support/tmux_cleanup.js";
 
 describe("run-root recovery", () => {
   test("a fixture an unsupervised run starts first ends what a killed one left", async () => {

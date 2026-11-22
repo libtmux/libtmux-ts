@@ -1,6 +1,5 @@
 import { appendFileSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-
 import { PlanError, parseCiMatrix } from "../ci_matrix/ci_matrix.js";
 import { planCi, unpassedJobs } from "./ci_plan.js";
 

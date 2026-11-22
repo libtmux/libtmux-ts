@@ -1,13 +1,13 @@
+import type { CommandOptions } from "../../common.js";
+import type { Pane } from "../../pane.js";
+import type { Server } from "../../server.js";
+import type { Session } from "../../session.js";
 import type {
   NewSessionOptions,
   NewWindowOptions,
   PlannedOperation,
   SplitOptions,
 } from "../../types.js";
-import type { CommandOptions } from "../../common.js";
-import type { Pane } from "../../pane.js";
-import type { Server } from "../../server.js";
-import type { Session } from "../../session.js";
 import type { Window } from "../../window.js";
 import type { RuntimeContext } from "../runtime/context.js";
 import { runCommand } from "./command.js";

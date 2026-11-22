@@ -1,23 +1,22 @@
 import { describe, expect, test } from "bun:test";
-
-import {
-  TmuxServerRestartedError,
-  TmuxTransportError,
-  VersionTooLowError,
-} from "../../src/errors.js";
-import { flattenInvocation } from "../../src/_internal/transport/invocation.js";
+import { releaseAtLeast } from "../../src/_internal/runtime/tmux_version.js";
 import {
   VersionCheckTransport,
   daemonProbe,
   interpretProbe,
   requireCoreVersion,
 } from "../../src/_internal/support/versions.js";
-import { releaseAtLeast } from "../../src/_internal/runtime/tmux_version.js";
+import { flattenInvocation } from "../../src/_internal/transport/invocation.js";
 import type {
   CommandRequest,
   CommandTransport,
   RawCommandResult,
 } from "../../src/_internal/transport/types.js";
+import {
+  TmuxServerRestartedError,
+  TmuxTransportError,
+  VersionTooLowError,
+} from "../../src/errors.js";
 import { answerVersionProbe, probeMarker } from "../support/version_probe.js";
 
 const encoder = new TextEncoder();

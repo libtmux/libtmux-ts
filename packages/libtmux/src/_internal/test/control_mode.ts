@@ -1,8 +1,7 @@
-import { CONTROL_REGISTRATION_DEADLINE_MS, deadlineMs } from "./deadlines.js";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { StringDecoder } from "node:string_decoder";
-
 import { runWithCleanup } from "./cleanup.js";
+import { CONTROL_REGISTRATION_DEADLINE_MS, deadlineMs } from "./deadlines.js";
 import type { TestServer } from "./test_server.js";
 
 export interface ControlModeOptions {

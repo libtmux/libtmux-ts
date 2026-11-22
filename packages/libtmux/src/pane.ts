@@ -1,4 +1,64 @@
+import { PANE_ALIASES } from "./_generated/field_aliases.js";
+import { setHook, showHooks, unsetHook } from "./_internal/operations/hooks.js";
+import {
+  chooseBuffer,
+  chooseTree,
+  customizeMode,
+  displayMenu,
+  displayPopup,
+  findWindow,
+  sendPrefix,
+} from "./_internal/operations/interactive.js";
+import {
+  killPaneIfWindowUnshared,
+  killTarget,
+  splitWindow,
+} from "./_internal/operations/mutations.js";
+import {
+  setOption,
+  showOptions,
+  showResolvedOptions,
+  unsetOption,
+} from "./_internal/operations/options.js";
+import { capturePane, clearHistory, pipePane, sendKeys } from "./_internal/operations/pane_io.js";
+import {
+  waitForPaneCommand,
+  waitForPaneExit,
+  waitForPaneText,
+} from "./_internal/operations/pane_wait.js";
+import { planKill, planKillPaneIfUnshared, planSplitWindow } from "./_internal/operations/plans.js";
 import { runRawCommand } from "./_internal/operations/raw.js";
+import { refreshedHandle } from "./_internal/operations/refreshed.js";
+import { sessionOf, windowOfPlacement } from "./_internal/operations/relations.js";
+import {
+  breakPane,
+  displayMessage,
+  joinPane,
+  respawnPane,
+  setCopyMode,
+} from "./_internal/operations/shell.js";
+import {
+  pasteBuffer,
+  resizePane,
+  selectTarget,
+  setPaneTitle,
+  unzoomTarget,
+  zoomPane,
+  swapPanes,
+} from "./_internal/operations/topology.js";
+import {
+  installLiveHandlePrototype,
+  liveHandlesEqual,
+  liveHandlesShareTmuxId,
+  originGraphForHandle,
+  requireSameServer,
+  runtimeForHandle,
+  targetOf,
+} from "./_internal/runtime/live_handle.js";
+import type { CommandOptions } from "./common.js";
+import type { AliasedFields, PaneAliasMap, RowWithIdentities } from "./field_types.js";
+import type { Server } from "./server.js";
+import type { Session } from "./session.js";
 import type {
   CaptureOptions,
   ChooseTreeOptions,
@@ -17,67 +77,7 @@ import type {
   PlannedOperation,
   SplitOptions,
 } from "./types.js";
-import type { CommandOptions } from "./common.js";
-import { PANE_ALIASES } from "./_generated/field_aliases.js";
-import type { AliasedFields, PaneAliasMap, RowWithIdentities } from "./field_types.js";
-import {
-  chooseBuffer,
-  chooseTree,
-  customizeMode,
-  displayMenu,
-  displayPopup,
-  findWindow,
-  sendPrefix,
-} from "./_internal/operations/interactive.js";
-import { sessionOf, windowOfPlacement } from "./_internal/operations/relations.js";
-import {
-  killPaneIfWindowUnshared,
-  killTarget,
-  splitWindow,
-} from "./_internal/operations/mutations.js";
-import { setHook, showHooks, unsetHook } from "./_internal/operations/hooks.js";
-import { capturePane, clearHistory, pipePane, sendKeys } from "./_internal/operations/pane_io.js";
-import {
-  waitForPaneCommand,
-  waitForPaneExit,
-  waitForPaneText,
-} from "./_internal/operations/pane_wait.js";
-import {
-  setOption,
-  showOptions,
-  showResolvedOptions,
-  unsetOption,
-} from "./_internal/operations/options.js";
-import {
-  breakPane,
-  displayMessage,
-  joinPane,
-  respawnPane,
-  setCopyMode,
-} from "./_internal/operations/shell.js";
-import {
-  pasteBuffer,
-  resizePane,
-  selectTarget,
-  setPaneTitle,
-  unzoomTarget,
-  zoomPane,
-  swapPanes,
-} from "./_internal/operations/topology.js";
-import { planKill, planKillPaneIfUnshared, planSplitWindow } from "./_internal/operations/plans.js";
-import { refreshedHandle } from "./_internal/operations/refreshed.js";
-import type { Session } from "./session.js";
 import type { Window } from "./window.js";
-import {
-  installLiveHandlePrototype,
-  liveHandlesEqual,
-  liveHandlesShareTmuxId,
-  originGraphForHandle,
-  requireSameServer,
-  runtimeForHandle,
-  targetOf,
-} from "./_internal/runtime/live_handle.js";
-import type { Server } from "./server.js";
 
 /** What {@link Pane.plan} offers, one entry per mutation it can describe. */
 export interface PanePlans {

@@ -1,6 +1,6 @@
+import type { RuntimeContext } from "../runtime/context.js";
 import { runCommand } from "./command.js";
 import { assertName } from "./names.js";
-import type { RuntimeContext } from "../runtime/context.js";
 
 export async function renameSession(
   runtime: RuntimeContext,

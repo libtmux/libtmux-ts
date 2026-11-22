@@ -1,8 +1,7 @@
 import { describe, expect, test } from "bun:test";
-
-import { TmuxTransportError, VersionTooLowError } from "../../src/errors.js";
 import { parseTmuxVersion } from "../../src/_internal/runtime/tmux_version.js";
 import { guardFeatures } from "../../src/_internal/transport/features.js";
+import { TmuxTransportError, VersionTooLowError } from "../../src/errors.js";
 
 type Command = readonly [string, ...string[]];
 

@@ -1,5 +1,5 @@
-import { FORMAT_FIELD_TOKENS } from "../../src/_generated/format_fields.js";
 import type { FormatFieldName } from "../../src/_generated/format_field_names.js";
+import { FORMAT_FIELD_TOKENS } from "../../src/_generated/format_fields.js";
 import type { RawCompleteFormatRow } from "../../src/_internal/codec/schemas.js";
 
 export type MutableCompleteFormatRow = {

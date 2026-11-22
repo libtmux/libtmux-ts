@@ -1,6 +1,5 @@
-import { closeSync, constants, openSync } from "node:fs";
-
 import { dlopen, FFIType } from "bun:ffi";
+import { closeSync, constants, openSync } from "node:fs";
 
 // Tries the POSIX record lock on the file named by argv[2] without waiting, as
 // a second process, and prints `acquired` or `blocked`.

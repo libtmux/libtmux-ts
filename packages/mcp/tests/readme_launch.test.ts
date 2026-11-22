@@ -1,12 +1,11 @@
-/* eslint-disable no-await-in-loop -- Each launch gets a private tmux directory and finishes before the next starts. */
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { expect, test } from "bun:test";
 import { mkdir, readdir, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
-
+/* eslint-disable no-await-in-loop -- Each launch gets a private tmux directory and finishes before the next starts. */
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { runBoundedCommand } from "../../../scripts/bounded_process/bounded_process.js";
 import { fences, steps, words } from "../../../scripts/readme_blocks.js";
 import {

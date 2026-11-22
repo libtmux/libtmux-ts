@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-
 import { TextFilter } from "./text.js";
 
 /** How much of a pane's output one tail retains. */

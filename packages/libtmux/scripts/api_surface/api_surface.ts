@@ -1,6 +1,5 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-
 import { packageRoot } from "../package_root.js";
 
 /**

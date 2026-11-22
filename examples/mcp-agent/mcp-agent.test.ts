@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test";
-
-import { Server } from "../../packages/libtmux/src/server.js";
 import { runWithCleanup } from "../../packages/libtmux/src/_internal/test/testkit.js";
+import { Server } from "../../packages/libtmux/src/server.js";
 import { runsPrograms, withServer } from "../test-support/with-server.js";
 import {
   buildWorkspace as buildMcpWorkspace,

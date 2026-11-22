@@ -1,16 +1,16 @@
 import { formatValueType } from "../../_generated/field_types.js";
-import type { FormatValueType } from "../../field_types.js";
 import type { FormatFieldName, FormatScope } from "../../_generated/format_field_names.js";
-import type { ListCommand } from "./format_types.js";
 import {
   GENERATED_FORMAT_FIELDS,
   type GeneratedFormatField,
 } from "../../_generated/format_fields.js";
+import type { FormatValueType } from "../../field_types.js";
 import {
   compareTmuxVersions,
   parseTmuxVersion,
   type TmuxVersion,
 } from "../runtime/tmux_version.js";
+import type { ListCommand } from "./format_types.js";
 
 function camelCase(value: string): string {
   return value.replace(/_([a-z0-9])/g, (_match, character: string) => character.toUpperCase());
@@ -402,8 +402,8 @@ function generatedWhereFields(
 
 function renderWhereFieldsSource(registry: readonly FormatFieldRecord[]): string {
   const lines = [
-    'import type { FormatFieldName } from "./format_field_names.js";',
     'import type { FormatValueType } from "../field_types.js";',
+    'import type { FormatFieldName } from "./format_field_names.js";',
     "",
     'export type WhereModel = "client" | "pane" | "session" | "window";',
     "",

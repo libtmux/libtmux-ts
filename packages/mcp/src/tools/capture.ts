@@ -8,7 +8,6 @@
  */
 
 import { z } from "zod";
-
 import { requireActive } from "../abort.js";
 import { requireLiveCursor, type ToolContext } from "../context.js";
 import { captureGridBounded } from "../grid_capture.js";

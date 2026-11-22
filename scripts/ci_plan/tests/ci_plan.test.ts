@@ -2,7 +2,6 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-
 import { PlanError, parseCiMatrix } from "../../ci_matrix/ci_matrix.js";
 import { planCi, unpassedJobs, type PlanInput } from "../ci_plan.js";
 

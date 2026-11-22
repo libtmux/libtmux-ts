@@ -1,5 +1,4 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-
 import { CAPABILITIES_URI } from "./uris.js";
 
 const JSON_MIME = "application/json";

@@ -3,7 +3,6 @@ import { expect, test } from "bun:test";
 import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-
 import { runBoundedCommand } from "../../../scripts/bounded_process/bounded_process.js";
 import { fences, steps, words } from "../../../scripts/readme_blocks.js";
 import { makeTestDirectory, runWithCleanup } from "../../libtmux/src/_internal/test/testkit.js";

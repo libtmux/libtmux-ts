@@ -3,7 +3,6 @@ import { randomUUID } from "node:crypto";
 import { chmod, link, lstat, mkdir, readdir, rename, rmdir, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-
 import { NodeSpawnTransport } from "../transport/node_spawn_transport.js";
 import {
   DAEMON_EXIT_DEADLINE_MS,
@@ -12,7 +11,6 @@ import {
   PIDFD_HELPER_DEADLINE_MS,
   deadlineMs,
 } from "./deadlines.js";
-import { ownedTestDirectories } from "./temp_root.js";
 import {
   assertExactProcessLaunch,
   controllerEnvironment,
@@ -63,6 +61,7 @@ import {
   type OwnerRecord,
   type SocketIdentity,
 } from "./records.js";
+import { ownedTestDirectories } from "./temp_root.js";
 
 export interface ReapReport {
   readonly leaks: readonly string[];

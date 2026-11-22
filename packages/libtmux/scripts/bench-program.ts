@@ -11,7 +11,6 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { release, tmpdir } from "node:os";
 import { join } from "node:path";
-
 import { Server } from "../src/index.js";
 
 const [runsArgument = "10", wideArgument = "16"] = process.argv.slice(2);

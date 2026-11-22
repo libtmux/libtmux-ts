@@ -1,9 +1,6 @@
+import { describe, expect, test } from "bun:test";
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
-
-import { describe, expect, test } from "bun:test";
-import { testControl } from "../support/tmux_release.js";
-
 import {
   prepareRunRoot,
   reapOwnedRunRoot,
@@ -11,12 +8,12 @@ import {
   TestServer,
   makeTestDirectory,
 } from "../../src/_internal/test/testkit.js";
-
 import { safeInteger } from "../../src/common.js";
-import type { Pane } from "../../src/pane.js";
 import { PaneDirection, ResizeAdjustmentDirection, WindowDirection } from "../../src/constants.js";
 import { MultipleMatchesError, VersionTooLowError } from "../../src/errors.js";
+import type { Pane } from "../../src/pane.js";
 import { Server } from "../../src/server.js";
+import { testControl } from "../support/tmux_release.js";
 
 function serverFor(fixture: TestServer): Server {
   return new Server({

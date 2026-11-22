@@ -1,9 +1,7 @@
+import { describe, expect, test } from "bun:test";
 import { rename, rm } from "node:fs/promises";
 import { join } from "node:path";
-
-import { describe, expect, test } from "bun:test";
-import { testControl } from "../support/tmux_release.js";
-
+import { parsePaneId } from "../../src/_internal/runtime/ids.js";
 import {
   prepareRunRoot,
   reapOwnedRunRoot,
@@ -12,10 +10,9 @@ import {
   assertOwnedSocketPath,
   makeTestDirectory,
 } from "../../src/_internal/test/testkit.js";
-import { parsePaneId } from "../../src/_internal/runtime/ids.js";
-
-import { Server } from "../../src/server.js";
 import { TmuxServerRestartedError } from "../../src/errors.js";
+import { Server } from "../../src/server.js";
+import { testControl } from "../support/tmux_release.js";
 
 function serverFor(fixture: TestServer): Server {
   return new Server({

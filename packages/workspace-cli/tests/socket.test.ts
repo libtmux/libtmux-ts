@@ -4,9 +4,9 @@ import { chmod, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { Readable, Writable } from "node:stream";
 import { Server } from "libtmux";
+import { makeTestDirectory, runWithCleanup } from "../../libtmux/src/_internal/test/testkit.js";
 import type { CLIContext } from "../src/app.ts";
 import { connection, serverEnvironment } from "../src/tmux.ts";
-import { makeTestDirectory, runWithCleanup } from "../../libtmux/src/_internal/test/testkit.js";
 
 /**
  * Which socket the commands use when `-S` and `-L` name none: the one

@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-
 import { PlanError, parseCiMatrix } from "../ci_matrix.js";
 
 const repositoryRoot = new URL("../../..", import.meta.url).pathname;

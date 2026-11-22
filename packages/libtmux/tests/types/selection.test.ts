@@ -1,12 +1,10 @@
-import { Client } from "../../src/client.js";
-import type { PaneId, WindowId } from "../../src/common.js";
+import type { CompleteFormatRow } from "../../src/_internal/codec/schemas.js";
 import type { SelectionProjection } from "../../src/_internal/graph/projection_identity.js";
 import type { ModelForKind } from "../../src/_internal/runtime/model_kind.js";
 import { createProjectedSelection } from "../../src/_internal/selection/evaluate.js";
+import { Client } from "../../src/client.js";
+import type { PaneId, WindowId } from "../../src/common.js";
 import { Pane } from "../../src/pane.js";
-import { Server } from "../../src/server.js";
-import { Session } from "../../src/session.js";
-import { Window } from "../../src/window.js";
 import * as selectionModule from "../../src/selection.js";
 import {
   parseLegacyWhere,
@@ -19,7 +17,9 @@ import {
   type WhereOf,
   type WindowWhere,
 } from "../../src/selection.js";
-import type { CompleteFormatRow } from "../../src/_internal/codec/schemas.js";
+import { Server } from "../../src/server.js";
+import { Session } from "../../src/session.js";
+import { Window } from "../../src/window.js";
 import type { Equal, Expect } from "./assert.js";
 
 // The query surface is reachable from the package root, and is the same type

@@ -1,5 +1,4 @@
 import { types as nodeTypes } from "node:util";
-
 import { QueryValidationError } from "../../errors.js";
 
 export interface ParseState {

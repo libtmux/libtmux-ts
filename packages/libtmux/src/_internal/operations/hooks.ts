@@ -1,8 +1,8 @@
-import type { HookScope, SetHookOptions } from "../../types.js";
 import { HOOK_SCOPE_FLAG_MAP } from "../../constants.js";
-import { literalFormat, parseNameValueLine } from "./options.js";
-import { runCommand } from "./command.js";
+import type { HookScope, SetHookOptions } from "../../types.js";
 import type { RuntimeContext } from "../runtime/context.js";
+import { runCommand } from "./command.js";
+import { literalFormat, parseNameValueLine } from "./options.js";
 
 function scopeArguments(scope: HookScope, target: string | null | undefined): readonly string[] {
   const flag = HOOK_SCOPE_FLAG_MAP[scope];

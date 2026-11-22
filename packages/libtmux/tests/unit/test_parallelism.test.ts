@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test";
-
 import { testParallelism } from "../../src/_internal/test/testkit.js";
 
 describe("test runner parallelism", () => {

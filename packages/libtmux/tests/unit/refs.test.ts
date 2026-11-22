@@ -1,7 +1,4 @@
 import { describe, expect, test } from "bun:test";
-
-import type { ConnectionAlias, DaemonEpoch, LogicalRef } from "../../src/common.js";
-import { QueryValidationError } from "../../src/errors.js";
 import {
   createLogicalRef,
   createWinlinkRef,
@@ -11,6 +8,8 @@ import {
   type WinlinkRef,
   winlinkRefsEqual,
 } from "../../src/_internal/graph/refs.js";
+import type { ConnectionAlias, DaemonEpoch, LogicalRef } from "../../src/common.js";
+import { QueryValidationError } from "../../src/errors.js";
 
 function connection(value = "runtime-a"): ConnectionAlias {
   return value as ConnectionAlias;

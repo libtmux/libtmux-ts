@@ -9,8 +9,8 @@ import {
   TestServer,
   withOwnedRunRoot,
 } from "../../libtmux/src/_internal/test/testkit.js";
-import { processRun } from "../src/process.ts";
 import { writeTmuxProxy } from "../../libtmux/tests/support/fake_tmux.js";
+import { processRun } from "../src/process.ts";
 import { runInPty, type PtyResult } from "./pty.ts";
 
 const runtime = process.env.LIBTMUX_WORKSPACE_CLI_RUNTIME ?? process.execPath;

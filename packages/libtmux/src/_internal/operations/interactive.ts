@@ -1,6 +1,6 @@
 import type { ChooseTreeOptions, MenuItem, PopupOptions } from "../../types.js";
-import { runCommand } from "./command.js";
 import type { RuntimeContext } from "../runtime/context.js";
+import { runCommand } from "./command.js";
 
 const target = (id: string | null): readonly string[] => (id == null ? [] : ["-t", id]);
 

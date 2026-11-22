@@ -1,5 +1,4 @@
 import { dirname, join } from "node:path";
-
 import { writeRecording } from "./fake_tmux.js";
 
 /** A tmux that reaches no server, writing its `trace` beside itself; `parseCalls` reads it. */

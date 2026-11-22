@@ -1,13 +1,10 @@
+import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { existsSync, rmSync, writeFileSync } from "node:fs";
 import { mkdir, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-
-import { afterEach, describe, expect, spyOn, test } from "bun:test";
-
 import { TmuxTransportError, type Pane, type ServerSnapshot } from "libtmux";
-
 import { isPaneInputConflict, reserveFramedCommand, runFramedCommand } from "../src/command.js";
 import {
   frame,

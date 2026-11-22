@@ -1,9 +1,7 @@
+import { expect, test } from "bun:test";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-
-import { expect, test } from "bun:test";
-
 import { makeTestDirectory } from "../../../packages/libtmux/src/_internal/test/testkit.js";
 
 const gate = fileURLToPath(new URL("../check-source-maps.ts", import.meta.url));

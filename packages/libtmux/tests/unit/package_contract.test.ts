@@ -1,11 +1,8 @@
+import { describe, expect, test } from "bun:test";
 import { readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
-
 import type { BunConnectionOptions } from "node:tls";
-
-import { describe, expect, test } from "bun:test";
-
+import { fileURLToPath } from "node:url";
 import { makeTestDirectory } from "../../src/_internal/test/testkit.js";
 
 interface PackageManifest {

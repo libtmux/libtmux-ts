@@ -6,11 +6,9 @@
  * four for anything built in steps.
  */
 
-import { z } from "zod";
-
 import type { ServerSnapshot } from "libtmux";
 import { PaneDirection } from "libtmux/constants";
-
+import { z } from "zod";
 import type { CallerIdentity } from "../caller.js";
 import type { ToolContext } from "../context.js";
 import { MAX_INLINE_REQUEST_BYTES } from "../policy.js";

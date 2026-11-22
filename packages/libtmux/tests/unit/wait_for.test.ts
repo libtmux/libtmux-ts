@@ -1,5 +1,4 @@
 import { expect, test } from "bun:test";
-
 import { createEventStream } from "../../src/_internal/control/stream.js";
 import { waitForSnapshot } from "../../src/_internal/control/wait_for.js";
 import { WaitTimeoutError } from "../../src/errors.js";

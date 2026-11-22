@@ -1,3 +1,4 @@
+import { describe, expect, test } from "bun:test";
 import { spawn } from "node:child_process";
 import {
   link,
@@ -12,9 +13,15 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { basename, join } from "node:path";
-
-import { describe, expect, test } from "bun:test";
-
+import {
+  prepareRunRoot,
+  readFixtureRecord,
+  reapOwnedRunRoot,
+  reserveFixture,
+  readDaemonIdentity,
+  TestServer,
+  makeTestDirectory,
+} from "../../src/_internal/test/testkit.js";
 import { processExists, waitForPathAbsent, waitForProcessExit } from "../support/converge.js";
 import {
   beginSyntheticLaunch,
@@ -31,16 +38,6 @@ import {
   killExactTmux,
   terminateCapturedTmux,
 } from "../support/tmux_cleanup.js";
-
-import {
-  prepareRunRoot,
-  readFixtureRecord,
-  reapOwnedRunRoot,
-  reserveFixture,
-  readDaemonIdentity,
-  TestServer,
-  makeTestDirectory,
-} from "../../src/_internal/test/testkit.js";
 
 describe("fixture escrow recovery", () => {
   for (const boundary of [
