@@ -304,17 +304,16 @@ if (!Object.hasOwn(typescriptDocument.on ?? {}, "workflow_call")) {
 }
 const typescriptJobs = typescriptDocument.jobs ?? {};
 
-// A release proves every tmux lane. The publish workflow asks for the full
-// scope by name, and a call that names none defaults to it, so neither can
-// inherit the push-and-pull-request edges.
+// Publication runs the boundary tmux lanes rather than blocking on every
+// historical release; workflow_dispatch with scope=full runs the whole table.
 const callScope = (
   typescriptDocument.on?.workflow_call as
     | { readonly inputs?: { readonly scope?: { readonly default?: unknown } } }
     | undefined
 )?.inputs?.scope?.default;
-if (callScope !== "full" || verifyJob?.with?.scope !== "full") {
+if (callScope !== "edges" || verifyJob?.with?.scope !== "edges") {
   failures.push(
-    ".github/workflows/publish.yml: publication must call the reusable workflow with scope full, which is also its default",
+    ".github/workflows/publish.yml: publication must call the reusable workflow with scope edges, which is also its default",
   );
 }
 

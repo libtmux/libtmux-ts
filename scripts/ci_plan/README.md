@@ -10,10 +10,10 @@ The `plan` job of `.github/workflows/typescript.yml` runs it:
 $ bun scripts/ci_plan/plan-ci.ts
 ```
 
-A push or pull request runs the first and last supported tmux release. A call
-from the publish workflow, and a dispatch with `scope=full`, run the whole table
-with the preview and development lanes; `scope=custom` runs the refs a dispatch
-names. The plan reads `.github/ci-matrix.txt` through
+Pushes, pull requests, and the publish workflow run the first and last supported
+tmux release. A dispatch (or explicit workflow call) with `scope=full` runs the
+whole table with the preview and development lanes; `scope=custom` runs the refs
+a dispatch names. The plan reads `.github/ci-matrix.txt` through
 [`ci_matrix`](../ci_matrix/README.md) and writes `$GITHUB_OUTPUT`. Inputs arrive
 through the environment, never inline in a workflow script.
 

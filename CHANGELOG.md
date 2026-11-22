@@ -52,6 +52,10 @@ changelog has the documentation, CI and release tooling entries up to 0.1.2.
 - Development, release workflows, and the tmux CI lanes run Bun 1.4.5, and the
   `Gates` matrix runs Bun 1.3.14 and 1.4.5 instead of keeping intermediate
   `1.4.x` legs. The published `engines.bun` floor stays `>=1.3.14`.
+- Tag releases (`publish.yml`) verify the oldest and newest supported tmux
+  releases (`scope: edges`) instead of running every historical release,
+  preview branch, and `master` before publishing; `workflow_dispatch` with
+  `scope=full` continues to run the whole table on demand. (#239)
 
 ## 0.1.3 (2026-11-22)
 
