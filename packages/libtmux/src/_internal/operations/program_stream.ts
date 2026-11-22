@@ -76,7 +76,7 @@ export class MarkFilter {
   }
 
   push(text: string): string {
-    let pending = this.#held + text;
+    const pending = this.#held + text;
     this.#held = "";
     if (!this.#seen) {
       for (const mark of this.#marks) {

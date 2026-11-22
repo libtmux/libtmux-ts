@@ -66,13 +66,13 @@ import {
 } from "./_internal/operations/topology.js";
 import { planKill, planKillPaneIfUnshared, planSplitWindow } from "./_internal/operations/plans.js";
 import { refreshedHandle } from "./_internal/operations/refreshed.js";
-import { originGraphForHandle } from "./_internal/runtime/live_handle.js";
 import type { Session } from "./session.js";
 import type { Window } from "./window.js";
 import {
   installLiveHandlePrototype,
   liveHandlesEqual,
   liveHandlesShareTmuxId,
+  originGraphForHandle,
   requireSameServer,
   runtimeForHandle,
   targetOf,

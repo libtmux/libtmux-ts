@@ -597,11 +597,10 @@ describe("logical reference binding", () => {
   });
 
   test("rejects an epoch invalidated while capability binding is in flight", async () => {
-    let runtime: RuntimeContext;
     const transport = recordingTransport(() => {
       invalidateRuntimeEpoch(runtime);
     });
-    runtime = createRuntimeContext({
+    const runtime: RuntimeContext = createRuntimeContext({
       connection: new TmuxConnection({ executable: "tmux", socketName: "post-bind" }),
       connectionAlias: alias("post-bind"),
       daemonEpoch: epoch(3),

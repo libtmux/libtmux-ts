@@ -489,9 +489,9 @@ export class ControlConnection {
           return;
         }
         for (const sink of this.#sinks) sink.push(position.event);
-        return;
+        break;
       default:
-        return;
+        break;
     }
   }
 
@@ -938,17 +938,16 @@ export class ControlConnection {
   #waitForRetirement(child: ControlChild): Promise<void> {
     if (child.exitCode !== null || child.signalCode !== null) return Promise.resolve();
     return new Promise((resolve) => {
-      let timer: ReturnType<typeof setTimeout> | undefined;
+      // The lifecycle escalates after one grace period. A second bounds close
+      // even when descendants keep inherited pipes open after SIGKILL.
+      const timer = setTimeout(resolve, TERMINATION_GRACE_MS * 2);
+      timer.unref?.();
       const settled = (): void => {
-        if (timer !== undefined) clearTimeout(timer);
+        clearTimeout(timer);
         resolve();
       };
       child.once("close", settled);
       child.once("error", settled);
-      // The lifecycle escalates after one grace period. A second bounds close
-      // even when descendants keep inherited pipes open after SIGKILL.
-      timer = setTimeout(resolve, TERMINATION_GRACE_MS * 2);
-      timer.unref?.();
     });
   }
 

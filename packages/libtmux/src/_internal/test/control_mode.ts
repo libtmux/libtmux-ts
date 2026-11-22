@@ -30,18 +30,17 @@ function waitForClose(
   if (isClosed()) return Promise.resolve(true);
   return new Promise<boolean>((resolve) => {
     let settled = false;
-    let timer: NodeJS.Timeout | undefined;
     const finish = (closed: boolean): void => {
       if (settled) return;
       settled = true;
-      if (timer !== undefined) clearTimeout(timer);
+      clearTimeout(timer);
       child.removeListener("close", onClose);
       resolve(closed);
     };
     const onClose = (): void => finish(true);
-    child.once("close", onClose);
-    timer = setTimeout(() => finish(false), milliseconds);
+    const timer = setTimeout(() => finish(false), milliseconds);
     timer.unref();
+    child.once("close", onClose);
     if (isClosed()) finish(true);
   });
 }

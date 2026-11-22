@@ -1,7 +1,6 @@
 import { constants as fsConstants } from "node:fs";
 import { access, lstat, readFile, realpath } from "node:fs/promises";
-import { delimiter } from "node:path";
-import { isAbsolute, join, resolve } from "node:path";
+import { delimiter, isAbsolute, join, resolve } from "node:path";
 
 export interface ProcessIdentity {
   readonly pid: number;

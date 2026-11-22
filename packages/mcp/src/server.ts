@@ -188,7 +188,7 @@ export function createTmuxMcpServer(
 export function serverFromEnvironment(
   environment: Readonly<Record<string, string | undefined>> = process.env,
 ): Server {
-  if (Object.prototype.hasOwnProperty.call(environment, "LIBTMUX_SOCKET_NAME")) {
+  if (Object.hasOwn(environment, "LIBTMUX_SOCKET_NAME")) {
     throw new TypeError("LIBTMUX_SOCKET_NAME is retired; use LIBTMUX_SOCKET");
   }
   const tmuxBin = environment.LIBTMUX_TMUX_BIN;

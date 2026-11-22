@@ -1,7 +1,3 @@
-function camelCase(value: string): string {
-  return value.replace(/_([a-z0-9])/g, (_match, character: string) => character.toUpperCase());
-}
-
 import { formatValueType } from "../../_generated/field_types.js";
 import type { FormatValueType } from "../../field_types.js";
 import type { FormatFieldName, FormatScope } from "../../_generated/format_field_names.js";
@@ -15,6 +11,10 @@ import {
   parseTmuxVersion,
   type TmuxVersion,
 } from "../runtime/tmux_version.js";
+
+function camelCase(value: string): string {
+  return value.replace(/_([a-z0-9])/g, (_match, character: string) => character.toUpperCase());
+}
 
 type SnapshotDestination =
   | "client"

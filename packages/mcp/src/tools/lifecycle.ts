@@ -14,7 +14,7 @@ import { PaneDirection } from "libtmux/constants";
 import type { CallerIdentity } from "../caller.js";
 import type { ToolContext } from "../context.js";
 import { MAX_INLINE_REQUEST_BYTES } from "../policy.js";
-import { type ToolRegistrar } from "../register.js";
+import type { ToolRegistrar } from "../register.js";
 import { fail, ok } from "../results.js";
 import {
   fitsInlineRequest,

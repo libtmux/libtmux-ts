@@ -1167,7 +1167,9 @@ async function withSwapLock<T>(action: (lock: SwapLockHandle) => Promise<T>): Pr
     await lock.release();
   } catch (error) {
     if (failure !== undefined) {
-      throw new AggregateError([failure, error], "transaction and swap lock release both failed");
+      throw new AggregateError([failure, error], "transaction and swap lock release both failed", {
+        cause: error,
+      });
     }
     throw error;
   }
@@ -1312,6 +1314,7 @@ export async function writeAtomic(path: string, data: string, mode?: number): Pr
         throw new AggregateError(
           [error, ...rollbackFailures],
           "atomic write failed and rollback was incomplete",
+          { cause: error },
         );
       }
       throw error;
@@ -2853,6 +2856,7 @@ async function applyNativeOperations(
       throw new AggregateError(
         [error, ...rollbackFailures],
         "native swap failed and exact rollback was incomplete",
+        { cause: error },
       );
     }
     throw error;

@@ -13,7 +13,7 @@ import { requireActive } from "../abort.js";
 import { requireLiveCursor, type ToolContext } from "../context.js";
 import { captureGridBounded } from "../grid_capture.js";
 import { effectiveResultLines, MAX_RESULT_BYTES } from "../policy.js";
-import { type ToolRegistrar } from "../register.js";
+import type { ToolRegistrar } from "../register.js";
 import { boundText, fail, ok, renderBoundedText, tailBytes, tailLines } from "../results.js";
 import { paneCursorSchema, paneIdSchema } from "../schemas.js";
 import { isFailure, requirePane } from "../target_resolution.js";

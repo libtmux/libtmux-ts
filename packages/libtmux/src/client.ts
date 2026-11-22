@@ -3,14 +3,14 @@ import type { AliasedFields, ClientAliasMap, RowWithIdentities } from "./field_t
 import { paneOfPlacement, sessionOf, windowOfPlacement } from "./_internal/operations/relations.js";
 import { refreshedHandle } from "./_internal/operations/refreshed.js";
 import { detachClient, switchClient } from "./_internal/operations/shell.js";
-import { originGraphForHandle } from "./_internal/runtime/live_handle.js";
 import type { Pane } from "./pane.js";
 import type { Session } from "./session.js";
 import type { Window } from "./window.js";
 import {
   installLiveHandlePrototype,
-  requireSameServer,
   liveHandlesEqual,
+  originGraphForHandle,
+  requireSameServer,
   runtimeForHandle,
 } from "./_internal/runtime/live_handle.js";
 import type { Server } from "./server.js";

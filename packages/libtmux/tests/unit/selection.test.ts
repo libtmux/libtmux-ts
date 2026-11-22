@@ -98,7 +98,9 @@ describe("Selection collection contract", () => {
 
     expect(Object.keys(internalModule).sort()).toEqual(["createProjectedSelection"]);
     expect(Reflect.get(selectionModule, "Selection")).toBeUndefined();
-    const runtimeConstructor = Reflect.get(selection, "constructor") as Function;
+    const runtimeConstructor = Reflect.get(selection, "constructor") as (
+      ...args: never[]
+    ) => unknown;
     expect(runtimeConstructor).not.toBe(selectionModule);
     expect(runtimeConstructor.name).not.toBe("Selection");
     const filtered = selection.filter(() => true);

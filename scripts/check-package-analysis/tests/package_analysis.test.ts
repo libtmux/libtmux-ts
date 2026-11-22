@@ -115,6 +115,7 @@ if (process.argv.some((argument) => argument.includes("publint"))) {
         const [exitCode, stdout, stderr] = await completion;
         throw new Error(
           `${(error as Error).message}; checker exited ${String(exitCode)}\n${stdout}${stderr}`,
+          { cause: error },
         );
       }
       const startedAt = performance.now();

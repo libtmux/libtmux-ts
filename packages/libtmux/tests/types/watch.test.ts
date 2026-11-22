@@ -93,7 +93,7 @@ export async function narrowsOnKind(): Promise<string> {
 
 /** Every member of the union is handled above, so the switch is exhaustive. */
 export function exhaustive(event: TmuxEvent): never | void {
-  if (event.kind === "output") return;
+  void event;
 }
 
 declare const stream: TmuxEventStream;

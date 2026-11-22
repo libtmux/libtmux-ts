@@ -133,34 +133,10 @@ async function collectChild(
   child.stderr.on("data", (chunk: Buffer) => stderr.push(chunk));
   return new Promise((resolveChild, reject) => {
     let settled = false;
-    let termTimer: NodeJS.Timeout | undefined;
-    let killTimer: NodeJS.Timeout | undefined;
-    let closeTimer: NodeJS.Timeout | undefined;
-    const finish = (result: CollectedChild): void => {
-      if (settled) return;
-      settled = true;
-      if (termTimer !== undefined) clearTimeout(termTimer);
-      if (killTimer !== undefined) clearTimeout(killTimer);
-      if (closeTimer !== undefined) clearTimeout(closeTimer);
-      resolveChild(result);
-    };
-    child.once("error", (error) => {
-      if (settled) return;
-      settled = true;
-      reject(error);
-    });
-    child.once("close", (code, signal) =>
-      finish({
-        code,
-        signal,
-        stderr: Buffer.concat(stderr),
-        stdout: Buffer.concat(stdout),
-      }),
-    );
     const bound = deadlineMs(PIDFD_HELPER_DEADLINE_MS);
-    termTimer = setTimeout(() => child.kill("SIGTERM"), bound);
-    killTimer = setTimeout(() => child.kill("SIGKILL"), bound + 250);
-    closeTimer = setTimeout(() => {
+    const termTimer = setTimeout(() => child.kill("SIGTERM"), bound);
+    const killTimer = setTimeout(() => child.kill("SIGKILL"), bound + 250);
+    const closeTimer = setTimeout(() => {
       child.stdout?.destroy();
       child.stderr?.destroy();
       child.unref();
@@ -174,6 +150,30 @@ async function collectChild(
         stdout: Buffer.concat(stdout),
       });
     }, bound + 500);
+    const finish = (result: CollectedChild): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(termTimer);
+      clearTimeout(killTimer);
+      clearTimeout(closeTimer);
+      resolveChild(result);
+    };
+    child.once("error", (error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(termTimer);
+      clearTimeout(killTimer);
+      clearTimeout(closeTimer);
+      reject(error);
+    });
+    child.once("close", (code, signal) =>
+      finish({
+        code,
+        signal,
+        stderr: Buffer.concat(stderr),
+        stdout: Buffer.concat(stdout),
+      }),
+    );
   });
 }
 

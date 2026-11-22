@@ -1,6 +1,6 @@
 import { TmuxTransportError, VersionTooLowError } from "../../errors.js";
 import type { TmuxCommand } from "../../engine.js";
-import { type TmuxVersion } from "../runtime/tmux_version.js";
+import type { TmuxVersion } from "../runtime/tmux_version.js";
 import {
   capabilitySince,
   hasCapability,

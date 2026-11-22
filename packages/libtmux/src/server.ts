@@ -1,7 +1,15 @@
-import type { CommandOptions } from "./common.js";
+import type {
+  CommandOptions,
+  ConnectionAlias,
+  DaemonEpoch,
+  TmuxInvocationObserver,
+} from "./common.js";
 import { runPipeline } from "./_internal/operations/pipeline.js";
-import type { TmuxVersion } from "./types.js";
-import { parseTmuxVersion, tmuxVersionAtLeast } from "./_internal/runtime/tmux_version.js";
+import {
+  parseTmuxVersion,
+  releaseAtLeast,
+  tmuxVersionAtLeast,
+} from "./_internal/runtime/tmux_version.js";
 import {
   getEnvironment,
   removeEnvironment,
@@ -9,11 +17,11 @@ import {
   showEnvironment,
   unsetEnvironment,
 } from "./_internal/operations/environment.js";
-import type { EnvironmentValue, SetEnvironmentOptions } from "./types.js";
 import type {
   CmdOptions,
   ConnectOptions,
   ConnectedServer,
+  EnvironmentValue,
   IfShellOptions,
   NewSessionOptions,
   PlannedOperation,
@@ -23,10 +31,12 @@ import type {
   ServerSnapshot,
   SnapshotOptions,
   SaveBufferOptions,
+  SetEnvironmentOptions,
   SetHookOptions,
   SetOptionOptions,
   SpawnOptions,
   TmuxEventStream,
+  TmuxVersion,
   WatchOptions,
 } from "./types.js";
 import { randomUUID } from "node:crypto";
@@ -35,7 +45,6 @@ import { runRawCommand } from "./_internal/operations/raw.js";
 import { acquireServerGraph } from "./_internal/operations/acquire.js";
 
 import { Client } from "./client.js";
-import type { ConnectionAlias, DaemonEpoch, TmuxInvocationObserver } from "./common.js";
 import type { DaemonGuard, TmuxEngine } from "./engine.js";
 import { LibTmuxError, VersionTooLowError } from "./errors.js";
 import { Pane } from "./pane.js";
@@ -92,7 +101,6 @@ import {
 } from "./_internal/transport/bounded_transport.js";
 import { NodeSpawnTransport } from "./_internal/transport/node_spawn_transport.js";
 import { connectionArguments } from "./_internal/operations/request.js";
-import { releaseAtLeast } from "./_internal/runtime/tmux_version.js";
 import { capabilitySince } from "./_internal/support/capabilities.js";
 import { checkDaemonVersion, VersionCheckTransport } from "./_internal/support/versions.js";
 import type { CommandTransport } from "./_internal/transport/types.js";

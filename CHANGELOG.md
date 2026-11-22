@@ -48,6 +48,12 @@ changelog has the documentation, CI and release tooling entries up to 0.1.2.
 
 ### Development
 
+- Type-aware and AST lint gates cover root `scripts/**` and `libtmux` test and
+  tooling suites through a root solution `tsconfig.json`, restore the `oxc` and
+  `import` plugins in `.oxlintrc.json`, enforce `return-await`, exhaustive
+  switches, error-cause preservation, and side-effect-free type imports, and
+  sort imports through `.oxfmtrc.json` while excluding generated API reference
+  docs and changelogs from formatting rewrites.
 - No test, script or CI step in the core package compares this port with Python
   libtmux or starts a Python interpreter. The `where_regex` corpus, the
   differential suite that cloned Python libtmux on every tmux lane, the parity

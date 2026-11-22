@@ -297,7 +297,7 @@ export async function validateGenerationAuthority(
     beforeMetadata = await lstat(record.socketPath);
   } catch (error) {
     if (isErrno(error, "ENOENT"))
-      throw new Error("fixture socket is missing during generation validation");
+      throw new Error("fixture socket is missing during generation validation", { cause: error });
     throw error;
   }
   const before = socketIdentityFromMetadata(beforeMetadata);

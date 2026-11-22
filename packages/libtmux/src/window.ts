@@ -1,12 +1,14 @@
-import type { CmdOptions, PlannedOperation } from "./types.js";
-import { runRawCommand } from "./_internal/operations/raw.js";
-import type { SetHookOptions, SetOptionOptions } from "./types.js";
 import type {
+  CmdOptions,
   MoveWindowOptions,
+  PlannedOperation,
   ResizeWindowOptions,
   RespawnOptions,
+  SetHookOptions,
+  SetOptionOptions,
   SplitOptions,
 } from "./types.js";
+import { runRawCommand } from "./_internal/operations/raw.js";
 import { WINDOW_ALIASES } from "./_generated/field_aliases.js";
 import type { AliasedFields, RowWithIdentities, WindowAliasMap } from "./field_types.js";
 import {
@@ -44,17 +46,17 @@ import {
 import type { CommandOptions } from "./common.js";
 import { respawnWindow } from "./_internal/operations/shell.js";
 import { refreshedHandle } from "./_internal/operations/refreshed.js";
-import { originGraphForHandle } from "./_internal/runtime/live_handle.js";
 import type { Pane } from "./pane.js";
 import type { Selection } from "./selection.js";
 import type { Session } from "./session.js";
 import {
   installLiveHandlePrototype,
   liveHandlesEqual,
-  requireSameServer,
-  targetOf,
   liveHandlesShareTmuxId,
+  originGraphForHandle,
+  requireSameServer,
   runtimeForHandle,
+  targetOf,
 } from "./_internal/runtime/live_handle.js";
 import type { Server } from "./server.js";
 

@@ -6,12 +6,17 @@ import {
   showEnvironment,
   unsetEnvironment,
 } from "./_internal/operations/environment.js";
-import type { EnvironmentValue, PlannedOperation, SetEnvironmentOptions } from "./types.js";
-import type { CmdOptions } from "./types.js";
+import type {
+  CmdOptions,
+  EnvironmentValue,
+  NewWindowOptions,
+  PlannedOperation,
+  SetEnvironmentOptions,
+  SetHookOptions,
+  SetOptionOptions,
+  WindowTarget,
+} from "./types.js";
 import { runRawCommand } from "./_internal/operations/raw.js";
-import type { SetHookOptions } from "./types.js";
-import type { SetOptionOptions } from "./types.js";
-import type { NewWindowOptions, WindowTarget } from "./types.js";
 import { SESSION_ALIASES } from "./_generated/field_aliases.js";
 import type { AliasedFields, RowWithIdentities, SessionAliasMap } from "./field_types.js";
 import { readTmuxEnvironment } from "./_internal/operations/env.js";
@@ -29,7 +34,6 @@ import {
 } from "./_internal/operations/options.js";
 import { renameSession, selectWindowIn } from "./_internal/operations/session_nav.js";
 import { refreshedHandle } from "./_internal/operations/refreshed.js";
-import { originGraphForHandle } from "./_internal/runtime/live_handle.js";
 import type { Pane } from "./pane.js";
 import type { Selection } from "./selection.js";
 import type { Window } from "./window.js";
@@ -37,6 +41,7 @@ import {
   installLiveHandlePrototype,
   liveHandlesEqual,
   liveHandlesShareTmuxId,
+  originGraphForHandle,
   runtimeForHandle,
   windowTargetOf,
 } from "./_internal/runtime/live_handle.js";

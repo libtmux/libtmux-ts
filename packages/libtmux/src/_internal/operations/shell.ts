@@ -1,5 +1,4 @@
-import type { JoinOptions } from "../../types.js";
-import type { IfShellOptions, RespawnOptions, RunShellOptions } from "../../types.js";
+import type { IfShellOptions, JoinOptions, RespawnOptions, RunShellOptions } from "../../types.js";
 import { PANE_DIRECTION_FLAG_MAP } from "../../constants.js";
 import { TmuxCommandError, VersionTooLowError } from "../../errors.js";
 import { workaroundApplies, workaroundFixedIn } from "../support/capabilities.js";

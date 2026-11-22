@@ -174,7 +174,7 @@ function applyEffect(state: PaneEchoState, effect: KeyEffect, nowMs: number): vo
     case "submit":
     case "kill":
       endLine(state, nowMs);
-      return;
+      break;
     case "erase":
       // The pre-erase value is the longest this edit has reached; capture it
       // once, before shrinking, so a shell's redraw-by-`\r` echo of it stays
@@ -184,21 +184,22 @@ function applyEffect(state: PaneEchoState, effect: KeyEffect, nowMs: number): vo
         state.pendingCaptured = true;
       }
       state.pending = dropLastCodePoint(state.pending);
-      return;
+      break;
     case "noop":
-      return;
+      break;
     case "unknown":
       // Fails open: nothing about this line is carried into `recent`, so a
       // wait stops discounting it rather than keeping a capture that may no
       // longer describe what is really on the pane's line.
       state.pending = "";
       state.pendingCaptured = false;
-      return;
+      break;
     case "text":
       state.pending += effect.text;
       // A longer value than anything captured so far; the next erase (if any)
       // must capture it again rather than reuse a shorter, stale capture.
       state.pendingCaptured = false;
+      break;
   }
 }
 

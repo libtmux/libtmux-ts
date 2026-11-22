@@ -1,6 +1,5 @@
 import * as clientModule from "../../src/client.js";
 import type { CompleteFormatRow } from "../../src/_internal/codec/schemas.js";
-import type { TmuxInvocationObserver } from "../../src/common.js";
 import type { TmuxEngine } from "../../src/engine.js";
 import type { RowWithIdentities } from "../../src/field_types.js";
 import type {
@@ -51,6 +50,7 @@ import type {
   PaneId,
   SafeInteger,
   SessionId,
+  TmuxInvocationObserver,
   WindowId,
 } from "../../src/common.js";
 import { Client } from "../../src/client.js";

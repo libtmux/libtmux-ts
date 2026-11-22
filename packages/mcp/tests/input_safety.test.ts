@@ -102,8 +102,6 @@ function linkedSnapshot(
   second: Readonly<Record<string, unknown>> = {},
   reverse = false,
 ): ServerSnapshot {
-  let firstPane: unknown;
-  let secondPane: unknown;
   const firstWindow = {
     active: true,
     id: "@1",
@@ -125,12 +123,12 @@ function linkedSnapshot(
     inputOff: false,
     synchronized: false,
   };
-  firstPane = {
+  const firstPane: unknown = {
     ...state,
     format: { session_id: "$1", window_id: "@1", window_index: "0" },
     window: firstWindow,
   };
-  secondPane = {
+  const secondPane: unknown = {
     ...state,
     ...second,
     format: {

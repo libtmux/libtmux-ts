@@ -11,7 +11,7 @@ import { z } from "zod";
 
 import type { ToolContext } from "../context.js";
 import { effectiveResultLines } from "../policy.js";
-import { type ToolRegistrar } from "../register.js";
+import type { ToolRegistrar } from "../register.js";
 import { ok } from "../results.js";
 import { paneIdSchema, requestText, windowIdSchema } from "../schemas.js";
 import {

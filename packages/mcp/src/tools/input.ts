@@ -43,7 +43,7 @@ import {
   effectiveWaitMs,
   MAX_RESULT_BYTES,
 } from "../policy.js";
-import { type ToolRegistrar } from "../register.js";
+import type { ToolRegistrar } from "../register.js";
 import { boundText, fail, ok, renderBoundedText } from "../results.js";
 import {
   fitsInlineRequest,

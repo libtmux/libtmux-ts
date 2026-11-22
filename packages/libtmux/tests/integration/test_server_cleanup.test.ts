@@ -118,8 +118,7 @@ describe("TestServer cleanup", () => {
     await withTemporaryRunRoot("replacement-dispose", async (runRoot) => {
       let bootstrapRequests = 0;
       let disposal: Promise<void> | undefined;
-      let server: TestServer;
-      server = await TestServer.create({
+      const server: TestServer = await TestServer.create({
         requestObserver: (request) => {
           if (request.purpose !== "bootstrap") return;
           bootstrapRequests += 1;

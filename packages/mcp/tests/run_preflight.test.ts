@@ -295,8 +295,7 @@ test("run_shell_command excludes another writer after reserving", async () => {
   ];
   let snapshotIndex = 0;
   let otherReservation: ReturnType<typeof reserveFramedCommand> | undefined;
-  let context!: ToolContext;
-  context = {
+  const context = {
     hub: {
       closed: false,
       tail: async () => {

@@ -21,8 +21,7 @@ import {
   planSplitWindow,
 } from "../../src/_internal/operations/plans.js";
 import { splitSize } from "../../src/types.js";
-import { PANE_DIRECTION_FLAG_MAP, PaneDirection } from "../../src/constants.js";
-import { WindowDirection } from "../../src/constants.js";
+import { PANE_DIRECTION_FLAG_MAP, PaneDirection, WindowDirection } from "../../src/constants.js";
 import { flattenInvocation } from "../../src/_internal/transport/invocation.js";
 import { answerVersionProbe, probeMarker } from "../support/version_probe.js";
 
