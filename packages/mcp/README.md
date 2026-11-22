@@ -31,7 +31,6 @@ Part of
 Built on
 [`libtmux`](https://github.com/libtmux/libtmux-ts/tree/master/packages/libtmux).
 
-> [!WARNING]
 > Releases are numbered `0.1.N`. The API is not settled: any release may change
 > or remove exported identifiers. Pin an exact version, and read the
 > [changelog](CHANGELOG.md) before you upgrade.

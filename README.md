@@ -28,9 +28,6 @@
 
 </div>
 
----
-
-> [!WARNING]
 > Releases are numbered `0.1.N`. The API is not settled: any release may change
 > or remove exported identifiers. Pin an exact version, and read the changelog
 > of each package you use before you upgrade. The [root changelog](CHANGELOG.md)
@@ -293,8 +290,6 @@ The four packages share one release version.
 | **[@libtmux/workspace](packages/workspace)**         | Declarative workspace builder, tmuxp-shaped config.                            | [![npm](https://img.shields.io/npm/v/@libtmux/workspace?label=%40libtmux%2Fworkspace)](https://www.npmjs.com/package/@libtmux/workspace)             |
 | **[@libtmux/workspace-cli](packages/workspace-cli)** | The native [`tmux-workspace`][cli-reference] command for Node and Bun.         | [![npm](https://img.shields.io/npm/v/@libtmux/workspace-cli?label=%40libtmux%2Fworkspace-cli)](https://www.npmjs.com/package/@libtmux/workspace-cli) |
 | [examples](examples)                                 | Runnable examples, executed as tests.                                          | —                                                                                                                                                    |
-
----
 
 ### [libtmux](https://github.com/libtmux/libtmux-ts/tree/master/packages/libtmux): the library
 

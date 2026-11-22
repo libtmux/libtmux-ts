@@ -44,7 +44,6 @@ TypeScript 5.7 or newer.
 Runs on Linux, including WSL. macOS is supported on a best-effort basis,
 and CI coverage for it is highly limited.
 
-> [!WARNING]
 > Releases are numbered `0.1.N`. The API is not settled: any release may change
 > or remove exported identifiers. Pin an exact version, and read the
 > [changelog](CHANGELOG.md) before you upgrade.
