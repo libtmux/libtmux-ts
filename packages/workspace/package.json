@@ -10,7 +10,7 @@
     "tmuxp",
     "workspace"
   ],
-  "homepage": "https://github.com/libtmux/libtmux-ts/tree/master/packages/workspace#readme",
+  "homepage": "https://libtmux.org/en/ts/latest/workspace/",
   "bugs": {
     "url": "https://github.com/libtmux/libtmux-ts/issues"
   },
