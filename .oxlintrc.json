@@ -12,7 +12,13 @@
     "denyWarnings": true,
     "reportUnusedDisableDirectives": "error"
   },
-  "rules": {
-    "typescript/await-thenable": "off"
-  }
+  "rules": {},
+  "overrides": [
+    {
+      "files": ["**/*.test.ts"],
+      "rules": {
+        "typescript/await-thenable": "off"
+      }
+    }
+  ]
 }

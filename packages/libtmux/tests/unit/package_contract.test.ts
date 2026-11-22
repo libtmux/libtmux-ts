@@ -382,19 +382,40 @@ describe("package contract", () => {
     expect(lockfile).not.toContain('"bun-types/@types/node"');
   });
 
-  test("turns off only the lint rule that is broken for this package's idiom", async () => {
+  test("turns off only the lint rule that @types/bun breaks in tests", async () => {
     const config = JSON.parse(
       await readFile(new URL("../../../../.oxlintrc.json", import.meta.url), "utf8"),
-    ) as { rules?: Record<string, string> };
+    ) as {
+      overrides?: Array<{ files?: string[]; rules?: Record<string, unknown> }>;
+      rules?: Record<string, unknown>;
+    };
+    const rootTsconfig = JSON.parse(
+      await readFile(new URL("../../../../tsconfig.json", import.meta.url), "utf8"),
+    ) as { files?: string[]; references?: Array<{ path: string }> };
+    const offEntries = (rules: Record<string, unknown> = {}) =>
+      Object.fromEntries(
+        Object.entries(rules).filter(
+          ([, value]) => value === "off" || (Array.isArray(value) && value[0] === "off"),
+        ),
+      );
 
-    // typescript/await-thenable reports every `await using`, whatever the type
-    // implements — a plain class with a real Symbol.asyncDispose no less than
-    // an interface — so it is noise against this package's central idiom.
-    // TypeScript rejects a genuinely non-disposable `await using` on its own,
-    // and promise/no-floating-promises still catches an unawaited promise.
-    //
-    // A second entry here needs its own reason.
-    expect(config.rules).toEqual({ "typescript/await-thenable": "off" });
+    // Root references keep scripts/** and libtmux tests/** out of tsgolint's
+    // unconfigured fallback project so ESNext.Disposable and Bun types resolve.
+    expect(rootTsconfig).toEqual({
+      files: [],
+      references: [
+        { path: "./tsconfig.tooling.json" },
+        { path: "./packages/libtmux/tsconfig.tooling.json" },
+        { path: "./packages/libtmux/tests/types/tsconfig.json" },
+      ],
+    });
+    expect(offEntries(config.rules)).toEqual({});
+    // @types/bun types `expect(...).rejects.toThrow(...)` as `void` rather than `Promise<void>`.
+    expect(
+      (config.overrides ?? [])
+        .map((override) => ({ files: override.files, off: offEntries(override.rules) }))
+        .filter((override) => Object.keys(override.off).length > 0),
+    ).toEqual([{ files: ["**/*.test.ts"], off: { "typescript/await-thenable": "off" } }]);
   });
 
   /**

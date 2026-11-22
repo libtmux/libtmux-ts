@@ -1118,7 +1118,7 @@ async function acquireSwapLock(): Promise<SwapLockHandle> {
   };
   const acquired = await readMessage();
   if (acquired.kind !== "acquired" || acquired.state === undefined) {
-    child.stdin.end();
+    await child.stdin.end();
     await child.exited;
     throw new Error(`swap lock is unusable: ${acquired.error ?? "invalid worker protocol"}`);
   }
@@ -1130,7 +1130,7 @@ async function acquireSwapLock(): Promise<SwapLockHandle> {
   try {
     await assert();
   } catch (error) {
-    child.stdin.end();
+    await child.stdin.end();
     await child.exited;
     throw error;
   }
@@ -1140,7 +1140,7 @@ async function acquireSwapLock(): Promise<SwapLockHandle> {
     release: async () => {
       if (released) return;
       released = true;
-      child.stdin.end();
+      await child.stdin.end();
       const message = await readMessage();
       const status = await child.exited;
       const diagnostic = (await stderr).trim();
