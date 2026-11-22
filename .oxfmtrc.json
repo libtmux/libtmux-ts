@@ -1,3 +1,9 @@
 {
-  "$schema": "./node_modules/oxfmt/configuration_schema.json"
+  "$schema": "./node_modules/oxfmt/configuration_schema.json",
+  "ignorePatterns": [
+    "**/dist/**",
+    "**/CHANGELOG.md",
+    "packages/libtmux/docs/api.md",
+    "packages/libtmux/docs/criteria.md"
+  ]
 }
