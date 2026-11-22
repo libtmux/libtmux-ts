@@ -1,22 +1,22 @@
 import { existsSync } from "node:fs";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runBoundedCommand } from "../../../scripts/bounded_process/bounded_process.js";
 import { npmPack } from "../../../scripts/npm_pack/npm_pack.js";
 import { enterSandbox, resolveNode22 } from "../src/_internal/test/testkit.js";
 
 /**
- * Install the tarball into a project that has never seen this repository.
+ * Install the tarball into clean consumer projects across npm, pnpm, Yarn, and Bun.
  *
- * `test:package` reads the tarball; this one uses it. The project is empty
- * apart from the tarball, so nothing resolves through the workspace — no
- * `paths`, no hoisted `node_modules`, no repository source tree — and every
- * file named by `exports` has to be packed.
+ * `test:package` reads the tarball; this one uses it. Each consumer project is
+ * empty apart from the tarball, outside the repository tree, so nothing
+ * resolves through workspace `paths` or hoisted `node_modules`.
  *
- * Node 22 exercises the emitted JavaScript and Bun exercises the packed
- * TypeScript source selected by its export condition.
+ * Node 22 exercises emitted JavaScript and native TypeScript type-stripping,
+ * TypeScript 5.7 and 7.x compile strict `NodeNext` declarations across flat and
+ * symlinked layouts, and Bun exercises the packed TypeScript source condition.
  */
 
 // The probes build a `Server` on a named socket, which lives under whatever
@@ -57,8 +57,15 @@ async function run(
 ): Promise<{ stderr: string; stdout: string }> {
   const result = await runBoundedCommand(command, {
     cwd,
-    // The package has no runtime dependencies, so this install is offline.
-    env: { ...process.env, NPM_CONFIG_AUDIT: "false", NPM_CONFIG_FUND: "false" },
+    // Corepack shims reject non-interactive downloads or ancestor packageManager
+    // fields unless strict/prompt gates are off.
+    env: {
+      ...process.env,
+      COREPACK_ENABLE_DOWNLOAD_PROMPT: "0",
+      COREPACK_ENABLE_STRICT: "0",
+      NPM_CONFIG_AUDIT: "false",
+      NPM_CONFIG_FUND: "false",
+    },
     maxOutputBytes: MAX_COMMAND_OUTPUT_BYTES,
     timeoutMilliseconds,
   });
@@ -99,137 +106,232 @@ const runtimeExports = Object.entries(manifest.exports).flatMap(([subpath, targe
   ];
 });
 const node = await resolveNode22();
+const tsc = resolveBinary("tsc");
+const floorTsc = floorCompiler();
+
+const declarationsSource = [
+  `import { decodeWhereDocument, encodeWhereDocument, OptionScope } from "${manifest.name}";`,
+  `import { LibTmuxError, WaitTimeoutError } from "${manifest.name}/errors";`,
+  `import { LibTmuxException, WaitTimeout } from "${manifest.name}/exc";`,
+  "const canonical: LibTmuxError = new LibTmuxException();",
+  "const legacy: WaitTimeout = new WaitTimeoutError();",
+  "void [canonical, legacy];",
+  `import type { CommandOptions, JoinOptions, SetOptionOptions, WhereDocumentV1 } from "${manifest.name}";`,
+  "declare const command: CommandOptions;",
+  "declare const join: JoinOptions;",
+  "declare const setOption: SetOptionOptions;",
+  'const document: WhereDocumentV1 = { model: "session", version: 1, where: { name: "work" } };',
+  "void decodeWhereDocument(JSON.parse(encodeWhereDocument(document)) as unknown);",
+  "void command.stdin;",
+  "void join.vertical;",
+  "void setOption.append;",
+  "void OptionScope.Pane;",
+  "",
+].join("\n");
+
+const tsconfigSource = `${JSON.stringify(
+  {
+    compilerOptions: {
+      exactOptionalPropertyTypes: true,
+      lib: ["ES2024", "ESNext.Disposable"],
+      module: "NodeNext",
+      moduleResolution: "NodeNext",
+      noEmit: true,
+      noUncheckedIndexedAccess: true,
+      skipLibCheck: false,
+      strict: true,
+      target: "ES2024",
+      types: [],
+      verbatimModuleSyntax: true,
+    },
+    files: ["declarations.ts", "consumer.ts"],
+  },
+  null,
+  2,
+)}\n`;
+
+const typescriptConsumerSource = [
+  `import { OptionScope, Server, encodeWhereDocument, type SessionWhere, type WhereDocumentV1 } from "${manifest.name}";`,
+  `import { Server as ServerFromSubpath } from "${manifest.name}/server";`,
+  'const filter: SessionWhere = { name: "work" };',
+  'const doc: WhereDocumentV1 = { model: "session", version: 1, where: filter };',
+  'const server = new Server({ socketName: "ltx-ts-canary" });',
+  'if (Server !== ServerFromSubpath) throw new Error("Server subpath identity mismatch");',
+  'if (OptionScope.Window !== "window") throw new Error("OptionScope.Window mismatch");',
+  'if (!encodeWhereDocument(doc).includes("work")) throw new Error("encodeWhereDocument failed");',
+  'if (typeof server.snapshot !== "function") throw new Error("Server.snapshot missing");',
+  "const writer = (globalThis as { process?: { stdout?: { write: (chunk: string) => void } } }).process?.stdout;",
+  'if (writer === undefined) throw new Error("stdout unavailable");',
+  'writer.write("ok\\n");',
+  "",
+].join("\n");
+
+const probeSource = [
+  `import { decodeWhereDocument as decodeRoot, encodeWhereDocument as encodeRoot } from "${manifest.name}";`,
+  `import { Server, TmuxTransportError, PaneDirection, OptionScope, safeInteger } from "${manifest.name}";`,
+  `import { LibTmuxError, WaitTimeoutError } from "${manifest.name}/errors";`,
+  `import { LibTmuxException, WaitTimeout } from "${manifest.name}/exc";`,
+  `import { Server as ServerFromSubpath } from "${manifest.name}/server";`,
+  `import { decodeWhereDocument, encodeWhereDocument, parseLegacyWhere } from "${manifest.name}/selection";`,
+  `const bun = typeof Bun !== "undefined";`,
+  `const runtimeExports = ${JSON.stringify(runtimeExports)};`,
+  `for (const entry of runtimeExports) {`,
+  `  const expected = bun ? entry.bun : entry.node;`,
+  `  const url = import.meta.resolve(entry.specifier);`,
+  `  if (!url.endsWith(expected.slice(1))) throw new Error(entry.specifier + " resolved to " + url);`,
+  `  await import(entry.specifier);`,
+  `}`,
+  "const server = new Server({ socketName: 'ltx-canary' });",
+  "if (Server !== ServerFromSubpath) throw new Error('Server exports have different identities');",
+  "if (LibTmuxError !== LibTmuxException || WaitTimeoutError !== WaitTimeout) throw new Error('Error aliases have different identities');",
+  "if (!(new WaitTimeoutError() instanceof LibTmuxException)) throw new Error('Error ancestry changed across imports');",
+  "if (typeof server.snapshot !== 'function') throw new Error('Server.snapshot is missing');",
+  "if (typeof server.watch !== 'function') throw new Error('Server.watch is missing');",
+  "if (typeof TmuxTransportError !== 'function') throw new Error('TmuxTransportError is missing');",
+  "if (typeof parseLegacyWhere !== 'function') throw new Error('parseLegacyWhere is missing');",
+  "if (decodeRoot !== decodeWhereDocument) throw new Error('decodeWhereDocument exports differ');",
+  "if (encodeRoot !== encodeWhereDocument) throw new Error('encodeWhereDocument exports differ');",
+  "if (PaneDirection.Above === undefined) throw new Error('PaneDirection is missing');",
+  "if (OptionScope.Pane !== 'pane') throw new Error('OptionScope is missing');",
+  "const where = parseLegacyWhere('window', { name__contains: 'logs' });",
+  "if (where.model !== 'window') throw new Error('parseLegacyWhere answered the wrong model');",
+  "const encoded = encodeWhereDocument({ model: 'pane', version: 1, where: { title: { contains: 'log' } } });",
+  "const decoded = decodeWhereDocument(JSON.parse(encoded));",
+  "if (decoded.model !== 'pane' || decoded.where.title?.contains !== 'log') throw new Error('WHERE document codecs disagree');",
+  "let stack = '';",
+  "try { safeInteger(0.5); } catch (error) { stack = String(error instanceof Error ? error.stack : error); }",
+  "if (!stack.includes('/src/common.ts')) throw new Error('stack did not map to packed source: ' + stack);",
+  "process.stdout.write('ok\\n');",
+  "",
+].join("\n");
+
+interface PackageManagerCase {
+  readonly command: (tarball: string, workspace: string) => readonly string[];
+  readonly name: "bun" | "npm" | "pnpm" | "yarn";
+  readonly verifyLayout?: (project: string) => Promise<void>;
+}
+
+const packageManagers: readonly PackageManagerCase[] = [
+  {
+    command: (tarball) => ["npm", "install", "--no-save", tarball],
+    name: "npm",
+  },
+  {
+    command: (tarball, workspace) => [
+      "pnpm",
+      "add",
+      "--store-dir",
+      join(workspace, "pnpm-store"),
+      tarball,
+    ],
+    name: "pnpm",
+    verifyLayout: async (project) => {
+      const resolved = await realpath(join(project, "node_modules", manifest.name));
+      if (!resolved.includes(`${sep}.pnpm${sep}`)) {
+        fail(`pnpm did not link ${manifest.name} through a .pnpm virtual store: ${resolved}`);
+      }
+    },
+  },
+  {
+    command: (tarball, workspace) => [
+      "yarn",
+      "add",
+      "--cache-folder",
+      join(workspace, "yarn-cache"),
+      tarball,
+    ],
+    name: "yarn",
+  },
+  {
+    command: (tarball) => ["bun", "add", tarball],
+    name: "bun",
+  },
+];
 
 // `ltx` so a sweep can tell this apart from another libtmux port's leavings.
-const project = await mkdtemp(join(tmpdir(), "ltx-install-"));
+const workspace = await mkdtemp(join(tmpdir(), "ltx-install-"));
 try {
-  const { tarballPath: tarball } = await npmPack(tsRoot, join(project, "artifacts"));
+  const { tarballPath: tarball } = await npmPack(tsRoot, join(workspace, "artifacts"));
 
-  await writeFile(
-    join(project, "package.json"),
-    `${JSON.stringify({ name: "ltx-install-canary", private: true, type: "module", version: "0.0.0" }, null, 2)}\n`,
-  );
-  await run(["npm", "install", "--no-save", tarball], project, COMMAND_TIMEOUT_MILLISECONDS);
-
-  await writeFile(
-    join(project, "declarations.ts"),
-    [
-      `import { decodeWhereDocument, encodeWhereDocument, OptionScope } from "${manifest.name}";`,
-      `import { LibTmuxError, WaitTimeoutError } from "${manifest.name}/errors";`,
-      `import { LibTmuxException, WaitTimeout } from "${manifest.name}/exc";`,
-      "const canonical: LibTmuxError = new LibTmuxException();",
-      "const legacy: WaitTimeout = new WaitTimeoutError();",
-      "void [canonical, legacy];",
-      `import type { CommandOptions, JoinOptions, SetOptionOptions, WhereDocumentV1 } from "${manifest.name}";`,
-      "declare const command: CommandOptions;",
-      "declare const join: JoinOptions;",
-      "declare const setOption: SetOptionOptions;",
-      'const document: WhereDocumentV1 = { model: "session", version: 1, where: { name: "work" } };',
-      "void decodeWhereDocument(JSON.parse(encodeWhereDocument(document)) as unknown);",
-      "void command.stdin;",
-      "void join.vertical;",
-      "void setOption.append;",
-      "void OptionScope.Pane;",
-      "",
-    ].join("\n"),
-  );
-  await writeFile(
-    join(project, "tsconfig.json"),
-    `${JSON.stringify(
-      {
-        compilerOptions: {
-          exactOptionalPropertyTypes: true,
-          lib: ["ES2024", "ESNext.Disposable"],
-          module: "NodeNext",
-          moduleResolution: "NodeNext",
-          noEmit: true,
-          noUncheckedIndexedAccess: true,
-          skipLibCheck: false,
-          strict: true,
-          target: "ES2024",
-          types: [],
-          verbatimModuleSyntax: true,
+  for (const manager of packageManagers) {
+    const project = join(workspace, `consumer-${manager.name}`);
+    // eslint-disable-next-line no-await-in-loop -- sequential installs keep diagnostics attributable per manager.
+    await mkdir(project, { recursive: true });
+    // eslint-disable-next-line no-await-in-loop -- as above.
+    await writeFile(
+      join(project, "package.json"),
+      `${JSON.stringify(
+        {
+          name: `ltx-install-canary-${manager.name}`,
+          private: true,
+          type: "module",
+          version: "0.0.0",
         },
-        files: ["declarations.ts"],
-      },
-      null,
-      2,
-    )}\n`,
-  );
-  await run(
-    [resolveBinary("tsc"), "--project", "tsconfig.json"],
-    project,
-    COMMAND_TIMEOUT_MILLISECONDS,
-  );
+        null,
+        2,
+      )}\n`,
+    );
+    // eslint-disable-next-line no-await-in-loop -- as above.
+    await run(manager.command(tarball, workspace), project, COMMAND_TIMEOUT_MILLISECONDS);
+    if (manager.verifyLayout !== undefined) {
+      // eslint-disable-next-line no-await-in-loop -- as above.
+      await manager.verifyLayout(project);
+    }
 
-  // And on the oldest TypeScript a consumer may be holding. The emitted
-  // declarations are built with the newest, which says nothing about whether
-  // an older one can read them: 5.6 and below ship no `ES2024` lib, so the
-  // configuration this README tells a consumer to use does not resolve there
-  // at all. The floor is pinned as a devDependency so the claim is compiled
-  // rather than asserted.
-  await run(
-    [process.execPath, floorCompiler(), "--project", "tsconfig.json"],
-    project,
-    COMMAND_TIMEOUT_MILLISECONDS,
-  );
+    // eslint-disable-next-line no-await-in-loop -- as above.
+    await Promise.all([
+      writeFile(join(project, "declarations.ts"), declarationsSource),
+      writeFile(join(project, "consumer.ts"), typescriptConsumerSource),
+      writeFile(join(project, "tsconfig.json"), tsconfigSource),
+      writeFile(join(project, "probe.mjs"), probeSource),
+    ]);
 
-  // Resolving proves each runtime selects its intended packed tree; calling
-  // proves the modules evaluate rather than merely resolve.
-  const probe = join(project, "probe.mjs");
-  await writeFile(
-    probe,
-    [
-      `import { decodeWhereDocument as decodeRoot, encodeWhereDocument as encodeRoot } from "${manifest.name}";`,
-      `import { Server, TmuxTransportError, PaneDirection, OptionScope, safeInteger } from "${manifest.name}";`,
-      `import { LibTmuxError, WaitTimeoutError } from "${manifest.name}/errors";`,
-      `import { LibTmuxException, WaitTimeout } from "${manifest.name}/exc";`,
-      `import { Server as ServerFromSubpath } from "${manifest.name}/server";`,
-      `import { decodeWhereDocument, encodeWhereDocument, parseLegacyWhere } from "${manifest.name}/selection";`,
-      `const bun = typeof Bun !== "undefined";`,
-      `const runtimeExports = ${JSON.stringify(runtimeExports)};`,
-      `for (const entry of runtimeExports) {`,
-      `  const expected = bun ? entry.bun : entry.node;`,
-      `  const url = import.meta.resolve(entry.specifier);`,
-      `  if (!url.endsWith(expected.slice(1))) throw new Error(entry.specifier + " resolved to " + url);`,
-      `  await import(entry.specifier);`,
-      `}`,
-      "const server = new Server({ socketName: 'ltx-canary' });",
-      "if (Server !== ServerFromSubpath) throw new Error('Server exports have different identities');",
-      "if (LibTmuxError !== LibTmuxException || WaitTimeoutError !== WaitTimeout) throw new Error('Error aliases have different identities');",
-      "if (!(new WaitTimeoutError() instanceof LibTmuxException)) throw new Error('Error ancestry changed across imports');",
-      "if (typeof server.snapshot !== 'function') throw new Error('Server.snapshot is missing');",
-      "if (typeof server.watch !== 'function') throw new Error('Server.watch is missing');",
-      "if (typeof TmuxTransportError !== 'function') throw new Error('TmuxTransportError is missing');",
-      "if (typeof parseLegacyWhere !== 'function') throw new Error('parseLegacyWhere is missing');",
-      "if (decodeRoot !== decodeWhereDocument) throw new Error('decodeWhereDocument exports differ');",
-      "if (encodeRoot !== encodeWhereDocument) throw new Error('encodeWhereDocument exports differ');",
-      "if (PaneDirection.Above === undefined) throw new Error('PaneDirection is missing');",
-      "if (OptionScope.Pane !== 'pane') throw new Error('OptionScope is missing');",
-      "const where = parseLegacyWhere('window', { name__contains: 'logs' });",
-      "if (where.model !== 'window') throw new Error('parseLegacyWhere answered the wrong model');",
-      "const encoded = encodeWhereDocument({ model: 'pane', version: 1, where: { title: { contains: 'log' } } });",
-      "const decoded = decodeWhereDocument(JSON.parse(encoded));",
-      "if (decoded.model !== 'pane' || decoded.where.title?.contains !== 'log') throw new Error('WHERE document codecs disagree');",
-      "let stack = '';",
-      "try { safeInteger(0.5); } catch (error) { stack = String(error instanceof Error ? error.stack : error); }",
-      "if (!stack.includes('/src/common.ts')) throw new Error('stack did not map to packed source: ' + stack);",
-      "process.stdout.write('ok\\n');",
-      "",
-    ].join("\n"),
-  );
-  const nodeResult = await run(
-    [node, "--enable-source-maps", probe],
-    project,
-    RUNTIME_TIMEOUT_MILLISECONDS,
-  );
-  const bunResult = await run([process.execPath, probe], project, RUNTIME_TIMEOUT_MILLISECONDS);
-  for (const [runtime, stdout] of [
-    ["Node 22", nodeResult.stdout],
-    [`Bun ${Bun.version}`, bunResult.stdout],
-  ] as const) {
-    if (stdout.trim() !== "ok") {
-      fail(`${runtime} answered ${JSON.stringify(stdout.trim())} for the installed package`);
+    // eslint-disable-next-line no-await-in-loop -- as above.
+    await run([tsc, "--project", "tsconfig.json"], project, COMMAND_TIMEOUT_MILLISECONDS);
+
+    // 5.6 and below ship no `ES2024` lib; compile against the pinned 5.7 floor
+    // across every package manager's node_modules layout.
+    // eslint-disable-next-line no-await-in-loop -- as above.
+    await run(
+      [process.execPath, floorTsc, "--project", "tsconfig.json"],
+      project,
+      COMMAND_TIMEOUT_MILLISECONDS,
+    );
+
+    // eslint-disable-next-line no-await-in-loop -- as above.
+    const nodeEsm = await run(
+      [node, "--enable-source-maps", "probe.mjs"],
+      project,
+      RUNTIME_TIMEOUT_MILLISECONDS,
+    );
+    // eslint-disable-next-line no-await-in-loop -- as above.
+    const nodeTs = await run(
+      [node, "--experimental-strip-types", "--enable-source-maps", "consumer.ts"],
+      project,
+      RUNTIME_TIMEOUT_MILLISECONDS,
+    );
+    // eslint-disable-next-line no-await-in-loop -- as above.
+    const bunEsm = await run(
+      [process.execPath, "probe.mjs"],
+      project,
+      RUNTIME_TIMEOUT_MILLISECONDS,
+    );
+    // eslint-disable-next-line no-await-in-loop -- as above.
+    const bunTs = await run(
+      [process.execPath, "consumer.ts"],
+      project,
+      RUNTIME_TIMEOUT_MILLISECONDS,
+    );
+
+    for (const [label, stdout] of [
+      [`${manager.name} / Node 22 ESM`, nodeEsm.stdout],
+      [`${manager.name} / Node 22 TypeScript`, nodeTs.stdout],
+      [`${manager.name} / Bun ${Bun.version} ESM`, bunEsm.stdout],
+      [`${manager.name} / Bun ${Bun.version} TypeScript`, bunTs.stdout],
+    ] as const) {
+      if (stdout.trim() !== "ok") {
+        fail(`${label} answered ${JSON.stringify(stdout.trim())} for the installed package`);
+      }
     }
   }
 
@@ -237,9 +339,10 @@ try {
   await sandbox.release();
   process.stdout.write(
     `${JSON.stringify({
-      installed: `${manifest.name}@${manifest.version}`,
       bun: Bun.version,
+      installed: `${manifest.name}@${manifest.version}`,
       node: node.split("/").at(-1) ?? "node",
+      packageManagers: packageManagers.map(({ name }) => name),
       protocol: "libtmux-install-canary-v1",
       status: "passed",
     })}\n`,
@@ -248,5 +351,5 @@ try {
   process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
   process.exitCode = 1;
 } finally {
-  await rm(project, { force: true, recursive: true });
+  await rm(workspace, { force: true, recursive: true });
 }

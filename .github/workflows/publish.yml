@@ -47,6 +47,16 @@ jobs:
       - name: Record the Node 22 install-canary path
         run: echo "LIBTMUX_NODE22=$(which node)" >> "$GITHUB_ENV"
 
+      - name: Provision pnpm and Yarn for install canaries
+        env:
+          COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+          COREPACK_ENABLE_STRICT: "0"
+        run: |
+          mkdir -p "$RUNNER_TEMP/corepack-bin"
+          "$(dirname "$LIBTMUX_NODE22")/corepack" enable --install-directory "$RUNNER_TEMP/corepack-bin" pnpm yarn
+          (cd "$RUNNER_TEMP" && "$RUNNER_TEMP/corepack-bin/pnpm" --version && "$RUNNER_TEMP/corepack-bin/yarn" --version)
+          echo "$RUNNER_TEMP/corepack-bin" >> "$GITHUB_PATH"
+
       # Publishing is npm's, not Bun's: trusted publishing needs npm CLI
       # 11.5.1 or later, which detects the OIDC environment on its own.
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7

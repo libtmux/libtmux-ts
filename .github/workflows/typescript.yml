@@ -131,6 +131,16 @@ jobs:
       - name: Point the emitted-Node lane at the provisioned Node 22
         run: echo "LIBTMUX_NODE22=$(which node)" >> "$GITHUB_ENV"
 
+      - name: Provision pnpm and Yarn for install canaries
+        env:
+          COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+          COREPACK_ENABLE_STRICT: "0"
+        run: |
+          mkdir -p "$RUNNER_TEMP/corepack-bin"
+          "$(dirname "$LIBTMUX_NODE22")/corepack" enable --install-directory "$RUNNER_TEMP/corepack-bin" pnpm yarn
+          (cd "$RUNNER_TEMP" && "$RUNNER_TEMP/corepack-bin/pnpm" --version && "$RUNNER_TEMP/corepack-bin/yarn" --version)
+          echo "$RUNNER_TEMP/corepack-bin" >> "$GITHUB_PATH"
+
       # One tmux, because the suites below start servers; which one they start
       # is the version job's question. 3.8, because the documented examples
       # drive control mode and `runShell` output, which need 3.7 and 3.5; the
