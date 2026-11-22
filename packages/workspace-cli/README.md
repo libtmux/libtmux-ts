@@ -69,27 +69,27 @@ server with `tmux -L workspace-cli-demo kill-server`.
 Run the command without installing it. With Node:
 
 ```console
-$ npx -y @libtmux/workspace-cli@0.1.2 --help
+$ npx -y @libtmux/workspace-cli@0.1.3 --help
 ```
 
 With Bun. The command names `node` in its shebang, so `bunx` runs it on Node
 when Node is installed; `--bun` runs it on Bun:
 
 ```console
-$ bunx --bun @libtmux/workspace-cli@0.1.2 --help
+$ bunx --bun @libtmux/workspace-cli@0.1.3 --help
 ```
 
 With pnpm:
 
 ```console
-$ pnpm dlx @libtmux/workspace-cli@0.1.2 --help
+$ pnpm dlx @libtmux/workspace-cli@0.1.3 --help
 ```
 
 With Yarn. Yarn refuses a release younger than its `npmMinimalAgeGate`, one
 day by default:
 
 ```console
-$ yarn dlx @libtmux/workspace-cli@0.1.2 --help
+$ yarn dlx @libtmux/workspace-cli@0.1.3 --help
 ```
 
 Or install it globally, which puts [`tmux-workspace`][cli-index] on `PATH`.
@@ -411,7 +411,7 @@ detached load, add it to your MCP client with that socket and the `inspect`
   "mcpServers": {
     "tmux": {
       "command": "npx",
-      "args": ["-y", "@libtmux/mcp@0.1.2"],
+      "args": ["-y", "@libtmux/mcp@0.1.3"],
       "env": { "LIBTMUX_SOCKET": "workspace-cli-demo", "LIBTMUX_TOOLSETS": "inspect" }
     }
   }

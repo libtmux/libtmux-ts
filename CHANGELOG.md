@@ -29,6 +29,7 @@ changelog has the documentation, CI and release tooling entries up to 0.1.2.
 <!-- toc -->
 
 - [Unreleased](#unreleased)
+- [0.1.3 (2026-11-22)](#013-2026-11-22)
 - [0.1.2 (2026-10-31)](#012-2026-10-31)
 - [0.1.1 (2026-10-31)](#011-2026-10-31)
 - [0.1.0 (2026-10-25)](#010-2026-10-25)
@@ -46,6 +47,29 @@ changelog has the documentation, CI and release tooling entries up to 0.1.2.
 
 ## Unreleased
 
+## 0.1.3 (2026-11-22)
+
+Versions: `libtmux` 0.1.3, `@libtmux/mcp` 0.1.3, `@libtmux/workspace` 0.1.3 and
+`@libtmux/workspace-cli` 0.1.3.
+
+`Server.saveBuffer` creates new files readable only by their owner (`0600`),
+the unused `libtmux/formats` subpath is removed, `@libtmux/mcp` can start an
+initial session on a named socket with `LIBTMUX_START_SESSION`, and
+`tmux-workspace load` resolves `./` and `../` `start_directory` paths from the
+workspace file's directory.
+
+- [`libtmux`](packages/libtmux/CHANGELOG.md#013-2026-11-22): `Server.saveBuffer`
+  creates missing files with mode `0600` and treats `#` in paths literally
+  (#222). `libtmux/formats` and its default field lists are removed (#214).
+- [`@libtmux/mcp`](packages/mcp/CHANGELOG.md#013-2026-11-22): adds
+  `LIBTMUX_START_SESSION` to create a session when no server answers on
+  `LIBTMUX_SOCKET` or `LIBTMUX_SOCKET_PATH` (#211).
+- [`@libtmux/workspace-cli`](packages/workspace-cli/CHANGELOG.md#013-2026-11-22):
+  `tmux-workspace load` resolves `./x` and `../x` `start_directory` values
+  against the workspace file's directory at every level (#202).
+- [`@libtmux/workspace`](packages/workspace/CHANGELOG.md#013-2026-11-22): no
+  entries.
+
 ### Development
 
 - Type-aware and AST lint gates cover root `scripts/**` and `libtmux` test and
@@ -53,7 +77,7 @@ changelog has the documentation, CI and release tooling entries up to 0.1.2.
   `import` plugins in `.oxlintrc.json`, enforce `return-await`, exhaustive
   switches, error-cause preservation, and side-effect-free type imports, and
   sort imports through `.oxfmtrc.json` while excluding generated API reference
-  docs and changelogs from formatting rewrites.
+  docs and changelogs from formatting rewrites. (#237)
 - No test, script or CI step in the core package compares this port with Python
   libtmux or starts a Python interpreter. The `where_regex` corpus, the
   differential suite that cloned Python libtmux on every tmux lane, the parity
@@ -72,15 +96,11 @@ changelog has the documentation, CI and release tooling entries up to 0.1.2.
   `tests/fixtures/tmuxp-examples/syntax-support.json` against the loader. No
   test needs tmuxp or Python for them. (#202)
 - CI builds tmux and runs `apt-get` through the shared build-tmux and apt-get
-  actions of `libtmux/.github`, pinned by commit. The repository no longer
-  carries its own `tmux_build.py`, `tmux-releases.toml`, `scripts/apt-get.sh`
-  or `scripts/build-tmux.sh`, which no workflow called; a new tmux release's
-  checksum goes to `libtmux/.github`.
-- CI rebuilds incompatible cached tmux installations before running tests.
-  A build is keyed by the runner image and its version, and a restored one
-  is validated before use, so an Ubuntu 24.04 build is no longer restored
-  onto Ubuntu 26.04. Release downloads use checksum pins in
-  `.github/tmux-releases.toml`. (#197)
+  actions of `libtmux/.github`, pinned by commit, validating cached tmux
+  installations against the runner image and bounding mirror hangs;
+  `check-ci-config.ts` refuses raw `apt` or `apt-get` calls in workflows. The
+  repository no longer carries its own `tmux_build.py`, `tmux-releases.toml`,
+  `scripts/apt-get.sh` or `scripts/build-tmux.sh`. (#169, #197)
 - Every test entry point runs in a sandbox: an owner-only directory that
   becomes `TMUX_TMPDIR`, with `TMUX`, `TMUX_PANE`, `LIBTMUX_SOCKET` and
   `LIBTMUX_SOCKET_PATH` removed, so a test, doctest or example that names no
@@ -89,11 +109,6 @@ changelog has the documentation, CI and release tooling entries up to 0.1.2.
   runners, the documentation and install gates and the Node lane enter it
   themselves. A server a run leaves on any socket under the sandbox is
   stopped, and fails the run. (#176)
-- Workflows run `apt-get` through `scripts/apt-get.sh`, which bounds it by
-  `APT_TIMEOUT` (180 seconds by default) and retries after moving the first
-  mirror in `/etc/apt/apt-mirrors.txt` to the end, so a hung mirror fails in
-  minutes instead of at the job timeout. `check-ci-config.ts` fails a workflow
-  or composite action that calls `apt-get` or `apt` itself. (#169)
 - The MCP settle test "releases a pane whose daemon PID vanished" no longer
   samples `settled` against a timer. It waits on a signal that settlement is
   parked, and its probe is given a PID other than the test process's own.
@@ -101,11 +116,10 @@ changelog has the documentation, CI and release tooling entries up to 0.1.2.
 
 ### Documentation
 
-- The documentation site builds from newer shared docs source. Linked symbols
-  in doc comments are written the way each language's documentation writes
-  them (#170); a port's landing page shows an example for each product
-  (#178); and a port's Workspace and MCP pages show the workspace files its
-  tests load and the tools its server advertises (#181).
+- `Window` and `Pane` reference pages carry task-grouped member directories
+  (#212), READMEs lead with installation, runtime floors, and `Quickstart`
+  using portable CommonMark callouts (#194, #235), and the documentation site
+  builds from newer shared `libtmux/docs` revisions (#170, #178, #181, #234).
 
 ## 0.1.2 (2026-10-31)
 

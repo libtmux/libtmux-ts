@@ -44,7 +44,7 @@ needs installing ahead of time or keeping running.
 ### `npx`: start the server
 
 ```console
-$ npx -y @libtmux/mcp@0.1.2
+$ npx -y @libtmux/mcp@0.1.3
 ```
 
 With no socket variable set, the server passes tmux no socket, so tmux picks the
@@ -52,7 +52,7 @@ server: the one `TMUX` names when it is launched from a tmux pane, otherwise
 tmux's default socket. To pin the package in a project instead:
 
 ```console
-$ bun add --exact @libtmux/mcp@0.1.2
+$ bun add --exact @libtmux/mcp@0.1.3
 ```
 
 When stdin closes, or on SIGTERM, SIGINT or SIGHUP:
@@ -66,7 +66,7 @@ When stdin closes, or on SIGTERM, SIGINT or SIGHUP:
 
 ```console
 $ claude mcp add tmux --env LIBTMUX_SOCKET=agent -- \
-    npx -y @libtmux/mcp@0.1.2
+    npx -y @libtmux/mcp@0.1.3
 ```
 
 ### `mcpServers`: tell any other client about it
@@ -76,7 +76,7 @@ $ claude mcp add tmux --env LIBTMUX_SOCKET=agent -- \
   "mcpServers": {
     "tmux": {
       "command": "npx",
-      "args": ["-y", "@libtmux/mcp@0.1.2"],
+      "args": ["-y", "@libtmux/mcp@0.1.3"],
       "env": { "LIBTMUX_SOCKET": "agent" }
     }
   }
@@ -199,8 +199,8 @@ there, the executable starts one with that session, and the startup line says
 so:
 
 ```console
-$ LIBTMUX_SOCKET=agent LIBTMUX_START_SESSION=work npx -y @libtmux/mcp@0.1.2
-libtmux-mcp 0.1.2 serving agent, toolsets execute,inspect,manage, 0 named inclusions, 0 exclusions, started session work
+$ LIBTMUX_SOCKET=agent LIBTMUX_START_SESSION=work npx -y @libtmux/mcp@0.1.3
+libtmux-mcp 0.1.3 serving agent, toolsets execute,inspect,manage, 0 named inclusions, 0 exclusions, started session work
 ```
 
 - A server that already answers is left alone and gets no new session.
@@ -213,7 +213,7 @@ Naming the socket points the server at that tmux. The startup line on stderr
 says `serving existing`, and the toolsets default to `inspect,manage,execute`:
 
 ```console
-$ LIBTMUX_SOCKET=agent npx -y @libtmux/mcp@0.1.2
+$ LIBTMUX_SOCKET=agent npx -y @libtmux/mcp@0.1.3
 ```
 
 ### Let tmux pick the server
@@ -277,7 +277,7 @@ For an agent that can inspect, create sessions, windows and panes, and run pane
 commands, while excluding the `manage` and `teardown` tools:
 
 ```console
-$ LIBTMUX_TOOLSETS=inspect,execute npx -y @libtmux/mcp@0.1.2
+$ LIBTMUX_TOOLSETS=inspect,execute npx -y @libtmux/mcp@0.1.3
 ```
 
 - Unknown names, empty list entries, and the retired `LIBTMUX_SAFETY` variable
@@ -292,7 +292,7 @@ $ LIBTMUX_TOOLSETS=inspect,execute npx -y @libtmux/mcp@0.1.2
 inclusions makes a smaller purpose-built surface:
 
 ```console
-$ LIBTMUX_TOOLSETS= LIBTMUX_TOOLS=list_sessions,capture_pane npx -y @libtmux/mcp@0.1.2
+$ LIBTMUX_TOOLSETS= LIBTMUX_TOOLS=list_sessions,capture_pane npx -y @libtmux/mcp@0.1.3
 ```
 
 - Exclusions always win, including inside
@@ -339,7 +339,7 @@ With no server running on tmux's default socket, that diagnostic is:
 
 ```console
 $ libtmux-mcp
-libtmux-mcp 0.1.2 serving default, toolsets execute,inspect,manage, 0 named inclusions, 0 exclusions
+libtmux-mcp 0.1.3 serving default, toolsets execute,inspect,manage, 0 named inclusions, 0 exclusions
 ```
 
 ## The tools
@@ -804,7 +804,7 @@ set_history_limit  lines=10000
 explicitly selected server does not get by default. Name it to opt in:
 
 ```console
-$ LIBTMUX_SOCKET=agent LIBTMUX_TOOLSETS=inspect,teardown npx -y @libtmux/mcp@0.1.2
+$ LIBTMUX_SOCKET=agent LIBTMUX_TOOLSETS=inspect,teardown npx -y @libtmux/mcp@0.1.3
 ```
 
 - These tools refuse to end the pane hosting the MCP process unless `force`
