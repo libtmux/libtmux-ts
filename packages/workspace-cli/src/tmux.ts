@@ -1273,13 +1273,16 @@ async function capture(server: Server, request: Request, context: CLIContext): P
   const windows: Document[] = [];
   for (const window of session.windows.toArray()) {
     requireAddressableName("window", window.name);
-    const panes = window.panes.toArray().map((pane) => ({
-      ...(pane.currentCommand !== null && !isDefaultShell(pane.currentCommand)
-        ? { shell_command: [pane.currentCommand] }
-        : {}),
-      start_directory: pane.currentPath ?? context.cwd,
-      ...(pane.active === true ? { focus: true } : {}),
-    }));
+    const panes = window.panes.toArray().map((pane) => {
+      const entry: Document = {
+        start_directory: pane.currentPath ?? context.cwd,
+      };
+      if (pane.currentCommand !== null && !isDefaultShell(pane.currentCommand)) {
+        entry.shell_command = [pane.currentCommand];
+      }
+      if (pane.active === true) entry.focus = true;
+      return entry;
+    });
     // freeze runs after every pane exists, so window options belong under
     // options_after: automatic-rename: off only holds when applied there,
     // and load already accepts both spellings.

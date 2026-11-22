@@ -51,10 +51,11 @@ describe("support.capabilities", () => {
           declared.members.some((entry) => entry.name === member),
       );
     };
-    const named = [...CAPABILITIES, ...WORKAROUNDS].flatMap((record) => [
-      ...record.apis,
-      ...("error" in record && record.error !== undefined ? [record.error] : []),
-    ]);
+    const named = [...CAPABILITIES, ...WORKAROUNDS].flatMap((record) =>
+      "error" in record && record.error !== undefined
+        ? record.apis.concat(record.error)
+        : record.apis,
+    );
     expect(named.filter((name) => !resolves(name))).toEqual([]);
   });
 

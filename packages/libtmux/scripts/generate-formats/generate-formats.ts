@@ -578,7 +578,9 @@ export async function generateFormats(options: GenerateFormatsOptions): Promise<
   const vocabulary = Object.freeze(
     (await readFields())
       .map((field) =>
-        releaseAtLeast(field.since, MINIMUM_TMUX) ? field : { ...field, since: MINIMUM_TMUX },
+        releaseAtLeast(field.since, MINIMUM_TMUX)
+          ? field
+          : { scope: field.scope, since: MINIMUM_TMUX, token: field.token },
       )
       .toSorted((left, right) =>
         left.token < right.token ? -1 : left.token > right.token ? 1 : 0,

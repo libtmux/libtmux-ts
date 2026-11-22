@@ -229,7 +229,7 @@ function commands(
     if (item.enter !== undefined && typeof item.enter !== "boolean")
       throw new Error("enter must be boolean");
     delays(item);
-    return { ...item, cmd: expand(item.cmd, context) } as CommandSpec;
+    return Object.assign({}, item, { cmd: expand(item.cmd, context) }) as CommandSpec;
   });
 }
 export function workspaceName(document: Document, context: FileContext, override?: string): string {

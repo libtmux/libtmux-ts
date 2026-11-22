@@ -1,13 +1,16 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["typescript", "node", "promise", "unicorn"],
+  "plugins": ["typescript", "oxc", "node", "promise", "unicorn"],
   "categories": {
     "correctness": "error",
     "perf": "error"
   },
+  "ignorePatterns": ["**/dist/**"],
   "options": {
     "typeAware": true,
-    "typeCheck": false
+    "typeCheck": false,
+    "denyWarnings": true,
+    "reportUnusedDisableDirectives": "error"
   },
   "rules": {
     "typescript/await-thenable": "off"

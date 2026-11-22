@@ -238,7 +238,7 @@ export function recordInvocations(inner: TmuxEngine = new NodeSpawnTransport()):
       ...(inner.endpoint === undefined ? {} : { endpoint: inner.endpoint }),
       async execute(request) {
         const call: RecordedCall = {
-          commands: unfenced(request.commands).map((command) => [...command]),
+          commands: unfenced(request.commands).map((command) => Array.from(command)),
           ...(request.stdin === undefined ? {} : { stdin: [...request.stdin] }),
         };
         let result: TmuxCommandResult;

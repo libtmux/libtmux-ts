@@ -161,10 +161,10 @@ async function directoryInventory(root: string, relativeDirectory = ""): Promise
       .map(async (entry) => {
         const relativeEntry = join(relativeDirectory, entry.name);
         const kind = entry.isDirectory() ? "directory" : entry.isFile() ? "file" : "symlink";
-        return [
-          `${kind}:${relativeEntry}`,
-          ...(entry.isDirectory() ? await directoryInventory(root, relativeEntry) : []),
-        ];
+        const first = `${kind}:${relativeEntry}`;
+        return entry.isDirectory()
+          ? [first].concat(await directoryInventory(root, relativeEntry))
+          : [first];
       }),
   );
   return inventory.flat();
@@ -187,10 +187,8 @@ async function snapshotTree(root: string, relativeDirectory = ""): Promise<reado
           size: stat.size,
         };
         if (entry.isDirectory()) {
-          return [
-            { ...metadata, path: relativePath, type: "directory" },
-            ...(await snapshotTree(root, relativePath)),
-          ];
+          const head: readonly object[] = [{ ...metadata, path: relativePath, type: "directory" }];
+          return head.concat(await snapshotTree(root, relativePath));
         }
         if (entry.isSymbolicLink()) {
           return [

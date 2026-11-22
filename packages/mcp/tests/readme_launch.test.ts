@@ -113,11 +113,13 @@ function launchesIn(markdown: string, file: string): readonly Launch[] {
       if (command[0] === "claude" && command[1] === "mcp" && command[2] === "add") {
         const separator = command.indexOf("--");
         const options = command.slice(4, separator === -1 ? command.length : separator);
+        const overrides: Record<string, string> = { ...env };
         for (const [index, option] of options.entries()) {
           if (option !== "--env" && option !== "-e") continue;
           const [name, ...value] = (options[index + 1] ?? "").split("=");
-          env = { ...env, [name ?? ""]: value.join("=") };
+          overrides[name ?? ""] = value.join("=");
         }
+        env = overrides;
         command = separator === -1 ? [] : command.slice(separator + 1);
       }
       const launchesServer =

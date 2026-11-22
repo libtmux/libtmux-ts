@@ -328,10 +328,8 @@ async function snapshotTree(root: string, relativeDirectory = ""): Promise<reado
           size: stat.size,
         };
         if (entry.isDirectory()) {
-          return [
-            { ...metadata, path: relativePath, type: "directory" },
-            ...(await snapshotTree(root, relativePath)),
-          ];
+          const head: readonly object[] = [{ ...metadata, path: relativePath, type: "directory" }];
+          return head.concat(await snapshotTree(root, relativePath));
         }
         if (entry.isSymbolicLink()) {
           return [
