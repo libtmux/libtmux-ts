@@ -81,16 +81,16 @@ const expectedScripts = {
 const expectedDependencies = {};
 
 const expectedDevDependencies = {
-  "@types/bun": "1.4.4",
+  "@types/bun": "1.4.5",
   // Held at the floor deliberately: `engines.node` is ">=22", and types
   // describing a newer Node would compile calls the floor cannot run. The root
   // `overrides` pins it for the whole workspace, so a manifest naming anything
   // else would name a version that does not install.
   "@types/node": "22.20.5",
-  knip: "6.45.1",
-  oxfmt: "0.78.0",
-  oxlint: "1.93.0",
-  "oxlint-tsgolint": "7.0.2006",
+  knip: "6.47.0",
+  oxfmt: "0.79.0",
+  oxlint: "1.94.0",
+  "oxlint-tsgolint": "7.0.2008",
   typescript: "7.0.2",
   // The oldest TypeScript a consumer may hold. Aliased rather than a second
   // `typescript` entry because `test:install` compiles its fixture with both:
@@ -98,7 +98,7 @@ const expectedDevDependencies = {
   // older one can read them, and 5.6 ships no `ES2024` lib at all.
   "typescript-floor": "npm:typescript@5.7.3",
   // Runs the Bun suites on Node against `dist`, `bun:test` answered by a shim.
-  vitest: "5.1.0",
+  vitest: "5.1.1",
   zod: "4.6.7",
 };
 
