@@ -5,7 +5,7 @@ Reach tmux through a transport you supply, rather than the built-in ones.
 Reach for this when tmux is not where the library assumes: over ssh, inside a
 container, behind a daemon of your own.
 
-Part of [libtmux for Bun and TypeScript](../../README.md#is-this-for-you).
+Part of [libtmux for Bun and TypeScript](../../README.md).
 
 ## Run it
 

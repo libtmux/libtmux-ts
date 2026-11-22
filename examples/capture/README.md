@@ -6,7 +6,7 @@ Reach for this when the job is getting text _out_ of tmux or _into_ it —
 collecting a pane's output, or handing a block of text to a pane without typing
 it key by key.
 
-Part of [libtmux for Bun and TypeScript](../../README.md#is-this-for-you).
+Part of [libtmux for Bun and TypeScript](../../README.md).
 
 ## Run it
 

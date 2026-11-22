@@ -7,7 +7,7 @@ Reach for this first — before `watch/` or `agent/` — to see what a snapshot,
 a query, and a pane action look like end to end, before committing to any one
 of them.
 
-Part of [libtmux for Bun and TypeScript](../../README.md#is-this-for-you).
+Part of [libtmux for Bun and TypeScript](../../README.md).
 
 ## Run it
 
