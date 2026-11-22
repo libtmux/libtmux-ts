@@ -75,8 +75,9 @@ with later environment or tmux state.
 This shapes the MCP interface; it is not an authorization or confidentiality
 boundary. Every advertised tool runs with the tmux user's authority.
 
-Use a dedicated socket and read the [security boundary](../../../SECURITY.md)
-before serving an untrusted client.
+Use a dedicated socket before serving an untrusted client: a tmux socket grants
+control of every session on that server, and setting `LIBTMUX_TMUX_BIN` chooses
+which executable runs.
 
 The startup line on stderr names the selected socket, effective toolsets, named
 inclusions, and exclusions. Stdout remains exclusively MCP JSON-RPC, so that

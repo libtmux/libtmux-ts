@@ -577,5 +577,6 @@ Commit format is in [WRITING.md](WRITING.md#commits).
 
 ## Security
 
-Please do not open a public issue for a vulnerability. See
-[SECURITY.md](../SECURITY.md).
+Report a vulnerability privately through
+[GitHub security advisories](https://github.com/libtmux/libtmux-ts/security/advisories/new)
+rather than opening a public issue.
