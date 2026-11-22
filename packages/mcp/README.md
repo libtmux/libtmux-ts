@@ -27,7 +27,7 @@
 </div>
 
 Part of
-[libtmux for Bun and TypeScript](https://github.com/libtmux/libtmux-ts#readme).
+[libtmux for TypeScript](https://github.com/libtmux/libtmux-ts#readme).
 Built on
 [`libtmux`](https://github.com/libtmux/libtmux-ts/tree/master/packages/libtmux).
 
@@ -50,6 +50,26 @@ $ npx -y @libtmux/mcp@0.1.3
 With no socket variable set, the server passes tmux no socket, so tmux picks the
 server: the one `TMUX` names when it is launched from a tmux pane, otherwise
 tmux's default socket. To pin the package in a project instead:
+
+With npm:
+
+```console
+$ npm install --save-exact @libtmux/mcp@0.1.3
+```
+
+With pnpm:
+
+```console
+$ pnpm add --save-exact @libtmux/mcp@0.1.3
+```
+
+With Yarn:
+
+```console
+$ yarn add --exact @libtmux/mcp@0.1.3
+```
+
+With Bun:
 
 ```console
 $ bun add --exact @libtmux/mcp@0.1.3

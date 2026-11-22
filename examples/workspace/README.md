@@ -14,7 +14,7 @@ Two ways to get there, both in [`workspace.ts`](workspace.ts):
 `removeWorkspace` tears one down, treating "already gone" as an answer rather
 than an error worth propagating.
 
-Part of [libtmux for Bun and TypeScript](../../README.md).
+Part of [libtmux for TypeScript](../../README.md).
 
 ## Run it
 

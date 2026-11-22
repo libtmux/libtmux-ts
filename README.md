@@ -11,7 +11,7 @@
 
 # libtmux for TypeScript
 
-**Typed control of tmux for Bun and TypeScript — immutable snapshots,
+**Typed control of tmux for Node.js, Bun, and TypeScript — immutable snapshots,
 declarative queries, and zero runtime dependencies.**
 
 [![typescript](https://github.com/libtmux/libtmux-ts/actions/workflows/typescript.yml/badge.svg)](https://github.com/libtmux/libtmux-ts/actions/workflows/typescript.yml)
@@ -28,30 +28,34 @@ and dashboards: read the whole server once into an
 [`Server.batch`][ref-server-batch], and subscribe to events with
 [`Server.watch`][ref-server-watch].
 
-```console
-$ bun add libtmux
-```
-
-<details>
-<summary>npm, pnpm, yarn</summary>
+With npm:
 
 ```console
-$ npm i libtmux
+$ npm install libtmux
 ```
+
+With pnpm:
 
 ```console
 $ pnpm add libtmux
 ```
 
+With Yarn:
+
 ```console
 $ yarn add libtmux
 ```
 
-</details>
+With Bun:
 
+```console
+$ bun add libtmux
+```
+
+- [Node.js](https://nodejs.org) 22 or newer, or [Bun](https://bun.sh) 1.3.14 or
+  newer, in TypeScript 5.7+ or plain ESM JavaScript.
 - tmux 3.3a or newer. An older daemon is refused with
   [`VersionTooLowError`][ref-versiontoolowerror] before any command runs.
-- [Bun](https://bun.sh) 1.3.14 or newer, or Node 22 or newer.
 - Runs on Linux, including WSL. macOS is supported on a best-effort basis,
   and CI coverage for it is highly limited.
 
@@ -84,8 +88,21 @@ try {
 }
 ```
 
-More: [`examples/quickstart`](examples/quickstart) runs the same calls and adds a
-pane action and a failed command.
+Save as `quickstart.ts` and run it with Node 22 (`--experimental-strip-types`
+before 22.18, or as `quickstart.mjs` in plain JavaScript):
+
+```console
+$ node --experimental-strip-types quickstart.ts
+```
+
+Or with Bun:
+
+```console
+$ bun quickstart.ts
+```
+
+More: [`examples/quickstart`](examples/quickstart) runs the same calls and adds
+a pane action and a failed command.
 
 ## Find sessions, windows and panes
 
@@ -287,9 +304,30 @@ The four packages share one release version.
 [`Pane`][ref-pane] and [`Client`][ref-client] handles over an immutable snapshot
 of tmux.
 
+[Documentation][core-docs] ·
 [API reference][ref-reference] ·
 [npm](https://www.npmjs.com/package/libtmux) ·
 [Changelog](packages/libtmux/CHANGELOG.md)
+
+With npm:
+
+```console
+$ npm install libtmux
+```
+
+With pnpm:
+
+```console
+$ pnpm add libtmux
+```
+
+With Yarn:
+
+```console
+$ yarn add libtmux
+```
+
+With Bun:
 
 ```console
 $ bun add libtmux
@@ -324,6 +362,7 @@ Read next: [Snapshots](packages/libtmux/README.md#read-what-tmux-holds) ·
 A stdio MCP server. Point it at a socket and an agent can list sessions, read a
 pane, send keys, and wait for output instead of polling for it.
 
+[Documentation][mcp-docs] ·
 [API reference][mcpref-reference] ·
 [Tools][mcp-tools] ·
 [npm](https://www.npmjs.com/package/@libtmux/mcp) ·
@@ -382,9 +421,30 @@ Read next: [Why it exists](packages/mcp/README.md#why-this-exists) ·
 
 Describe a session; apply it. Applying twice converges rather than duplicating.
 
+[Documentation][workspace-docs] ·
 [API reference][wsref-reference] ·
 [npm](https://www.npmjs.com/package/@libtmux/workspace) ·
 [Changelog](packages/workspace/CHANGELOG.md)
+
+With npm:
+
+```console
+$ npm install @libtmux/workspace libtmux
+```
+
+With pnpm:
+
+```console
+$ pnpm add @libtmux/workspace libtmux
+```
+
+With Yarn:
+
+```console
+$ yarn add @libtmux/workspace libtmux
+```
+
+With Bun:
 
 ```console
 $ bun add @libtmux/workspace libtmux
@@ -553,6 +613,8 @@ See the [AI policy](https://libtmux.org/en/meta/ai-policy/), also kept as
 [libtmux.org](https://libtmux.org/) for all sibling ports.
 
 [cli-reference]: https://libtmux.org/en/ts/latest/workspace/cli/
+[core-docs]: https://libtmux.org/en/ts/latest/core/
+[mcp-docs]: https://libtmux.org/en/ts/latest/mcp/
 [mcp-resources-capabilities]: https://libtmux.org/en/ts/latest/mcp/resources/capabilities/
 [mcp-tools]: https://libtmux.org/en/ts/latest/mcp/tools/
 [mcp-tools-create_session]: https://libtmux.org/en/ts/latest/mcp/tools/create_session/
@@ -590,4 +652,5 @@ See the [AI policy](https://libtmux.org/en/meta/ai-policy/), also kept as
 [tool-list_sessions]: https://libtmux.org/en/ts/latest/mcp/tools/list_sessions/
 [tool-run_shell_command]: https://libtmux.org/en/ts/latest/mcp/tools/run_shell_command/
 [tool-wait_for_text]: https://libtmux.org/en/ts/latest/mcp/tools/wait_for_text/
+[workspace-docs]: https://libtmux.org/en/ts/latest/workspace/
 [wsref-reference]: https://libtmux.org/en/ts/latest/workspace/reference/

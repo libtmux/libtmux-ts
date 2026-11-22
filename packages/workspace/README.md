@@ -26,7 +26,7 @@ than duplicating.**
 
 </div>
 
-Part of [libtmux for Bun and TypeScript](https://github.com/libtmux/libtmux-ts#readme). Built on
+Part of [libtmux for TypeScript](https://github.com/libtmux/libtmux-ts#readme). Built on
 [`libtmux`](https://github.com/libtmux/libtmux-ts/tree/master/packages/libtmux).
 
 > Releases are numbered `0.1.N`. The API is not settled: any release may change
@@ -38,26 +38,29 @@ Part of [libtmux for Bun and TypeScript](https://github.com/libtmux/libtmux-ts#r
 Install the package with `libtmux`, which supplies the [`Server`][ref-server]
 you pass to every call:
 
-```console
-$ bun add @libtmux/workspace libtmux
-```
-
-<details>
-<summary>npm, pnpm, yarn</summary>
+With npm:
 
 ```console
-$ npm i @libtmux/workspace libtmux
+$ npm install @libtmux/workspace libtmux
 ```
+
+With pnpm:
 
 ```console
 $ pnpm add @libtmux/workspace libtmux
 ```
 
+With Yarn:
+
 ```console
 $ yarn add @libtmux/workspace libtmux
 ```
 
-</details>
+With Bun:
+
+```console
+$ bun add @libtmux/workspace libtmux
+```
 
 Needs tmux 3.3a or newer, and Node 22 or newer or [Bun](https://bun.sh) 1.3.14
 or newer.

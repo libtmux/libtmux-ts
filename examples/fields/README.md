@@ -6,7 +6,7 @@ Read a server's state as typed values — numbers as numbers, flags as booleans
 Reach for this when you want to _ask_ tmux something rather than change it:
 which pane is active, how big it is, what command it is running.
 
-Part of [libtmux for Bun and TypeScript](../../README.md).
+Part of [libtmux for TypeScript](../../README.md).
 
 ## Run it
 

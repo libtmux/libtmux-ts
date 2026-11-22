@@ -1,6 +1,6 @@
 # Examples
 
-Runnable programs for [libtmux for Bun and TypeScript](../README.md).
+Runnable programs for [libtmux for TypeScript](../README.md).
 
 ## Run them
 

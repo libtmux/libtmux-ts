@@ -5,7 +5,7 @@ See what the library is sending to tmux, and bound how much of it runs at once.
 Reach for this when you are answering "what did it actually do?" — in a log, a
 trace, a metric, or a cost review.
 
-Part of [libtmux for Bun and TypeScript](../../README.md).
+Part of [libtmux for TypeScript](../../README.md).
 
 ## Run it
 
