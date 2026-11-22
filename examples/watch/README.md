@@ -6,7 +6,7 @@ Reach for this when something else is driving tmux — a build, a person, anothe
 agent — and you need to react to it: a window opening, a pane printing, a
 session going away.
 
-Part of [libtmux for Bun and TypeScript](../../README.md#is-this-for-you).
+Part of [libtmux for Bun and TypeScript](../../README.md).
 
 ## Run it
 

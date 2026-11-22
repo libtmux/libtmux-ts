@@ -31,7 +31,6 @@ Part of
 Built on
 [`libtmux`](https://github.com/libtmux/libtmux-ts/tree/master/packages/libtmux).
 
-> [!WARNING]
 > Releases are numbered `0.1.N`. The API is not settled: any release may change
 > or remove exported identifiers. Pin an exact version, and read the
 > [changelog](CHANGELOG.md) before you upgrade.
@@ -321,8 +320,8 @@ the selected sets, while the retired variable was an exact allowlist.
 
 - Selection shapes the MCP interface. It is not an authorization or
   confidentiality boundary.
-- Use a dedicated socket and read the [security boundary](../../SECURITY.md)
-  before serving an untrusted client.
+- Use a dedicated socket before serving an untrusted client; see
+  [Toolset selection and the startup line](docs/contracts.md#toolset-selection-and-the-startup-line).
 
 ### [`libtmux-mcp`][mcpref-mcp-server-main]: read the startup line
 
@@ -951,7 +950,8 @@ const mcp = createTmuxMcpServer(serverFromEnvironment());
   `run_shell_command` and `run_program` run programs inside tmux panes, with the
   tmux user's authority. See `_meta` under [Resources](#resources).
 - **A sandbox.** Selecting tools shapes the interface; every tool runs with the
-  tmux user's authority. See the [security boundary](../../SECURITY.md).
+  tmux user's authority. See
+  [Toolset selection and the startup line](docs/contracts.md#toolset-selection-and-the-startup-line).
 
 ## Support and status
 

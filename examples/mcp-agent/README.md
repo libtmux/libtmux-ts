@@ -5,7 +5,7 @@ Drive tmux through the Model Context Protocol, from an in-process client.
 Reach for this when the thing driving tmux is a model rather than your own
 code, and you want to see what the MCP server actually exposes to it.
 
-Part of [libtmux for Bun and TypeScript](../../README.md#is-this-for-you).
+Part of [libtmux for Bun and TypeScript](../../README.md).
 
 ## Run it
 

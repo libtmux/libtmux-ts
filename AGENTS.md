@@ -35,7 +35,8 @@ The release packages share one version and one tag.
   [.github/CONTRIBUTING.md](.github/CONTRIBUTING.md)
 - Anything under `packages/mcp`:
   [packages/mcp/AGENTS.md](packages/mcp/AGENTS.md)
-- Reporting or assessing a vulnerability: [SECURITY.md](SECURITY.md)
+- Reporting a vulnerability:
+  [GitHub security advisories](https://github.com/libtmux/libtmux-ts/security/advisories/new)
 
 Each of those is the single home for its subject. Where a rule seems to be
 stated twice, the file listed above is the one that governs.

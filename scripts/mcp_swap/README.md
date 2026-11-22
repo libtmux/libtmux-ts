@@ -3,8 +3,9 @@
 `mcp_swap.ts` points selected agent clients at this repository's MCP server and
 then restores the exact configuration that preceded the swap. It is a private
 contributor tool: it is not published, and it does not manage a user's configuration.
-The [MCP guide](../../packages/mcp/README.md) documents the server itself; the
-[security policy](../../SECURITY.md) defines its authority boundary.
+The [MCP guide](../../packages/mcp/README.md) documents the server itself;
+[its contracts](../../packages/mcp/docs/contracts.md#toolset-selection-and-the-startup-line)
+define its authority boundary.
 
 The helper supports Claude, Codex, Cursor, Gemini, Grok, Antigravity (`agy`),
 opencode, and pi in one deterministic transaction. It edits only the selected

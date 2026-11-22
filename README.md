@@ -11,15 +11,8 @@
 
 # libtmux for TypeScript
 
-**Typed control of tmux for Bun and TypeScript — immutable snapshots, declarative queries, and a library that ships zero runtime dependencies.**
-
-[Quickstart](#quickstart) •
-[Querying](#find-sessions-windows-and-panes) •
-[Packages](#packages) •
-[API reference](packages/libtmux/docs/api.md) •
-[Hosted API reference][ref-reference] •
-[Examples](examples) •
-[Changelog](CHANGELOG.md)
+**Typed control of tmux for Bun and TypeScript — immutable snapshots,
+declarative queries, and zero runtime dependencies.**
 
 [![typescript](https://github.com/libtmux/libtmux-ts/actions/workflows/typescript.yml/badge.svg)](https://github.com/libtmux/libtmux-ts/actions/workflows/typescript.yml)
 [![libtmux](https://img.shields.io/npm/v/libtmux?label=libtmux)](https://www.npmjs.com/package/libtmux)
@@ -28,25 +21,12 @@
 
 </div>
 
----
-
-> [!WARNING]
-> Releases are numbered `0.1.N`. The API is not settled: any release may change
-> or remove exported identifiers. Pin an exact version, and read the changelog
-> of each package you use before you upgrade. The [root changelog](CHANGELOG.md)
-> summarizes each release and links the package changelogs.
-
-## Is this for you?
-
-- **Yes, if** you drive tmux from a program (an agent, a workspace launcher, a
-  test harness, a dashboard) and want the terminal's state as typed data, not
-  parsed strings.
-- **Probably not, if** you want a `.tmux.conf` generator or a TUI. It controls a
-  running server; it does not write your configuration.
-- **The idea:** read the whole server once into an immutable snapshot, then
-  query it like data.
-
-## Quickstart
+Drive a running tmux server from agents, workspace launchers, test harnesses,
+and dashboards: read the whole server once into an
+[immutable snapshot][ref-server-snapshot], query it as typed data with
+[`Selection.where`][ref-selection-where], batch mutations with
+[`Server.batch`][ref-server-batch], and subscribe to events with
+[`Server.watch`][ref-server-watch].
 
 ```console
 $ bun add libtmux
@@ -74,6 +54,13 @@ $ yarn add libtmux
 - [Bun](https://bun.sh) 1.3.14 or newer, or Node 22 or newer.
 - Runs on Linux, including WSL. macOS is supported on a best-effort basis,
   and CI coverage for it is highly limited.
+
+> Releases are numbered `0.1.N`. The API is not settled: any release may change
+> or remove exported identifiers. Pin an exact version, and read the changelog
+> of each package you use before you upgrade. The [root changelog](CHANGELOG.md)
+> summarizes each release and links the package changelogs.
+
+## Quickstart
 
 Create a session, split a window, and read it back. The program starts a tmux
 server of its own and stops it on the way out:
@@ -294,8 +281,6 @@ The four packages share one release version.
 | **[@libtmux/workspace-cli](packages/workspace-cli)** | The native [`tmux-workspace`][cli-reference] command for Node and Bun.         | [![npm](https://img.shields.io/npm/v/@libtmux/workspace-cli?label=%40libtmux%2Fworkspace-cli)](https://www.npmjs.com/package/@libtmux/workspace-cli) |
 | [examples](examples)                                 | Runnable examples, executed as tests.                                          | —                                                                                                                                                    |
 
----
-
 ### [libtmux](https://github.com/libtmux/libtmux-ts/tree/master/packages/libtmux): the library
 
 [`Server`][ref-server], [`Session`][ref-session], [`Window`][ref-window],
@@ -411,11 +396,12 @@ import { applyWorkspace } from "@libtmux/workspace";
 
 const server = new Server({ socketName: "libtmux-workspace" });
 try {
+  const devPane = { shell_command: "bun dev", focus: true };
   await applyWorkspace(server, {
     session_name: "api",
     windows: [
       { window_name: "editor", panes: ["vim", "git status"] },
-      { window_name: "server", panes: [{ shell_command: "bun dev", focus: true }] },
+      { window_name: "server", panes: [devPane] },
     ],
   });
 } finally {
@@ -515,8 +501,22 @@ try {
 }
 ```
 
+## What it leaves out
+
+- **Live objects.** A [`Session`][ref-session], [`Window`][ref-window] or
+  [`Pane`][ref-pane] is a record of what tmux said when it was read. Read again
+  with [`refreshed()`][ref-window-refreshed], or subscribe with
+  [`watch()`][ref-server-watch], to see a change.
+- **A terminal emulator.** [`Pane.capture`][ref-pane-capture] and
+  [`Server.run`][ref-server-run] return the screen tmux drew rather than running
+  an in-process terminal emulator or TUI.
+- **Your tmux configuration file.** This controls a running server; nothing
+  here generates or edits `~/.tmux.conf`.
+
 ## Support and status
 
+- **Unsettled API.** Releases are numbered `0.1.N`, and any release may change
+  or remove exports. Pin an exact version and check [`CHANGELOG.md`](CHANGELOG.md).
 - **No runtime dependencies in the library.** A
   [test](packages/libtmux/tests/unit/package_contract.test.ts) holds it.
   `@libtmux/mcp` and `@libtmux/workspace` declare their own.
@@ -546,23 +546,11 @@ submit and wait for a maintainer's invitation before preparing a pull request.
 See the [AI policy](https://libtmux.org/en/meta/ai-policy/), also kept as
 [AI_POLICY.md](https://github.com/libtmux/.github/blob/HEAD/AI_POLICY.md).
 
-## Attribution
-
-Please use the following BibTeX template to cite libtmux-ts in scientific discourse:
-
-```bibtex
-@misc{libtmux-ts,
-   author = {Tony Narlock},
-   year = {2026},
-   note = {https://libtmux.org/en/ts/},
-   title = {libtmux-ts: TypeScript wrapper for tmux}
-}
-```
-
 ## License
 
 [MIT](LICENSE) — a port of
-[tmux-python/libtmux](https://github.com/tmux-python/libtmux).
+[tmux-python/libtmux](https://github.com/tmux-python/libtmux). See
+[libtmux.org](https://libtmux.org/) for all sibling ports.
 
 [cli-reference]: https://libtmux.org/en/ts/latest/workspace/cli/
 [mcp-resources-capabilities]: https://libtmux.org/en/ts/latest/mcp/resources/capabilities/
@@ -585,6 +573,7 @@ Please use the following BibTeX template to cite libtmux-ts in scientific discou
 [ref-server-batch]: https://libtmux.org/en/ts/latest/reference/server-server-batch/
 [ref-server-connect]: https://libtmux.org/en/ts/latest/reference/server-server-connect/
 [ref-server-pipeline]: https://libtmux.org/en/ts/latest/reference/server-server-pipeline/
+[ref-server-run]: https://libtmux.org/en/ts/latest/reference/server-server-run/
 [ref-server-sethook]: https://libtmux.org/en/ts/latest/reference/server-server-sethook/
 [ref-server-snapshot]: https://libtmux.org/en/ts/latest/reference/server-server-snapshot/
 [ref-server-watch]: https://libtmux.org/en/ts/latest/reference/server-server-watch/

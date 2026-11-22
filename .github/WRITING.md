@@ -1,288 +1,108 @@
 # Writing
 
-How this project writes prose, for humans and agents alike. It governs
-`README.md`, `CHANGELOG.md`, release notes, commit messages, CLI and help text,
-error messages, TSDoc, source comments, and migration guides — every surface a
-reader reaches.
+Repository-specific rules for prose, TSDoc, source comments, changelogs, and
+commits in `libtmux-ts`. Organization-wide voice, CommonMark wrapping, and
+commit conventions live in
+[libtmux/.github `WRITING.md`](https://github.com/libtmux/.github/blob/main/WRITING.md);
+development workflow and gates live in [CONTRIBUTING.md](CONTRIBUTING.md).
 
-For building, testing, and pull request workflow, see
-[CONTRIBUTING.md](CONTRIBUTING.md).
+## Voice and terminology
 
-## Voice
+Do not explain TypeScript to TypeScript developers; explain this project's
+semantics. Types describe shape and documentation describes meaning — a sentence
+that restates a signature says nothing.
 
-Three surfaces, one voice. A doc comment says what a caller may rely on; a
-changelog entry says what changed; prose says what happens. All three are
-present tense, lead with the thing being described, and stop. Why it was built
-that way belongs in the commit message, which is timestamped and attached to
-the diff.
-
-The most useful editing operation is deleting the introductory sentence.
-
-Lead with verbs and name concrete things. Put identifiers in backticks. Prefer
-short declarative sentences, one operational fact each. Do not explain
-TypeScript to TypeScript developers; do explain this project's semantics.
-
-Types describe shape. Documentation describes meaning. A sentence that restates
-a signature has said nothing.
-
-Use MUST, SHOULD, and MAY only where the normative sense is meant. Say what
-actually happens rather than that something is "supported".
-
-| Instead of                       | Prefer                           |
-| -------------------------------- | -------------------------------- |
-| "We added…"                      | "`Pane.sendKeys` now supports…"  |
-| "New and improved"               | "`Server.sessions` now…"         |
-| "powerful", "seamless"           | state the capability             |
-| "easily", "simply", "just"       | omit                             |
-| "simple", "obvious", "intuitive" | omit                             |
-| "robust"                         | name the failure that is handled |
-| "comprehensive"                  | name what is covered             |
-| "production-ready"               | state the guarantee              |
-| "optimized", "blazingly fast"    | give the magnitude               |
-| "various fixes"                  | name the components              |
-| "under the hood"                 | omit unless observable           |
-| "please note that", "note that"  | state the fact                   |
-| "leverage", "utilize"            | "use"                            |
-| "delve into"                     | "read", or omit                  |
-| "best practices"                 | name the practice                |
-| "in order to"                    | "to"                             |
-
-## README
-
-A README is the shortest path from "what is this?" to competent use.
-
-The first sentence is a contract. It says what abstraction the reader has been
-handed, concretely enough to tell this package apart from the neighbouring one.
-"Typed control of tmux for Bun and TypeScript" is a contract; "a powerful
-library for working with terminals" is not.
-
-Get to a runnable command or snippet before anything the reader can skip. A
-logo, a mission statement, a comparison matrix and three paragraphs of history
-in front of the install line all cost the same thing.
-
-Examples are executable, not illustrative fiction. Never
-`your-command <some-options>`. Every snippet on a README page in this
-repository is compiled against the tree, and several are executed — see
-[Documentation is a gate](CONTRIBUTING.md#the-gates).
-
-Document the semantic model. `--help` already enumerates
-flags; what it cannot say is precedence, filesystem effects, what goes to
-stdout versus stderr, and what a non-zero exit means.
-
-State defaults explicitly — defaults are API. State negative guarantees where
-they exist: "does not modify your `.tmux.conf`", "no network access", "never
-touches the server you are attached to". They establish boundaries faster than
-any amount of description.
-
-Headings stay conventional and stable, because people deep-link them and
-`docs:links` checks the anchors. Badges are few and load-bearing.
+- Keep domain nouns stable: `capture` refers to `Pane.capture`, while `snapshot`
+  refers to `Server.snapshot`.
+- Write `tmux` in lowercase everywhere, including at the start of a sentence;
+  rewrite the sentence rather than capitalizing it. TypeScript, Bun, and Node
+  keep their capitalization.
+- Put identifiers, flags, environment variables, and paths in backticks.
+- Do not write symbol or field counts, line numbers, bare SHAs, or local paths
+  into prose.
 
 ## README shape
 
-A README reads at a glance. A paragraph is the exception.
+Both the root `README.md` and each package `README.md` follow this shape:
 
-- The header is the logo block, a centred title, and a badge row: CI, the
-  registry version when the package is published, the libtmux.org docs, and the
-  license. A badge links only a page that returns 200.
-- A `##` section is a task in the reader's words, such as "Find sessions,
-  windows and panes".
-- A `###` heading is one API: its name in a code span linked to its libtmux.org
-  reference page, then a colon and its job in plain words.
-- Under a heading go a line or two naming linked sibling APIs, the example, what
-  it prints, at most one short note, and a `More:` link to the guide.
-- No paragraph runs past three lines. A list of facts is a bullet list.
-- No feature inventory. The sections and their examples show what exists.
-- A requirement is a floor a reader can act on, such as "tmux 3.3a or newer" or
-  "Node 22 or newer". Leave out the patch version of the toolchain you used,
-  narration of the CI matrix, and kernel details; link the page that holds them.
-- Cut what a reader assumes or never needs: that examples are tested, how the
-  docs are built, what the checks cover, and "evidence", "qualification" and
-  "contract" boilerplate.
-- Packages keep their table, then one heading per package linking its source
-  directory, a one-line description, and a line of links: API reference,
-  registry, changelog.
-- "What it leaves out" and "Support and status" are short bold-lead bullets.
-- An example starts with its imports. Where a section quotes excerpts, its first
-  example is a whole program, and later excerpts continue from it.
-- An example starts its own tmux server through the library, does its work, and
-  stops the server through the library on the way out. A README never asks the
-  reader to run `tmux` to set up or clean up.
-- Every displayed example comes from a file CI compiles and runs: a `ts` block in
-  a checked README, or a program under `examples/` that a block quotes under a
-  `runs:` marker.
-- The root README shows the queries, command batching, optimization switches and
-  control mode the library has, each under an API-linked heading with an
-  example. It describes no feature the library lacks.
+- Open with the logo block, a centered title, a one-sentence contract, and a
+  badge row (CI, npm version when published, libtmux.org docs, license). Link
+  only pages that return 200.
+- Place installation and runtime floors (such as tmux 3.3a+, Node 22+ or Bun
+  1.3.14+) right ahead of `Quickstart` / `Quick start` so readers reach runnable
+  code immediately.
+- Make each `##` heading a task in the reader's words, and each `###` heading a
+  linked API name, a colon, and its job in plain words.
+- Under each `###` heading, give a line or two naming linked sibling APIs, a
+  self-contained `ts` example starting with its imports, what it prints, at most
+  one short note, and a `More:` link to `docs/` or `libtmux.org`.
+- Every example starts its own private tmux server through the library and stops
+  it on exit (`try ... finally { await server.kill(); }`), without shell `tmux`
+  setup or teardown.
+- Every `ts` fence in a checked README compiles and runs in CI, or quotes a
+  tested program under `examples/` via `<!-- runs: examples/... -->`, or states
+  why it cannot run via `<!-- static: ... -->`.
+- Keep paragraphs to three lines or fewer and omit feature inventories, CI
+  matrix narration, and gate boilerplate.
+- Close with a `Packages` table and linked package entries (where applicable),
+  then short bold-lead bullets under `What it leaves out` and
+  `Support and status`.
 
-## The changelog
+## Changelogs and release notes
 
-The changelog is a ledger. It is scanned, and the question a reader is asking
-is whether an entry affects them, so one change gets one bullet.
+The repository keeps a root `CHANGELOG.md` and one `CHANGELOG.md` per published
+package:
 
-Group by the component affected rather than by whether something is a feature
-or a fix; a reader arrives knowing which part they use. A component with more
-than a handful of entries takes `####` headings for its areas.
-
-Lead with the identifier and a concrete verb — add, fix, remove, deprecate,
-support, requires, `now`, `no longer`. Name identifiers literally:
-`Server.newSession`, `Selection.one`, `LIBTMUX_TMUX_BUILDS`,
-`tmux://capabilities`. One to three sentences.
-
-Do not sell a fix: "no longer returns another command's reply", not "improves
-reliability". Do not describe effort. Give the old behaviour only where it
-explains a break, and mention mechanism only where a caller can observe it — a
-refactor that changes nothing observable is not an entry.
-
-A breaking change ships its migration inline. The shape
-is change, old, new, reason:
-
-```markdown
-`plugins` now accepts package names rather than imported objects.
-
-Before:
-
-    plugins: [eslintPlugin]
-
-After:
-
-    plugins: ["@acme/eslint"]
-
-Configuration can now be read without executing arbitrary modules during
-discovery.
-```
-
-Entries land under `## Unreleased`. The maintainer assigns the version when
-cutting a release, so nothing here predicts one.
-
-The repository keeps a root `CHANGELOG.md` and each release package keeps its
-own. The root file is the product-level history: for each release, a dated
-heading with a short summary of what it brought across the packages, linking
-the package entries, and the version each package shipped at. It also holds the
-changes that span packages, such as documentation, CI, tests and release
-tooling. A package's file holds that package's details and migrations, and a
-change to one package goes in that package's file. The packages share one
-version, so every package file has a heading for every release, and a release with
-nothing for a package says ``No entries for `@libtmux/mcp`.`` under it. A
-summary in the root file says only what the package entries it links say.
-
-## Release notes
-
-The changelog is the permanent ledger; a release page is editorial. Lead with
-one paragraph naming the headline change, then three to five highlights, then
-link the full changelog.
-
-Numbers over adjectives. "Cold start 41 ms to 6 ms" is a sentence; "much faster
-startup" is a smell.
-
-A list of merged commit subjects is a merge log wearing a release-note hat. Put
-the hand-written highlights above it.
+- Root `CHANGELOG.md` records product-level release summaries linking each
+  package's section, plus cross-package changes (docs, CI, tests, release
+  tooling).
+- Each package's `CHANGELOG.md` holds that package's changes and inline
+  `Before:` / `After:` migrations under `## Unreleased`.
+- All release packages share one version, so every package changelog carries a
+  heading for every release; a release with no package-specific changes states
+  ``No entries for `@libtmux/mcp`.`` under that heading.
+- Group entries by component and lead with the literal identifier (`Pane.split`,
+  `Selection.one`, `tmux://capabilities`) and a concrete verb.
+- Release notes open with a one-paragraph headline and three to five hand-written
+  highlights with concrete numbers above any commit list, then link the full
+  changelog.
 
 ## API documentation
 
-TSDoc, and the prime directive: never restate the type. The signature is the
-source of truth; the comment carries what the signature cannot.
+Write TSDoc without restating the type signature. Document what the type system
+cannot encode:
 
-This is documentation debt wearing a doc comment:
+- **Mutation, ownership, and lifecycle** — what changes in place, and what the
+  caller must close, dispose, or keep alive.
+- **Ordering, timing, and concurrency** — result order, what has finished when
+  the promise resolves, and whether calls coalesce, queue, or overlap.
+- **Failure and cancellation** — `@throws` for every error class and trigger,
+  and what an aborted `signal` does to work in flight (`delivery`).
+- **Platform and security boundary** — behavior that varies by tmux version or
+  OS, and what is executed versus read.
 
-```typescript
-/**
- * Gets the pane's identifier.
- * @param pane - The pane.
- * @returns The identifier.
- */
-```
+The first sentence stands alone. `@deprecated` names the replacement. For an
+enumerated union, document member meanings rather than repeating member names.
 
-Document instead the dimensions the type system cannot encode:
-
-- **Mutation.** What it changes in place.
-- **Ownership.** What the caller must close, dispose, or keep alive.
-- **Ordering.** Whether results come back in a guaranteed order.
-- **Timing.** What has finished by the time the promise resolves.
-- **Failure.** Which errors are thrown and what triggers each.
-- **Idempotence.** Whether calling twice does anything the second time.
-- **Concurrency.** Whether calls are coalesced, queued, or independent.
-- **Cancellation.** What an aborted signal does to work in flight.
-- **Platform.** Behaviour that differs by tmux version or by OS.
-- **Security boundary.** What is executed, and what is only read.
-
-The first sentence stands alone; tooling truncates there. Use `@throws`
-generously, because TypeScript has no typed exceptions and it is the only way a
-caller learns to catch. `@deprecated` names the replacement.
-
-For an enumerated union, document the meanings rather than repeating the
-members — the type already lists them.
-
-`packages/libtmux/docs/api.md` is generated from the doc comments that
-implement it. Never edit it by hand:
+`packages/libtmux/docs/api.md` is generated from TSDoc comments; regenerate it
+rather than editing by hand:
 
 ```console
-$ bun run docs:api
+$ bun run --cwd packages/libtmux docs:api
 ```
 
-Every public method, getter, and readonly field carries a compiled example. A
-signature with no example fails `typecheck:symbols`, and one that no longer
-compiles fails it too.
+Every public method, getter, and readonly field carries a compiled `ts` example
+checked by `typecheck:symbols` and executed by `test:symbols`.
 
 ## Source comments
 
-A comment ships only if it passes all three gates. Fail any: delete or rewrite.
-Borderline: delete — borderline means the information is reconstructible, which
-is what makes deletion cheap.
+Keep a source comment only when losing it would cost real time rediscovering an
+invariant, protocol constraint, upstream tmux quirk, lifetime rule, or subtle
+correctness reason that types and tests cannot express. Keep comments to one or
+two lines and put design history or rejected alternatives in the commit message.
 
-**Loss.** Three years from now, would losing this cost a maintainer real time
-rediscovering intent, an invariant, a constraint, or a failure mode the code and
-tests do not already make obvious?
-
-**Elite.** Would SQLite, Redis, the Go standard library, or CPython write this
-comment, at this length? Those projects state the constraint and stop. They do
-not argue with an imagined objector.
-
-**Upkeep.** Will it stay true without maintenance? A comment that hand-syncs a
-value the code owns — a count, an offset, a line reference, a duplicated
-constant — is false the first time that value moves.
-
-### Ceiling
-
-One or two lines. A comment reaching four is either carrying several facts, in
-which case split it, or arguing, in which case cut it to the fact.
-
-Rationale, alternatives weighed, and the story of how the code got here belong
-in the commit message: timestamped, attached to the exact diff, and free to
-maintain.
-
-A comment often holds both a constraint and the deliberation that found it. Keep
-the constraint, cut the deliberation. "Runs at most once per second" survives;
-"this is the right trade for now" does not.
-
-### Keep
-
-- Why over how: upstream quirks, protocol and compatibility constraints,
-  performance tradeoffs still part of the contract.
-- Invariants, preconditions, ordering, lifetime, and concurrency requirements
-  that types and tests cannot express.
-- Code that looks wrong but is not, so a later cleanup does not reintroduce the
-  bug.
-- A high-level sketch of an algorithm whose local operations do not reveal the
-  whole.
-
-### Delete
-
-- Narration of the next lines; code translated into English.
-- Restated names, types, defaults, or control flow.
-- Values duplicated from the code and hand-synced.
-- Justification, hedging, or apology for a choice.
-- Speculation about future requirements.
-- History version control already holds, including commented-out code.
-- Ticket and issue numbers. They say nothing to a reader without tracker access,
-  and they rot when the tracker moves. Unfinished work goes in the tracker, not
-  the source.
-- Transient observations — "currently", "for now", "the latest release" —
-  that go stale with no nearby edit.
-
-### The upkeep gate in practice
-
-It reaches values that track our own code. It does not reach frozen external
-facts.
+Delete comments that narrate the next lines, duplicate code-owned counts or
+constants, hedge, or reference issue numbers.
 
 Bad (Delete):
 
@@ -297,116 +117,32 @@ Good (Keep):
 // so this query must stay separate.
 ```
 
-### Documentation exception
+TSDoc summaries, `@param` / `@returns` / `@throws` tags, and compiled API
+examples serve callers and are exempt from the deletion rule above, up to the
+length of a concise man page entry.
 
-Minimal usage examples, and param, return, and throws lines on public API are
-exempt from the loss gate — they serve the caller. They are
-exempt from nothing else. Ceiling: a good man page entry.
+## Markdown and code blocks
 
-TSDoc summaries, `@param` and `@returns` tags, and the compiled examples fall
-under this exception.
+Follow [libtmux/.github `WRITING.md`](https://github.com/libtmux/.github/blob/main/WRITING.md#markdown)
+for CommonMark formatting, 80-column repository prose wrapping (tables, badges,
+and long URLs excepted), unwrapped PR/issue bodies, and single-command
+`console` blocks prefixed with `$ `.
 
-## Terminology and capitalization
-
-Pick the domain noun and keep it. If the code calls something a session, do not
-call it a workspace in one paragraph and an environment in the next. If the
-method is `capturePane`, write "capture" everywhere rather than alternating
-with "read", "grab", and "snapshot" — snapshot means something else here.
-
-Stable vocabulary is what makes search, deep links, and an agent's retrieval
-work at all.
-
-`tmux` is lowercase, always, including at the start of a sentence — rewrite the
-sentence rather than capitalising it. TypeScript, Bun, and Node keep their own
-capitalisation.
-
-Do not write counts into prose — how many symbols are ported, how many fields a
-version is asked for. They go stale silently and no reader needs them. Counts
-that pin a fixture or guard an invariant are different, and belong in code.
-
-## Markdown
-
-Prose wraps at 80 columns. Table rows, badge lines, and long links are exempt,
-because breaking them harms rendering. A pull request or issue body does not
-wrap at all: GitHub renders a single newline as a space in a file and as a line
-break in a comment, so a wrapped comment body arrives as ragged stubs.
-
-Tables, badges, and links are fine everywhere.
-
-GitHub alert blocks — `> [!NOTE]`, `> [!WARNING]` — render as literal text
-outside GitHub, so reserve them for at most one load-bearing warning per
-document. The release warning in the root README is that one. Write the sentence
-so it carries the fact on its own, and a renderer that drops the marker loses
-nothing.
-
-Every relative link and `#anchor` in every tracked Markdown file is checked by
-`docs:links`, so a heading rename breaks the links that point at it.
-
-## Code blocks
-
-Code blocks are paste-and-run units: pasting one block runs exactly one intended
-action. Executed examples are exempt — the test suite runs them, nobody pastes
-them.
-
-- **One command per block.** Multiple steps may share a block only when
-  explicitly chained with `&&`, `;`, or `\` continuations — the chain is then
-  one logical command.
-- **Explanations go in prose above the block**, never as `#` comments inside it.
-- **Command menus are per-command blocks with prose lead-ins**, not tables.
-- **Shell commands use the `console` tag with a `$ ` prefix.** This separates
-  interactive commands from scripts and enables prompt-aware copy.
-- **Split long commands with `\`** — one flag or flag+value pair per indented
-  continuation line, positional arguments last.
-
-Good — show the last ten commits as a graph:
-
-```console
-$ git log \
-    --max-count=10 \
-    --graph \
-    --oneline
-```
-
-Bad:
-
-```console
-# Show the last ten commits as a graph
-$ git log --max-count=10 --graph --oneline
-```
+- Use plain CommonMark only: never use GitHub-only alert blocks (`> [!NOTE]`,
+  `> [!WARNING]`), which render as literal markers on npmjs.com and external
+  renderers.
+- Every relative link and `#anchor` across tracked `.md` files is verified by
+  `bun run docs:links`, and shell commands, package pins, badges, and
+  `<!-- toc -->` blocks are verified by `bun run docs:claims`.
 
 ## Commits
 
-```
-Scope(type[detail]): concise description
+Follow the scoped commit format in
+[libtmux/.github `WRITING.md`](https://github.com/libtmux/.github/blob/main/WRITING.md#commits-and-pull-requests),
+with subjects at 50 characters or fewer (excluding trailing `(#NN)`) and body
+lines wrapped at 72 characters:
 
-why: Explanation of necessity or impact.
-
-what:
-- Specific technical changes made
-- Focused on a single topic
-```
-
-Keep the subject to 50 characters or fewer, excluding any trailing `(#NN)` pull
-request reference, and wrap body lines at 72. Separate the `why:` and `what:`
-blocks with a blank line.
-
-Common types:
-
-- **feat**: New features or enhancements
-- **fix**: Bug fixes
-- **refactor**: Code restructuring without functional change
-- **docs**: Documentation updates
-- **chore**: Maintenance (dependencies, tooling, config)
-- **test**: Test-related updates
-- **style**: Code style and formatting
-- **ci**: Workflow and pipeline changes
-- **js(deps)**: Dependencies
-- **js(deps[dev])**: Dev dependencies
-- **ai(rules[AGENTS])**: AI rule updates
-
-Example:
-
-```
+```text
 Pane(feat[sendKeys]): Add support for a literal flag
 
 why: Send characters without tmux interpreting them.
@@ -416,55 +152,14 @@ what:
 - Pass -l when it is set
 ```
 
-For a multi-line message, use a heredoc so the formatting survives:
+Repository-specific scope conventions in addition to `feat`, `fix`, `refactor`,
+`docs`, `chore`, `test`, `style`, and `ci`:
 
-```console
-$ git commit -m "$(cat <<'EOF'
-Scope(feat[detail]): Concise description
-
-why: Explanation of the change.
-
-what:
-- First change
-- Second change
-EOF
-)"
-```
+- `js(deps)` and `js(deps[dev])` for runtime and development dependency updates.
+- `ai(rules[AGENTS])` for agent rule updates.
 
 ### Release commits
 
-Never create tags. Never push tags. The owner handles tagging and tag pushes,
-because a tag triggers the publish workflow.
-
-A release commit subject is plain and short: `Tag v<version>`. The detailed why
-and what go in the body. Do not use the `Scope(type[detail]):` format for a
-release — it buries the lede.
-
-## Slop prevention
-
-AI slop is review-hostile noise. It does not mean the text or code is wrong.
-The goal is to maximise information density.
-
-- **AI signatures.** No "Generated by", no conversational filler, no
-  unexplained emoji, no tool metadata.
-- **Brittle references.** No hard-coded line numbers, fragile file counts, dated
-  "as of" claims, bare SHAs, or local absolute paths — unless they are strict
-  evidentiary artefacts such as a benchmark log.
-- **Diff narration.** Do not restate what moved, was renamed, or was removed in
-  anything the reader holds alongside the diff: code, doc comments, README, or
-  a pull request description. The diff and the commit message already carry it.
-- **Branch-internal narrative.** Do not mention intermediate states, abandoned
-  approaches, or "no longer" behaviour unless users of a published release
-  actually experienced the old state.
-- **Low-value scaffolding.** No ownerless TODOs, unused future-proofing, debug
-  artefacts, or defensive wrappers around failure modes nothing can reach.
-- **Prose inflation.** The diction table under [Voice](#voice) governs; replace
-  an inflated word with a concrete description of behaviour, constraints, or
-  trade-offs.
-- **Coded labels.** Write rules and findings as plain imperatives. No `[R1]`,
-  `Option B`, or any index a reader has to decode.
-
-Preserve the "why". Never delete a comment documenting an invariant, a protocol
-constraint, a platform quirk, or an upstream workaround — those are the facts
-[Source comments](#source-comments) keeps, and every other comment is judged by
-it.
+Never create tags or push tags; a tag triggers the publish workflow and is
+handled by the maintainer. Use `Tag v<version>` as the release commit subject
+with `why:` and `what:` in the body.
