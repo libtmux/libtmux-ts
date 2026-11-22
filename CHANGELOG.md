@@ -29,6 +29,7 @@ changelog has the documentation, CI and release tooling entries up to 0.1.2.
 <!-- toc -->
 
 - [Unreleased](#unreleased)
+- [0.1.4 (2026-11-22)](#014-2026-11-22)
 - [0.1.3 (2026-11-22)](#013-2026-11-22)
 - [0.1.2 (2026-10-31)](#012-2026-10-31)
 - [0.1.1 (2026-10-31)](#011-2026-10-31)
@@ -47,15 +48,50 @@ changelog has the documentation, CI and release tooling entries up to 0.1.2.
 
 ## Unreleased
 
+## 0.1.4 (2026-11-22)
+
+Versions: `libtmux` 0.1.4, `@libtmux/mcp` 0.1.4, `@libtmux/workspace` 0.1.4 and
+`@libtmux/workspace-cli` 0.1.4.
+
+Package manifests now point `homepage` to each package's `libtmux.org`
+documentation section, READMEs document Node.js 22+, Bun 1.3.14+, TypeScript
+5.7+, and plain ESM JavaScript with separate single-command install fences for
+`npm`, `pnpm`, `yarn`, and `bun`, the install canary verifies all four package
+managers on Node 22 and Bun, and tag releases run the boundary tmux lanes.
+
+- [`libtmux`](packages/libtmux/CHANGELOG.md#014-2026-11-22): `package.json`
+  sets `homepage` to `https://libtmux.org/en/ts/latest/core/` and includes
+  Node.js in `description` and `keywords` (#241).
+- [`@libtmux/mcp`](packages/mcp/CHANGELOG.md#014-2026-11-22): `package.json`
+  sets `homepage` to `https://libtmux.org/en/ts/latest/mcp/` (#241).
+- [`@libtmux/workspace`](packages/workspace/CHANGELOG.md#014-2026-11-22):
+  `package.json` sets `homepage` to `https://libtmux.org/en/ts/latest/workspace/`
+  (#241).
+- [`@libtmux/workspace-cli`](packages/workspace-cli/CHANGELOG.md#014-2026-11-22):
+  `package.json` adds `homepage`, `bugs`, `author`, and `keywords` (#241).
+
 ### Development
 
+- `packages/libtmux/scripts/check-install.ts` installs and verifies the packed
+  tarball across `npm`, `pnpm` (`.pnpm` symlinked virtual store), `yarn`, and
+  `bun` against TypeScript 7.0, the TypeScript 5.7.3 floor, Node 22 ESM, Node
+  22 native TypeScript (`--experimental-strip-types`), and Bun, with Corepack
+  `pnpm` and `yarn` provisioned in `Gates` and `publish`. (#241)
 - Development, release workflows, and the tmux CI lanes run Bun 1.4.5, and the
   `Gates` matrix runs Bun 1.3.14 and 1.4.5 instead of keeping intermediate
-  `1.4.x` legs. The published `engines.bun` floor stays `>=1.3.14`.
+  `1.4.x` legs. The published `engines.bun` floor stays `>=1.3.14`. (#238)
 - Tag releases (`publish.yml`) verify the oldest and newest supported tmux
   releases (`scope: edges`) instead of running every historical release,
   preview branch, and `master` before publishing; `workflow_dispatch` with
-  `scope=full` continues to run the whole table on demand. (#239)
+  `scope=full` continues to run the whole table on demand. (#239, #240)
+
+### Documentation
+
+- `README.md` and package READMEs name Node.js, Bun, and TypeScript in the hero
+  contract, replace collapsed or Bun-only install blocks with separate
+  single-command `console` fences for `npm`, `pnpm`, `yarn`, and `bun`, state
+  TypeScript 5.7+ and plain ESM JavaScript floors, and show `Quickstart`
+  execution on both Node 22 and Bun. (#241)
 
 ## 0.1.3 (2026-11-22)
 

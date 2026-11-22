@@ -21,6 +21,7 @@ Entries of that kind from before it existed are listed below.
 <!-- toc -->
 
 - [Unreleased](#unreleased)
+- [0.1.4 (2026-11-22)](#014-2026-11-22)
 - [0.1.3 (2026-11-22)](#013-2026-11-22)
 - [0.1.2 (2026-10-31)](#012-2026-10-31)
 - [0.1.1 (2026-10-31)](#011-2026-10-31)
@@ -47,6 +48,15 @@ Entries of that kind from before it existed are listed below.
 <!-- /toc -->
 
 ## Unreleased
+
+## 0.1.4 (2026-11-22)
+
+### `libtmux`
+
+`package.json` now sets `homepage` to `https://libtmux.org/en/ts/latest/core/`
+and includes Node.js (`node`, `nodejs`) in `description` and `keywords`, and
+`README.md` presents separate single-command `console` install fences for `npm`,
+`pnpm`, `yarn`, and `bun`. (#241)
 
 ## 0.1.3 (2026-11-22)
 

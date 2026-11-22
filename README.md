@@ -372,7 +372,7 @@ With no socket chosen it passes tmux none, so tmux picks the server: the one it
 is launched inside, otherwise its default socket:
 
 ```console
-$ npx -y @libtmux/mcp@0.1.3
+$ npx -y @libtmux/mcp@0.1.4
 ```
 
 Add it to any MCP client — this is the whole configuration:
@@ -382,7 +382,7 @@ Add it to any MCP client — this is the whole configuration:
   "mcpServers": {
     "tmux": {
       "command": "npx",
-      "args": ["-y", "@libtmux/mcp@0.1.3"],
+      "args": ["-y", "@libtmux/mcp@0.1.4"],
       "env": { "LIBTMUX_SOCKET": "agent" }
     }
   }
@@ -394,7 +394,7 @@ Add it to any MCP client — this is the whole configuration:
 
 ```console
 $ claude mcp add tmux --env LIBTMUX_SOCKET=agent -- \
-    npx -y @libtmux/mcp@0.1.3
+    npx -y @libtmux/mcp@0.1.4
 ```
 
 </details>
@@ -496,7 +496,7 @@ windows:
 Load it detached, on a socket of its own:
 
 ```console
-$ npx -y @libtmux/workspace-cli@0.1.3 load ./workspace.yaml \
+$ npx -y @libtmux/workspace-cli@0.1.4 load ./workspace.yaml \
     -L workspace-cli-demo \
     -d
 ```

@@ -355,7 +355,7 @@ windows:
 Load it detached, on a socket of its own:
 
 ```console
-$ npx -y @libtmux/workspace-cli@0.1.3 load ./workspace.yaml \
+$ npx -y @libtmux/workspace-cli@0.1.4 load ./workspace.yaml \
     -L workspace-demo \
     -d
 ```
