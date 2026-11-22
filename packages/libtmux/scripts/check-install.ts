@@ -50,21 +50,29 @@ function resolveBinary(name: string): string {
   }
 }
 
+// `ltx` so a sweep can tell this apart from another libtmux port's leavings.
+const workspace = await mkdtemp(join(tmpdir(), "ltx-install-"));
+const userNpmrc = join(workspace, "user.npmrc");
+const globalNpmrc = join(workspace, "global.npmrc");
+
 async function run(
   command: readonly string[],
   cwd: string,
   timeoutMilliseconds: number,
 ): Promise<{ stderr: string; stdout: string }> {
+  // `actions/setup-node` with `registry-url` exports `NPM_CONFIG_USERCONFIG`
+  // containing `${NODE_AUTH_TOKEN}`, which is unset under OIDC trusted
+  // publishing and aborts Yarn 1 config expansion during local-tarball installs.
   const result = await runBoundedCommand(command, {
     cwd,
-    // Corepack shims reject non-interactive downloads or ancestor packageManager
-    // fields unless strict/prompt gates are off.
     env: {
       ...process.env,
       COREPACK_ENABLE_DOWNLOAD_PROMPT: "0",
       COREPACK_ENABLE_STRICT: "0",
       NPM_CONFIG_AUDIT: "false",
       NPM_CONFIG_FUND: "false",
+      NPM_CONFIG_GLOBALCONFIG: globalNpmrc,
+      NPM_CONFIG_USERCONFIG: userNpmrc,
     },
     maxOutputBytes: MAX_COMMAND_OUTPUT_BYTES,
     timeoutMilliseconds,
@@ -248,9 +256,8 @@ const packageManagers: readonly PackageManagerCase[] = [
   },
 ];
 
-// `ltx` so a sweep can tell this apart from another libtmux port's leavings.
-const workspace = await mkdtemp(join(tmpdir(), "ltx-install-"));
 try {
+  await Promise.all([writeFile(userNpmrc, ""), writeFile(globalNpmrc, "")]);
   const { tarballPath: tarball } = await npmPack(tsRoot, join(workspace, "artifacts"));
 
   for (const manager of packageManagers) {
